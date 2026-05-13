@@ -9,7 +9,7 @@ def to_markdown(record: Dict) -> str:
     meta = record["meta"]
     synth = record["synthesis"]
     lines = []
-    lines.append("# EFM Council Lite Report")
+    lines.append("# Ethics Council Lite Report")
     lines.append("")
     lines.append(f"**Decision:** {meta['decision']}")
     lines.append(f"**Timestamp:** {meta['timestamp']}")
@@ -18,6 +18,10 @@ def to_markdown(record: Dict) -> str:
     lines.append("")
     lines.append(f"**Assessment:** {synth['stability_assessment']}")
     lines.append(f"**Suspension triggered:** {'YES' if synth['suspension_protocol_triggered'] else 'No'}")
+    if 'minority_report_required' in synth:
+        lines.append(f"**Minority report required:** {'YES' if synth['minority_report_required'] else 'No'}")
+    if 'detector_overlap_flag' in synth:
+        lines.append(f"**Detector overlap flag:** {'YES' if synth['detector_overlap_flag'] else 'No'}")
     lines.append("")
     lines.append("## Overall recommendation")
     lines.append("")
@@ -30,6 +34,8 @@ def to_markdown(record: Dict) -> str:
         lines.append(f"- Expected harm score: {risk['expected_harm_score']}")
         lines.append(f"- Harm variance: {risk['harm_variance']}")
         lines.append(f"- Tail risk triggered: {'YES' if risk['tail_risk_triggered'] else 'No'}")
+        lines.append(f"- Irreversibility risk: {risk['irreversibility_risk']}")
+        lines.append(f"- Detector overlap flag: {'YES' if risk['detector_overlap_flag'] else 'No'}")
         lines.append(f"- Materiality flag: {'YES' if risk['materiality_flag'] else 'No'}")
         lines.append(f"- Audit hash: `{risk['audit_hash']}`")
         uncertainty = risk["uncertainty_profile"]
