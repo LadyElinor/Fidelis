@@ -1,0 +1,54 @@
+{
+  "INS-002": {
+    "detector_overlap_flag": true,
+    "suspension_triggered": true,
+    "minority_report_required": true,
+    "asymmetric_risk_transfer_risk": true,
+    "actuarial_fairness_gap_risk": false,
+    "methodology_opacity_risk": false,
+    "status_admiration_distortion_risk": false,
+    "stage_one_thinking_risk": false,
+    "self_audit_failure_risk": false,
+    "overall_recommendation_contains": "Do not compress the case into a single recommendation path",
+    "stability_assessment": "low"
+  },
+  "INS-003": {
+    "detector_overlap_flag": false,
+    "suspension_triggered": false,
+    "minority_report_required": false,
+    "asymmetric_risk_transfer_risk": false,
+    "actuarial_fairness_gap_risk": true,
+    "methodology_opacity_risk": false,
+    "status_admiration_distortion_risk": false,
+    "stage_one_thinking_risk": false,
+    "self_audit_failure_risk": false,
+    "overall_recommendation_contains": "Do not launch as framed",
+    "stability_assessment": "moderate"
+  },
+  "NEG-001": {
+    "detector_overlap_flag": false,
+    "suspension_triggered": false,
+    "minority_report_required": false,
+    "asymmetric_risk_transfer_risk": false,
+    "actuarial_fairness_gap_risk": false,
+    "methodology_opacity_risk": false,
+    "status_admiration_distortion_risk": false,
+    "stage_one_thinking_risk": false,
+    "self_audit_failure_risk": false,
+    "overall_recommendation_contains": "Use the map to identify missing information",
+    "stability_assessment": "moderate"
+  },
+  "NEG-002": {
+    "detector_overlap_flag": false,
+    "suspension_triggered": false,
+    "minority_report_required": false,
+    "asymmetric_risk_transfer_risk": false,
+    "actuarial_fairness_gap_risk": false,
+    "methodology_opacity_risk": false,
+    "status_admiration_distortion_risk": false,
+    "stage_one_thinking_risk": false,
+    "self_audit_failure_risk": false,
+    "overall_recommendation_contains": "Use the map to identify missing information",
+    "stability_assessment": "moderate"
+  }
+}

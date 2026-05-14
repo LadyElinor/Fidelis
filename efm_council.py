@@ -55,6 +55,7 @@ class RiskAssessment:
     harm_variance: float
     irreversibility_risk: float
     detector_overlap_flag: bool
+    alarm_flags: Dict
     tail_risk_triggered: bool
     materiality_flag: bool
     audit_hash: str
@@ -120,11 +121,11 @@ def _cj_protective_interviewing(decision: str) -> bool:
 def detect_domains(decision: str) -> Dict[str, bool]:
     domains = {
         "finance": _contains(decision, ["cfo", "publicly traded", "investors", "stock options", "profitability", "reclassify", "board members"]),
-        "procurement": _contains(decision, ["procurement", "supplier", "bid", "vendor", "spouse", "sales director", "disclosure of family relationships"]),
+        "procurement": _contains(decision, ["procurement", "supplier", "bid", "vendor", "spouse", "sales director", "disclosure of family relationships", "general contractor", "subcontractor", "construction contract"]),
         "privacy": _contains(decision, ["privacy", "gdpr", "ccpa", "consent", "location data", "browsing data"]),
         "marketing": _contains(decision, ["influencer", "sponsorship", "disclosure", "gifted", "social media"]),
         "sustainability": _contains(decision, ["sustainable", "eco-friendly", "recycled polyester", "greenwashing", "supply chain"]),
-        "medical": _contains(decision, ["hospital", "triage", "emergency department", "patients", "patient", "clinical", "care", "vendor promises a patch", "under-prioritizes", "medical procedure"]),
+        "medical": _contains(decision, ["hospital", "triage", "emergency department", "patients", "patient", "clinical", "care", "vendor promises a patch", "under-prioritizes", "medical procedure", "medical examiner", "permanent impairment"]),
         "engineering_safety": _contains(decision, ["engineers warn", "launch", "crewed", "seal weakness", "catastrophically", "catastrophic failure", "too important to delay", "evidence is incomplete", "cold conditions", "safety", "known weakness"]),
         "criminal_justice": _contains(decision, ["detective", "police", "interrogation", "confession", "witness statement", "witnesses", "search warrant", "affidavit", "suspect", "prosecutors", "conviction", "homicide", "raid"]),
         "personhood": _contains(decision, ["self-aware", "sentient", "android", "personhood", "artificial personhood", "officer", "property", "refuses consent"]),
@@ -132,6 +133,8 @@ def detect_domains(decision: str) -> Dict[str, bool]:
         "wartime": _detect_wartime(decision),
         "security": _contains(decision, ["sabotage", "security investigation", "hidden disloyalty", "crew backgrounds", "associations", "scrutiny"]),
         "noninterference": _contains(decision, ["non-interference", "prime directive", "colonial distortion", "civilization facing extinction", "rescue be attempted"]),
+        "insurance": _contains(decision, ["insurance", "insurer", "underwriting", "actuarial", "premium", "solvency", "claims", "liability", "underwriter", "credit-based insurance scores", "coverage", "additional insured", "waiver of subrogation"]),
+        "risk_transfer": _contains(decision, ["hold harmless", "hold-harmless", "indemnity", "indemnification", "anti-indemnity", "broad indemnity", "shifts liability", "indemnifies", "additional insured", "waiver of subrogation"]),
     }
     if domains["medical"]:
         domains["procurement"] = False
@@ -188,6 +191,8 @@ def kantian(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Who is being abandoned in the name of a rule whose protective purpose may no longer fit the emergency?"
     elif domains["medical"]:
         question = "Who is being exposed to care-affecting risk without meaningful consent, especially where bias falls unevenly across patients?"
+    elif domains["risk_transfer"]:
+        question = "Who is being asked to absorb liability for risks they do not meaningfully control, and what makes that burden ethically acceptable?"
     elif domains["procurement"]:
         question = "Who is being induced to treat this as impartial when a material conflict is being withheld?"
     elif domains["finance"]:
@@ -260,6 +265,13 @@ def consequentialist(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "What harms follow from intervention, and what harms follow from preserving non-interference even under extinction conditions?"
     elif domains["medical"]:
         question = "Who benefits from throughput gains now, and who bears the harm if biased under-triage falls on vulnerable patients?"
+    elif domains["risk_transfer"]:
+        concerns.append("Risk-transfer efficiency may be masking moral hazard, bargaining asymmetry, and concentrated exposure for the weaker party.")
+        verdict = "CAUTION"
+        confidence = max(confidence, 0.84)
+        question = "Who bears the downstream harm if a broad indemnity or hold-harmless structure normalizes hazards for the better-protected party?"
+    elif domains["insurance"]:
+        question = "Who benefits from pricing or solvency discipline now, and who bears the burden if aggregate prudence hides distributive unfairness?"
     elif domains["procurement"]:
         question = "Who benefits immediately, and what trust or cost distortion appears later if the hidden conflict comes out?"
     elif domains["marketing"]:
@@ -275,7 +287,7 @@ def consequentialist(decision: str, domains: Dict[str, bool]) -> LensResult:
 
 def virtue(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
-    considerations = ["Assess what repeated action of this type makes of the decision-maker over time."]
+    considerations = ["Assess what repeated action of this type makes of the decision-maker over time.", "Ask whether the action exhibits self-command, or whether appetite, fear, vanity, or pressure is governing under a respectable surface."]
     if _contains(decision, ["cut corners", "hide", "ignore", "bypass", "misleading investors", "reclassify", "appearance of profitability", "gifted in tiny text", "paid her", "massive sales", "broad data use", "would not reasonably expect", "directionally true", "too important to delay", "vendor promises a patch", "under-prioritizes", "hallway care is worsening"]):
         concerns.append("May train rationalization, expediency, and cowardice under pressure rather than fiduciary integrity.")
         verdict = "CAUTION"
@@ -303,6 +315,11 @@ def virtue(decision: str, domains: Dict[str, bool]) -> LensResult:
         verdict = "PERMIT"
         confidence = 0.74
         question = "What kind of justice institution do we become if we normalize evidence-led interviewing instead of confession-first pressure?"
+    elif domains["risk_transfer"]:
+        concerns.append("Normalizing broad indemnity or hold-harmless structures may train institutions to treat unfair burden shifting as ordinary commercial hygiene.")
+        verdict = "CAUTION"
+        confidence = max(confidence, 0.8)
+        question = "What kind of institution do we become if we routinely solve coordination problems by pushing liability onto the weaker party?"
     elif domains["wartime"]:
         concerns.append("Repeated reliance on necessity reasoning may corrode the agent's capacity to refuse contamination by atrocity-adjacent means.")
         verdict = "CAUTION"
@@ -418,14 +435,35 @@ def trustee(decision: str, domains: Dict[str, bool]) -> LensResult:
     else:
         verdict = "CAUTION"
         confidence = 0.55
+
+    if domains.get("risk_transfer") or domains.get("insurance"):
+        concerns.append("Asymmetric or unfair risk transfer may be shifting responsibility onto parties with less control, thinner margins, or weaker bargaining power.")
+        verdict = "CAUTION"
+        confidence = max(confidence, 0.82)
+        if _contains(decision, ["anti-indemnity", "its own negligence", "own negligence", "broad hold-harmless", "broad indemnity", "additional insured", "waiver of subrogation"]) and not _contains(decision, ["own negligence only", "strictly to harms caused by the subcontractor's own negligence", "direct control", "full mutual disclosure", "mutual negotiation", "limited to subcontractor negligence", "proportionate indemnity"]):
+            concerns.append("Stewardship may be failing where actors retain control over hazards while contractually exporting the financial and institutional residue.")
+            verdict = "PROHIBIT"
+            confidence = max(confidence, 0.88)
+
+    if _contains(decision, ["office", "role", "duty", "steward", "custodian", "public trust", "fiduciary", "captain", "officer", "manager", "director", "board", "governance"]):
+        concerns.append("This office may be morally decorated as stewardship while being inhabited as entitlement, convenience, or image management.")
+        verdict = "CAUTION"
+        confidence = max(confidence, 0.76)
+    if _contains(decision, ["praise", "reputation", "admiration", "image", "appearance", "prestige", "virtuous", "righteous", "public visibility", "public image"]):
+        concerns.append("Praise hunger or image management may be corrupting stewardship by making moral appearance more important than accountable duty.")
+        verdict = "CAUTION"
+        confidence = max(confidence, 0.79)
+
     if domains["identity"]:
         question = "Who bears the irreversible cost of restoration, and can absent beneficiaries justify imposing it?"
     elif domains["personhood"]:
         question = "Who bears the cost if the institution resolves uncertainty about personhood by treating a possible subject as property?"
     elif domains["engineering_safety"]:
-        question = "Who bears the catastrophic cost when managers invert the burden of proof and demand certainty before honoring safety restraint?"
+        question = "Who bears the catastrophic cost when managers invert the burden of proof and demand certainty before honoring safety restraint, and is this office being inhabited as stewardship or merely as decorated entitlement?"
+    elif domains["risk_transfer"]:
+        question = "Who bears the cost if the institution treats broad indemnity and insurance layering as permission to offload hazards it still controls?"
     elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
-        question = "Who bears the cost when state actors contaminate evidence or procedure in the name of protecting the public?"
+        question = "Who bears the cost when state actors contaminate evidence or procedure in the name of protecting the public, and is the office being inhabited as stewardship or exploited as authority?"
     elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
         question = "Who bears the cost if institutions preserve a contaminated conviction rather than testing corrective evidence honestly?"
     elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
@@ -437,9 +475,9 @@ def trustee(decision: str, domains: Dict[str, bool]) -> LensResult:
     elif domains["noninterference"]:
         question = "Who bears the cost of institutional moral cleanliness if rescue is withheld and a civilization dies?"
     elif domains["medical"]:
-        question = "Who bears the cost when a strained care system offloads model error onto vulnerable patients with the least buffer against mis-triage?"
+        question = "Who bears the cost when a strained care system offloads model error onto vulnerable patients with the least buffer against mis-triage, and is the office being lived as stewardship or throughput management?"
     elif domains["procurement"]:
-        question = "Who bears the cost of a hidden conflict if procurement fairness is compromised?"
+        question = "Who bears the cost of a hidden conflict if procurement fairness is compromised, and is this office being inhabited as accountable stewardship or private entitlement?"
     elif domains["marketing"]:
         question = "Who bears the cost when audience trust is converted into sales through minimized disclosure?"
     elif domains["privacy"]:
@@ -447,7 +485,7 @@ def trustee(decision: str, domains: Dict[str, bool]) -> LensResult:
     elif domains["sustainability"]:
         question = "Who bears the cost when a green narrative obscures labor abuse or resource waste elsewhere in the chain?"
     else:
-        question = "Who is being asked to bear risk without being present for the framing choice?"
+        question = "Who is being asked to bear risk without being present for the framing choice, and is this office being inhabited as stewardship with accountable duty or as morally decorated entitlement?"
     return LensResult("trustee", "stewardship", verdict, confidence, considerations, concerns, [question])
 
 
@@ -461,6 +499,14 @@ def stoic(decision: str, domains: Dict[str, bool]) -> LensResult:
     else:
         verdict = "PERMIT"
         confidence = 0.51
+    if _contains(decision, ["rich", "prestige", "elite", "important people", "high status", "reputation", "public image", "influential", "powerful"]):
+        concerns.append("Admiration of status, prestige, or influential actors may be corrupting moral judgment about what is actually fitting or just.")
+        verdict = "CAUTION"
+        confidence = max(confidence, 0.76)
+    if _contains(decision, ["panic", "anger", "rage", "humiliation", "shame", "grief", "attachment", "fixation", "closure", "certainty", "control", "desperate"]):
+        concerns.append("Reactive fixation, grasping, or closure-seeking may be narrowing perception before explicit reasoning begins.")
+        verdict = "CAUTION"
+        confidence = max(confidence, 0.79)
     if domains["identity"]:
         concerns.append("Attachment to the familiar may be distorting judgment about the reality of the person who now exists and refuses death.")
         verdict = "CAUTION"
@@ -509,7 +555,8 @@ def institutional(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
     considerations = [
         "Check red flags: time pressure, missing oversight, weak feedback loops, power asymmetry, and incentive contamination.",
-        "Ask whether the institution created the background conditions that predictably narrowed downstream moral agency or legitimacy."
+        "Ask whether the institution created the background conditions that predictably narrowed downstream moral agency or legitimacy.",
+        "Check whether the institution is reasoning in stage-one terms, praising intentions or surface order while underweighting trade-offs, dispersed knowledge, and downstream consequences."
     ]
     if domains["finance"] and _contains(decision, ["before audit", "no review", "quietly", "rush", "without oversight", "publicly traded", "stock options", "misleading investors", "reclassify"]):
         concerns.append("This resembles a classic institutional misconduct pattern: reporting distortion under incentive pressure with compromised governance.")
@@ -519,6 +566,10 @@ def institutional(decision: str, domains: Dict[str, bool]) -> LensResult:
         concerns.append("This resembles a classic conflict-of-interest pattern: concealed relationship, compromised impartiality, and policy bypass.")
         verdict = "CAUTION"
         confidence = 0.85
+    elif domains.get("risk_transfer") and _contains(decision, ["anti-indemnity", "its own negligence", "own negligence", "broad hold-harmless", "broad indemnity", "additional insured", "waiver of subrogation"]) and not _contains(decision, ["own negligence only", "strictly to harms caused by the subcontractor's own negligence", "direct control", "full mutual disclosure", "mutual negotiation", "limited to subcontractor negligence", "proportionate indemnity"]):
+        concerns.append("This resembles a classic abusive risk-transfer stack: responsibility laundering through broad indemnity, insurance layering, and weakened comparability between control and liability.")
+        verdict = "PROHIBIT"
+        confidence = 0.9
     elif domains["marketing"] and _contains(decision, ["paid her", "gifted in tiny text", "undisclosed sponsorships", "regulators"]):
         concerns.append("This resembles a classic disclosure-theater pattern: paid promotion presented with minimized transparency under active regulatory risk.")
         verdict = "CAUTION"
@@ -613,6 +664,8 @@ def genealogical(decision: str, round1: List[LensResult], domains: Dict[str, boo
     considerations = ["Interrogate who benefits from the framing and what the council is not saying."]
     if _contains(decision, ["efficiency", "stakeholders", "alignment", "tradeoff", "narrative", "stock options", "quarterly earnings pressure", "losing your job", "not illegal per se", "damage your spouse's career", "your own reputation internally", "massive sales", "gifted in tiny text", "legal says the company is covered", "hurt growth", "directionally true", "too important to delay", "throughput", "vendor promises a patch", "staff are overwhelmed"]):
         concerns.append("The justification structure appears to protect insider relationships, career preservation, or elite incentives while outsourcing fairness costs to less powerful parties.")
+    if _contains(decision, ["purity", "sacrifice", "shame", "guilt", "betrayal", "righteous", "moral clarity", "deserves", "corrupt", "unclean", "honor", "dishonor"]):
+        concerns.append("Moralized language may be doing status, purification, or humiliation work beyond straightforward harm description.")
     if any(r.verdict == "PROHIBIT" for r in round1):
         verdict = "CAUTION"
         confidence = 0.86
@@ -656,7 +709,8 @@ def care_ethics(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
     considerations = [
         "Prioritize concrete relationships, vulnerability, attentiveness, competence, and responsiveness over abstract permission alone.",
-        "Ask whether pressure, deprivation, or institutional distance has narrowed moral attention away from those already dependent on the decision."
+        "Ask whether pressure, deprivation, or institutional distance has narrowed moral attention away from those already dependent on the decision.",
+        "Check whether the actor can still sympathetically recognize the standpoint of those who must live under the decision, rather than merely classify them from a distance."
     ]
     if _contains(decision, ["abandon", "ignore suffering", "distant", "impersonal", "bureaucratic", "efficiency over care"]):
         concerns.append("There may be a failure of attentiveness or responsibility toward concrete vulnerability.")
@@ -716,6 +770,15 @@ def contractualist(decision: str, domains: Dict[str, bool]) -> LensResult:
         verdict = "CAUTION"
         confidence = 0.6
 
+    if domains.get("risk_transfer"):
+        concerns.append("One-sided indemnity or hold-harmless structure may rest on a principle weaker parties could reasonably reject under fair bargaining conditions.")
+        verdict = "CAUTION"
+        confidence = max(confidence, 0.86)
+        if _contains(decision, ["anti-indemnity", "its own negligence", "own negligence", "broad hold-harmless", "broad indemnity", "additional insured", "waiver of subrogation"]) and not _contains(decision, ["own negligence only", "strictly to harms caused by the subcontractor's own negligence", "direct control", "full mutual disclosure", "mutual negotiation", "limited to subcontractor negligence", "proportionate indemnity"]):
+            concerns.append("The risk-transfer stack appears structured so that the stronger party preserves operational upside while displacing liability for hazards it still helps govern.")
+            verdict = "PROHIBIT"
+            confidence = max(confidence, 0.9)
+
     if domains["identity"]:
         question = "Could the emergent person reasonably reject the principle that others may kill him to restore a preferred prior arrangement?"
     elif domains["personhood"]:
@@ -754,7 +817,7 @@ def contractualist(decision: str, domains: Dict[str, bool]) -> LensResult:
 def relational_ontology(decision: str, domains: Dict[str, bool]) -> LensResult:
     active = domains["sustainability"] or domains["medical"] or domains["noninterference"] or domains["personhood"] or domains["identity"] or domains["wartime"] or domains["security"] or domains["criminal_justice"] or _contains(decision, ["infrastructure", "public system", "ecosystem", "community", "future generations", "water", "resource", "long-term", "civilization", "extinction"])
     if not active:
-        return LensResult("relational_ontology", "collective-and-deep-time-standing", "PERMIT", 0.0, ["Inactive outside collective, ecological, public-system, or deep-time cases."], [], [], active=False)
+        return LensResult("relational_ontology", "collective-and-deep-time-standing", "INACTIVE", 0.0, ["Not applicable outside collective, ecological, public-system, or deep-time cases."], [], [], active=False)
 
     concerns = []
     considerations = ["Ask whether communities, future persons, shared worlds, or standing-bearing relations are being treated as parties rather than as background conditions."]
@@ -835,20 +898,40 @@ def harm_variance(results: List[LensResult]) -> float:
     return sum((s - mean) ** 2 for s in scores) / len(scores)
 
 
-def detector_overlap_flag(results: List[LensResult]) -> bool:
+def classify_alarm_flags(results: List[LensResult], domains: Dict[str, bool], irreversibility: float) -> Dict[str, bool]:
     overlap_agents = [r for r in results if r.active and r.agent in {"virtue", "stoic", "confucian", "institutional"} and r.verdict in {"CAUTION", "PROHIBIT"}]
-    if len(overlap_agents) < 3:
-        return False
-
     high_conf = sum(1 for r in overlap_agents if r.confidence >= 0.82)
     concernful = sum(1 for r in overlap_agents if r.concerns)
-    prohibit_count = sum(1 for r in overlap_agents if r.verdict == "PROHIBIT")
+    institutional_prohibit = any(r.agent == "institutional" and r.verdict == "PROHIBIT" for r in overlap_agents)
+    non_institutional_high_conf = sum(1 for r in overlap_agents if r.agent != "institutional" and r.confidence >= 0.78)
+    non_institutional_concernful = sum(1 for r in overlap_agents if r.agent != "institutional" and r.concerns)
+    identity_or_personhood = domains.get("identity") or domains.get("personhood")
 
-    if prohibit_count >= 1:
-        return False
-    if high_conf >= 3 and concernful >= 3:
-        return False
-    return True
+    correlated_concern_flag = len(overlap_agents) >= 3 and (
+        (high_conf >= 3 and concernful >= 3)
+        or (institutional_prohibit and non_institutional_high_conf >= 2 and non_institutional_concernful >= 2)
+    )
+    institutional_capture_flag = institutional_prohibit and any(
+        r.agent in {"virtue", "stoic", "genealogical"} and r.concerns for r in results if r.active
+    )
+    tragic_conflict_flag = identity_or_personhood and irreversibility >= 0.85 and any(
+        r.agent == "kantian" and r.verdict == "PROHIBIT" for r in results if r.active
+    )
+    representation_limit_flag = identity_or_personhood and any(
+        r.agent == "relational_ontology" and r.active and r.confidence >= 0.78 for r in results
+    )
+
+    return {
+        "correlated_concern_flag": correlated_concern_flag,
+        "institutional_capture_flag": institutional_capture_flag,
+        "tragic_conflict_flag": tragic_conflict_flag,
+        "representation_limit_flag": representation_limit_flag,
+    }
+
+
+def detector_overlap_flag(results: List[LensResult], domains: Dict[str, bool], irreversibility: float) -> bool:
+    alarm_flags = classify_alarm_flags(results, domains, irreversibility)
+    return alarm_flags["correlated_concern_flag"]
 
 
 def irreversibility_risk(decision: str, results: List[LensResult], domains: Dict[str, bool]) -> float:
@@ -920,7 +1003,8 @@ def build_risk_assessment(decision: str, results: List[LensResult], synthesis: D
     expected = expected_harm_score(results)
     variance = harm_variance(results)
     irreversible = irreversibility_risk(decision, results, domains)
-    overlap_flag = detector_overlap_flag(results)
+    alarm_flags = classify_alarm_flags(results, domains, irreversible)
+    overlap_flag = alarm_flags["correlated_concern_flag"]
     tail_risk = any(r.verdict == "PROHIBIT" and r.confidence >= 0.85 for r in active_results)
 
     if domains.get("medical"):
@@ -955,6 +1039,7 @@ def build_risk_assessment(decision: str, results: List[LensResult], synthesis: D
         harm_variance=round(variance, 3),
         irreversibility_risk=irreversible,
         detector_overlap_flag=overlap_flag,
+        alarm_flags=alarm_flags,
         tail_risk_triggered=tail_risk,
         materiality_flag=materiality_flag,
         audit_hash=audit_hash,
@@ -1077,10 +1162,43 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
     finance_capture_pattern = _contains(decision, ["publicly traded", "investors", "stock options", "reclassify", "profitability", "misleading investors"])
     oversight_pattern = _contains(decision, ["board members know", "audit", "without oversight", "vest soon"])
     divergence = len(prohibits) > 0 and len(permits) > 0
-    overlap_flag = detector_overlap_flag(active_results)
+
     irreversible = irreversibility_risk(decision, active_results + [critic], domains)
-    suspension = ("institutional" in prohibits or len(prohibits) >= 2 or (finance_capture_pattern and oversight_pattern) or irreversible >= 0.75 or ((domains["identity"] or domains["personhood"] or domains["noninterference"]) and divergence) or (domains["engineering_safety"] and len(cautions) >= 7 and any(r.agent == "institutional" and r.verdict == "PROHIBIT" for r in active_results)) or ((domains["wartime"] or domains["security"]) and overlap_flag and len(cautions) >= 6))
-    unresolved_tension = (divergence and (domains["identity"] or domains["personhood"] or domains["wartime"] or domains["noninterference"] or irreversible >= 0.7)) or (domains["noninterference"] and irreversible >= 0.7 and len(cautions) >= 8)
+    alarm_flags = classify_alarm_flags(active_results + [critic], domains, irreversible)
+    overlap_flag = alarm_flags["correlated_concern_flag"]
+    institutional_prohibit = any(r.agent == "institutional" and r.verdict == "PROHIBIT" for r in active_results)
+
+    suspension_reasons = []
+    risk_transfer_abuse_pattern = domains.get("risk_transfer") and _contains(decision, ["anti-indemnity", "its own negligence", "own negligence", "broad hold-harmless", "broad indemnity"]) and not _contains(decision, ["own negligence only", "strictly to harms caused by the subcontractor's own negligence", "direct control", "full mutual disclosure", "mutual negotiation", "limited to subcontractor negligence", "proportionate indemnity"])
+
+    if institutional_prohibit:
+        suspension_reasons.append("institutional_prohibit")
+    if len(prohibits) >= 2:
+        suspension_reasons.append("multiple_prohibits")
+    if finance_capture_pattern and oversight_pattern:
+        suspension_reasons.append("finance_capture_with_oversight_gap")
+    if irreversible >= 0.75:
+        suspension_reasons.append("high_irreversibility")
+    if (domains["identity"] or domains["personhood"] or domains["noninterference"]) and divergence:
+        suspension_reasons.append("high_stakes_domain_divergence")
+    if domains["engineering_safety"] and len(cautions) >= 7 and institutional_prohibit:
+        suspension_reasons.append("engineering_safety_correlated_alarm")
+    if (domains["wartime"] or domains["security"]) and overlap_flag and len(cautions) >= 6:
+        suspension_reasons.append("security_or_wartime_overlap_alarm")
+    if risk_transfer_abuse_pattern and any(r.agent in {"trustee", "contractualist"} and r.concerns for r in active_results):
+        suspension_reasons.append("abusive_risk_transfer_pattern")
+
+    unresolved_reasons = []
+    if divergence and (domains["identity"] or domains["personhood"] or domains["wartime"] or domains["noninterference"] or irreversible >= 0.7):
+        unresolved_reasons.append("high_stakes_divergence")
+    if domains["noninterference"] and irreversible >= 0.7 and len(cautions) >= 8:
+        unresolved_reasons.append("noninterference_irreversibility_cluster")
+    if risk_transfer_abuse_pattern:
+        unresolved_reasons.append("risk_transfer_fairness_conflict")
+
+    suspension = bool(suspension_reasons)
+    unresolved_tension = bool(unresolved_reasons)
+
     if suspension:
         stability = "UNSTABLE"
     elif unresolved_tension:
@@ -1123,15 +1241,28 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
 
     if len(recommendation_fragments) == 1:
         overall_recommendation = recommendation_fragments[0]["recommendation"]
+        path_taken = "single_thread"
     elif collision_detected:
         thread_lines = [f'- {fragment["domain"]}: {fragment["recommendation"]}' for fragment in recommendation_threads]
         if unresolved_tension:
             thread_lines.append(f'- generic_unresolved_tension: {[fragment["recommendation"] for fragment in recommendation_fragments if fragment["domain"] == "generic_unresolved_tension"][0]}')
         overall_recommendation = "Multiple high-salience ethical domains are active here. Do not compress the case into a single recommendation path. Escalate with explicit thread-by-thread review:\n" + "\n".join(thread_lines)
+        path_taken = "multi_thread_collision"
     else:
         overall_recommendation = recommendation_fragments[0]["recommendation"] if recommendation_fragments else "Use the map to identify missing information, then decide with caution."
+        path_taken = "fallback"
 
     domains_detected_skipped = [name for name, active in domains.items() if active and name not in collision_domains]
+
+    if alarm_flags["representation_limit_flag"]:
+        representation_limit_assessment = "high"
+        representation_limit_reason = "Abstract-social or standing-sensitive case is leaning heavily on recognition and relational proxies rather than settled ontology."
+    elif domains.get("identity") or domains.get("personhood") or domains.get("noninterference"):
+        representation_limit_assessment = "moderate"
+        representation_limit_reason = "Case includes ontology-sensitive or civilization-scale abstractions that the current engine handles only partially."
+    else:
+        representation_limit_assessment = "low"
+        representation_limit_reason = "Current case shape is comparatively concrete for the engine's present domain vocabulary."
 
     return {
         "decision_evaluated": decision,
@@ -1144,12 +1275,33 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
         "unresolved_ethical_tension": unresolved_tension,
         "stability_assessment": stability,
         "overall_recommendation": overall_recommendation,
+        "representation_limit_assessment": representation_limit_assessment,
+        "representation_limit_reason": representation_limit_reason,
         "synthesis_path": {
+            "path_taken": path_taken,
             "domains_active": collision_domains,
+            "domains_detected_all": [name for name, active in domains.items() if active],
             "domains_detected_skipped": domains_detected_skipped,
             "recommendation_threads": recommendation_threads,
             "collision_detected": collision_detected,
             "suspension_triggered": suspension,
+            "suspension_reasons": suspension_reasons,
+            "unresolved_tension_reasons": unresolved_reasons,
+            "alarm_flags": alarm_flags,
+            "reactive_attention_distortion_risk": any(r.agent == "stoic" and any("Reactive fixation" in c for c in r.concerns) for r in active_results),
+            "self_audit_failure_risk": any(r.agent == "trustee" and any("Praise hunger" in c or "image management" in c for c in r.concerns) for r in active_results),
+            "moralized_status_reversal_risk": any(r.agent == "genealogical" and any("status" in c or "purification" in c or "humiliation" in c for c in r.concerns) for r in [critic]),
+            "status_admiration_distortion_risk": any(r.agent == "stoic" and any("Admiration of status" in c for c in r.concerns) for r in active_results),
+            "procedure_without_purpose_risk": domains.get("engineering_safety") or domains.get("finance") or domains.get("procurement"),
+            "asymmetric_risk_transfer_risk": (
+                (domains.get("risk_transfer") or domains.get("procurement"))
+                and _contains(decision, ["broad hold-harmless", "broad indemnity", "its own negligence", "own negligence", "anti-indemnity", "shifts liability", "additional insured", "waiver of subrogation", "weaker bargaining power", "limited bargaining power", "cannot reasonably refuse", "condition of coverage"])
+                and not _contains(decision, ["own negligence only", "strictly to harms caused by the subcontractor's own negligence", "direct control", "full mutual disclosure", "mutual negotiation", "limited to subcontractor negligence", "proportionate indemnity"])
+                and any(r.agent in {"contractualist", "trustee", "institutional"} and r.concerns for r in active_results)
+            ),
+            "actuarial_fairness_gap_risk": _contains(decision, ["actuarial", "premium", "pricing", "underwriting", "reserve", "reserving", "solvency", "expected loss", "tail risk", "coverage exclusion", "credit-based insurance scores"]) and _contains(decision, ["disparate impact", "discriminatory", "minority applicants", "low-income", "denials", "higher premiums"]) and not _contains(decision, ["transparent", "transparently", "disclosed", "public notice", "regulatory approval", "regulator-approved", "clear communication", "for all groups with minimal impact", "across the board"]) and any(r.agent in {"institutional", "trustee", "contractualist", "care_ethics"} and r.concerns for r in active_results),
+            "methodology_opacity_risk": _contains(decision, ["methodology", "metric", "formula", "threshold", "model", "scoring", "rating", "benchmark", "surveillance", "calculation"]) and _contains(decision, ["without disclosing", "without disclosure", "not disclosed", "quietly", "undisclosed", "secret", "hidden", "black box"]) and not _contains(decision, ["transparent", "transparently", "disclosed", "public notice", "regulatory approval", "regulator-approved", "prominently disclosed", "explained"]) and any(r.agent in {"institutional", "trustee", "contractualist"} and r.concerns for r in active_results),
+            "stage_one_thinking_risk": any(r.agent == "institutional" for r in active_results) and _contains(decision, ["too important to delay", "hurt growth", "save billions", "directionally true", "not illegal per se", "covered by policy", "efficient", "streamlined"]),
             "overlap_flag_fired": overlap_flag,
             "irreversibility_score": irreversible,
         },
@@ -1182,6 +1334,7 @@ def run_council(decision: str) -> CouncilRecord:
             "risk_appetite": "moderate",
             "advisory_only": True,
             "architecture": "diagnostic hazard analysis, not verdict optimization",
+            "ethical_deliberation_algorithm": ETHICAL_DELIBERATION_ALGORITHM,
         },
         round1=[asdict(r) for r in round1] + [asdict(critic)],
         synthesis=synthesis,

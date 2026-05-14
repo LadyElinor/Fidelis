@@ -1,0 +1,1 @@
+An insurer transparently updates its underwriting model with new data sources after public notice and regulatory approval. The change improves predictive accuracy for all groups with minimal impact on existing policyholders.

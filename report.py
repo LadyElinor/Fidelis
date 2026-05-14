@@ -22,6 +22,8 @@ def to_markdown(record: Dict) -> str:
         lines.append(f"**Minority report required:** {'YES' if synth['minority_report_required'] else 'No'}")
     if 'detector_overlap_flag' in synth:
         lines.append(f"**Detector overlap flag:** {'YES' if synth['detector_overlap_flag'] else 'No'}")
+    if 'representation_limit_assessment' in synth:
+        lines.append(f"**Representation limit:** {synth['representation_limit_assessment']}")
     lines.append("")
     lines.append("## Overall recommendation")
     lines.append("")
@@ -36,6 +38,10 @@ def to_markdown(record: Dict) -> str:
         lines.append(f"- Tail risk triggered: {'YES' if risk['tail_risk_triggered'] else 'No'}")
         lines.append(f"- Irreversibility risk: {risk['irreversibility_risk']}")
         lines.append(f"- Detector overlap flag: {'YES' if risk['detector_overlap_flag'] else 'No'}")
+        if 'alarm_flags' in risk:
+            lines.append("- Alarm flags:")
+            for key, value in risk['alarm_flags'].items():
+                lines.append(f"  - {key}: {'YES' if value else 'No'}")
         lines.append(f"- Materiality flag: {'YES' if risk['materiality_flag'] else 'No'}")
         lines.append(f"- Audit hash: `{risk['audit_hash']}`")
         uncertainty = risk["uncertainty_profile"]
@@ -52,6 +58,9 @@ def to_markdown(record: Dict) -> str:
         lines.append(f"- Function: {r['function']}")
         lines.append(f"- Verdict: {r['verdict']}")
         lines.append(f"- Confidence: {r['confidence']}")
+        if r.get('active') is False:
+            note = r['considerations'][0] if r.get('considerations') else 'Not applicable in this case.'
+            lines.append(f"- Status: {note}")
         if r['concerns']:
             lines.append("- Concerns:")
             for c in r['concerns']:
@@ -72,6 +81,33 @@ def to_markdown(record: Dict) -> str:
         lines.append("")
         for f in synth['fault_lines']:
             lines.append(f"- {f['fault_line']} ({', '.join(f['agents'])})")
+        lines.append("")
+    if 'synthesis_path' in synth:
+        path_info = synth['synthesis_path']
+        lines.append("## Synthesis audit")
+        lines.append("")
+        lines.append(f"- Path taken: {path_info.get('path_taken', 'unknown')}")
+        if path_info.get('domains_detected_all'):
+            lines.append(f"- Domains detected: {', '.join(path_info['domains_detected_all'])}")
+        if path_info.get('domains_detected_skipped'):
+            lines.append(f"- Domains skipped: {', '.join(path_info['domains_detected_skipped'])}")
+        if path_info.get('suspension_reasons'):
+            lines.append("- Suspension reasons:")
+            for reason in path_info['suspension_reasons']:
+                lines.append(f"  - {reason}")
+        if path_info.get('unresolved_tension_reasons'):
+            lines.append("- Unresolved tension reasons:")
+            for reason in path_info['unresolved_tension_reasons']:
+                lines.append(f"  - {reason}")
+        if path_info.get('alarm_flags'):
+            lines.append("- Synthesis alarm flags:")
+            for key, value in path_info['alarm_flags'].items():
+                lines.append(f"  - {key}: {'YES' if value else 'No'}")
+        for key in ['reactive_attention_distortion_risk', 'self_audit_failure_risk', 'moralized_status_reversal_risk', 'status_admiration_distortion_risk', 'procedure_without_purpose_risk', 'asymmetric_risk_transfer_risk', 'actuarial_fairness_gap_risk', 'methodology_opacity_risk', 'stage_one_thinking_risk']:
+            if key in path_info:
+                lines.append(f"- {key}: {'YES' if path_info[key] else 'No'}")
+        if synth.get('representation_limit_reason'):
+            lines.append(f"- Representation note: {synth['representation_limit_reason']}")
         lines.append("")
     if synth['unresolved_questions']:
         lines.append("## Unresolved questions")
