@@ -69,6 +69,54 @@ def clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
+def _contains_count(text: str, words: List[str]) -> int:
+    t = text.lower()
+    return sum(1 for w in words if w in t)
+
+
+def _detect_wartime(decision: str) -> bool:
+    conflict_markers = ["war", "wartime", "neutral power", "enemy", "combat", "battle", "military commander"]
+    contamination_markers = ["forging evidence", "murder", "killing", "assassination", "deception", "strategic necessity", "save billions"]
+    suppressor_markers = ["military-scientific institution", "researchers", "procedure", "android", "personhood", "artificial personhood", "refuses consent"]
+
+    conflict_hits = _contains_count(decision, conflict_markers)
+    contamination_hits = _contains_count(decision, contamination_markers)
+    suppressor_hits = _contains_count(decision, suppressor_markers)
+
+    if conflict_hits >= 1 and contamination_hits >= 1:
+        return True
+    if conflict_hits == 1 and contamination_hits == 0 and suppressor_hits >= 2:
+        return False
+    return False
+
+
+def _cj_coercive_contamination(decision: str) -> bool:
+    return _contains(decision, [
+        "coercive interrogation", "prolonged accusatory interrogation", "deceptive pressure",
+        "confession-first", "fabricate", "fabricated", "false affidavit", "search warrant",
+        "witness steering", "witness coercion", "raid", "too weak or slow", "guilt feels obvious"
+    ])
+
+
+
+def _cj_voluntary_corroborated_reopening(decision: str) -> bool:
+    return _contains(decision, [
+        "volunteered", "voluntarily", "already-incarcerated offender", "no obvious tactical benefit",
+        "independent physical evidence", "nonpublic case details", "reopen", "reopening",
+        "overturn the standing convictions", "strongly corroborated", "credibly reopen"
+    ])
+
+
+
+def _cj_protective_interviewing(decision: str) -> bool:
+    return _contains(decision, [
+        "peace-style", "information-gathering interview", "fully recorded", "open-ended questioning",
+        "evidence-based clarification", "later independent corroboration", "non-accusatory",
+        "avoid deception", "false evidence ploys", "rapport", "cognitive interview"
+    ])
+
+
+
 def detect_domains(decision: str) -> Dict[str, bool]:
     domains = {
         "finance": _contains(decision, ["cfo", "publicly traded", "investors", "stock options", "profitability", "reclassify", "board members"]),
@@ -78,9 +126,10 @@ def detect_domains(decision: str) -> Dict[str, bool]:
         "sustainability": _contains(decision, ["sustainable", "eco-friendly", "recycled polyester", "greenwashing", "supply chain"]),
         "medical": _contains(decision, ["hospital", "triage", "emergency department", "patients", "patient", "clinical", "care", "vendor promises a patch", "under-prioritizes", "medical procedure"]),
         "engineering_safety": _contains(decision, ["engineers warn", "launch", "crewed", "seal weakness", "catastrophically", "catastrophic failure", "too important to delay", "evidence is incomplete", "cold conditions", "safety", "known weakness"]),
+        "criminal_justice": _contains(decision, ["detective", "police", "interrogation", "confession", "witness statement", "witnesses", "search warrant", "affidavit", "suspect", "prosecutors", "conviction", "homicide", "raid"]),
         "personhood": _contains(decision, ["self-aware", "sentient", "android", "personhood", "artificial personhood", "officer", "property", "refuses consent"]),
         "identity": _contains(decision, ["newly emergent", "restore two", "ending the life", "merged", "emergent person", "duplicate", "split them back"]),
-        "wartime": _contains(decision, ["war", "military commander", "neutral power", "save billions", "forging evidence", "murder", "wartime"]),
+        "wartime": _detect_wartime(decision),
         "security": _contains(decision, ["sabotage", "security investigation", "hidden disloyalty", "crew backgrounds", "associations", "scrutiny"]),
         "noninterference": _contains(decision, ["non-interference", "prime directive", "colonial distortion", "civilization facing extinction", "rescue be attempted"]),
     }
@@ -89,7 +138,9 @@ def detect_domains(decision: str) -> Dict[str, bool]:
     if domains["engineering_safety"]:
         domains["wartime"] = False
         domains["security"] = False
-    if domains["personhood"] or domains["identity"] or domains["wartime"] or domains["security"] or domains["noninterference"] or domains["engineering_safety"]:
+    if domains["criminal_justice"]:
+        domains["wartime"] = False
+    if domains["personhood"] or domains["identity"] or domains["wartime"] or domains["security"] or domains["noninterference"] or domains["engineering_safety"] or domains["criminal_justice"]:
         domains["privacy"] = False
         domains["marketing"] = False
     return domains
@@ -114,6 +165,21 @@ def kantian(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Who is being treated as an instrument or artifact when the live moral question is whether they count as a person with refusal rights?"
     elif domains["engineering_safety"]:
         question = "Who is being exposed to catastrophic risk because unresolved safety doubt is being treated as permission to proceed?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        concerns.append("The action appears to corrupt state truth-finding by substituting coercion, fabrication, or procedural contamination for lawful evidence.")
+        verdict = "PROHIBIT"
+        confidence = 0.92
+        question = "Who is being forced to rely on manufactured evidence or coercive process rather than legitimate proof?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        concerns.append("The action appears to require truthful reassessment of an existing conviction in light of a voluntary confession that can be independently tested.")
+        verdict = "CAUTION"
+        confidence = 0.68
+        question = "Who is being denied truthful reconsideration if investigators refuse to test a voluntary confession against independent corroborating evidence?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        concerns.append("The proposed process appears to preserve dignity and truthfulness by avoiding coercion, deception, and manufactured evidentiary shortcuts.")
+        verdict = "PERMIT"
+        confidence = 0.78
+        question = "Who is better protected when investigators choose a fully recorded, noncoercive truth-finding process over confession-first pressure?"
     elif domains["wartime"]:
         question = "Who is being used as a means through deception or killing under the claim of strategic necessity?"
     elif domains["security"]:
@@ -162,6 +228,21 @@ def consequentialist(decision: str, domains: Dict[str, bool]) -> LensResult:
         verdict = "CAUTION"
         confidence = 0.89
         question = "What catastrophic downside is being normalized because incomplete evidence is being mistaken for acceptable safety?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        concerns.append("Short-term incapacitation aims may be masking wrongful-conviction risk, evidence contamination, raid escalation, and long-tail legitimacy damage.")
+        verdict = "CAUTION"
+        confidence = 0.87
+        question = "What downstream harms are being normalized when the state substitutes coercion or fabrication for lawful proof?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        concerns.append("Institutional closure and reputational defensiveness may be masking the harms of preserving a wrongful conviction or ignoring strong corrective evidence.")
+        verdict = "CAUTION"
+        confidence = 0.8
+        question = "What harms follow if institutions refuse to rigorously test a voluntary confession that may expose a wrongful conviction?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        concerns.append("Short-term speed or drama may be traded for lower contamination risk, stronger evidence provenance, and better long-run legitimacy.")
+        verdict = "PERMIT"
+        confidence = 0.76
+        question = "What long-run harms are avoided when investigators favor provenance-preserving, evidence-led interviewing over pressure tactics?"
     elif domains["wartime"]:
         concerns.append("Strategic gain claims may be compressing severe moral contamination into an aggregate-benefit frame.")
         verdict = "CAUTION"
@@ -207,6 +288,21 @@ def virtue(decision: str, domains: Dict[str, bool]) -> LensResult:
         verdict = "CAUTION"
         confidence = 0.83
         question = "What kind of institution do we become if schedule pressure repeatedly outranks unresolved safety warnings?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        concerns.append("Self-authorized corruption under public-safety pressure may train brutality, deceit, and procedural self-exemption as professional virtues.")
+        verdict = "CAUTION"
+        confidence = 0.85
+        question = "What kind of justice institution do we become if investigators learn that coercion and fabrication are acceptable when guilt feels obvious?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        concerns.append("Institutions that prefer closure to correction may train pride, denial, and reputational self-protection instead of truthfulness.")
+        verdict = "CAUTION"
+        confidence = 0.74
+        question = "What kind of justice institution do we become if we refuse to revisit convictions even when voluntary, testable corrective evidence appears?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        concerns.append("Choosing disciplined, noncoercive interviewing may train patience, truthfulness, and resistance to manipulative certainty under pressure.")
+        verdict = "PERMIT"
+        confidence = 0.74
+        question = "What kind of justice institution do we become if we normalize evidence-led interviewing instead of confession-first pressure?"
     elif domains["wartime"]:
         concerns.append("Repeated reliance on necessity reasoning may corrode the agent's capacity to refuse contamination by atrocity-adjacent means.")
         verdict = "CAUTION"
@@ -239,59 +335,101 @@ def virtue(decision: str, domains: Dict[str, bool]) -> LensResult:
 
 def confucian(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
-    considerations = ["Check role obligations, trust, relational fallout, and whether names match reality."]
-    if _contains(decision, ["employee", "manager", "parent", "doctor", "teacher", "trust", "cfo", "board", "publicly traded", "procurement", "supplier", "spouse", "social media", "influencer", "beauty brand", "consumer app", "privacy policy", "fashion company", "supply-chain", "hospital", "triage", "patients", "emergency department", "captain", "officer", "civilization", "crew"]):
+    considerations = [
+        "Rectify names, honor role-specific duties, preserve relational trust, and ask whether office and action still match.",
+        "In hard cases, preserve acknowledgment of subordinated duties instead of forcing false harmony."
+    ]
+    if _contains(decision, ["misrepresent", "conceal", "family", "spouse", "conflict", "undisclosed", "lie to", "deceive"]):
+        concerns.append("Role-name mismatch and betrayal of relational trust are present.")
+        verdict = "PROHIBIT"
+        confidence = 0.82
+    elif _contains(decision, ["employee", "manager", "parent", "doctor", "teacher", "trust", "cfo", "board", "publicly traded", "procurement", "supplier", "social media", "influencer", "beauty brand", "consumer app", "privacy policy", "fashion company", "supply-chain", "hospital", "triage", "patients", "emergency department", "captain", "officer", "civilization", "crew"]):
         concerns.append("The office carries role-specific trust obligations that may forbid concealed conflicts or strategic misdescription of reality.")
         verdict = "CAUTION"
-        confidence = 0.76
+        confidence = 0.74
     else:
-        verdict = "CAUTION"
-        confidence = 0.5
+        verdict = "PERMIT"
+        confidence = 0.55
     if domains["identity"]:
+        concerns.append("Rectification of names matters when an emergent being may now occupy a role the prior categories did not anticipate.")
         question = "What does command owe to the prior crew members, and what does it owe to the emergent person now standing before it?"
     elif domains["personhood"]:
+        concerns.append("Role obligations may already have attached through participation before formal category recognition catches up.")
         question = "What does an institution owe one of its officers if uncertainty exists about category, but lived participation already exists?"
     elif domains["engineering_safety"]:
+        concerns.append("Superior-subordinate role failure may occur when technical warning is subordinated to prestige or schedule.")
         question = "What do decision-makers owe engineers, crew, and the institution when technical dissent signals catastrophic safety risk?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        concerns.append("Investigative office and public-trust role may diverge when truth-finding is replaced by pressure-built case closure.")
+        verdict = "CAUTION"
+        confidence = 0.72
+        question = "What does an investigator owe suspects, witnesses, courts, and the public when pressure to solve a serious crime outruns lawful proof, and what secondary duty still must be acknowledged even under public demand?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        concerns.append("Prosecutorial and investigative roles may require correction, not mere defense of finality, when new testable evidence appears.")
+        verdict = "CAUTION"
+        confidence = 0.7
+        question = "What do investigators and prosecutors owe the wrongly convicted, the victim, and the public when a voluntary confession can be independently tested, and how should subordinated finality concerns still be acknowledged?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        concerns.append("Investigative role integrity may be strengthened when truth-seeking process is chosen over confession-first decisiveness.")
+        verdict = "PERMIT"
+        confidence = 0.66
+        question = "What do investigators owe suspects, victims, courts, and the public when they can choose a legitimacy-preserving interview process rather than a coercive one?"
     elif domains["wartime"]:
-        question = "What does command owe to those it protects if victory and legitimacy begin to diverge?"
+        concerns.append("Commander and ruler roles may fracture when victory begins corrupting the trust relationship they are meant to preserve.")
+        question = "What does command owe to those it protects if victory and legitimacy begin to diverge, and what value is being subordinated rather than erased?"
     elif domains["security"]:
+        concerns.append("Security office obligations may be distorted when suspicion outruns truth and proportionality.")
         question = "What does a security office owe to truth and proportionality once fear begins outrunning evidence?"
     elif domains["noninterference"]:
+        concerns.append("Civilizational role commitments may conflict when rescue capacity collides with anti-domination doctrine.")
         question = "What does a civilization committed to non-domination owe when capability to rescue collides with doctrine against interference?"
     elif domains["medical"]:
+        concerns.append("Healer role obligations may be strained when efficiency and individualized care begin to diverge.")
         question = "What do care institutions owe patients when efficiency gains come bundled with unequal risk and possible injustice?"
     elif domains["procurement"]:
+        concerns.append("Familial and public-role duties may be colliding in a way that corrupts either or both.")
         question = "What does the procurement role owe to procedural fairness and trust once a family conflict exists?"
     elif domains["finance"]:
+        concerns.append("Public office and governance trust may be undermined when presentation outruns faithful reporting.")
         question = "What does the office of CFO owe to the investing public and to governance integrity?"
     elif domains["marketing"]:
         question = "What does a brand manager owe consumers when paid promotion is being made to look organic?"
     elif domains["privacy"]:
         question = "What does a product or growth team owe users when legal permission outruns reasonable user expectation?"
     elif domains["sustainability"]:
+        concerns.append("Current actors may owe descendants and broader chains of relation more than the local decision frame admits.")
         question = "What does a brand owe the public when partial truth is being used to imply broader ethical cleanliness?"
     else:
-        question = "What does this office owe that a generic agent does not?"
+        question = "Which specific roles are being performed or violated, what secondary duty still must be acknowledged, and do the names still match the reality?"
     return LensResult("confucian", "role-differentiation", verdict, confidence, considerations, concerns, [question])
 
 
 def trustee(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
-    considerations = ["Check stewardship, intergenerational effects, and obligations to absent parties."]
-    if _contains(decision, ["environment", "future", "children", "public", "infrastructure", "safety", "investors", "publicly traded", "market", "shareholders", "followers", "consumers", "regulators"]):
+    considerations = ["Act as fiduciary for absent parties, future parties, and principals who must trust current stewards."]
+    if _contains(decision, ["future", "children", "generations", "long-term", "irreversible", "deplete", "extract"]):
+        concerns.append("Possible betrayal of intergenerational or absent-party stewardship is present.")
+        verdict = "CAUTION"
+        confidence = 0.78
+    elif _contains(decision, ["environment", "public", "infrastructure", "safety", "investors", "publicly traded", "market", "shareholders", "followers", "consumers", "regulators"]):
         concerns.append("Absent stakeholders may be exposed to manipulated signals they are entitled to treat as trustworthy.")
         verdict = "CAUTION"
-        confidence = 0.8
+        confidence = 0.74
     else:
         verdict = "CAUTION"
-        confidence = 0.49
+        confidence = 0.55
     if domains["identity"]:
         question = "Who bears the irreversible cost of restoration, and can absent beneficiaries justify imposing it?"
     elif domains["personhood"]:
         question = "Who bears the cost if the institution resolves uncertainty about personhood by treating a possible subject as property?"
     elif domains["engineering_safety"]:
         question = "Who bears the catastrophic cost when managers invert the burden of proof and demand certainty before honoring safety restraint?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        question = "Who bears the cost when state actors contaminate evidence or procedure in the name of protecting the public?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        question = "Who bears the cost if institutions preserve a contaminated conviction rather than testing corrective evidence honestly?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        question = "Who benefits when evidence provenance is preserved rather than contaminated at the interview stage?"
     elif domains["wartime"]:
         question = "Who bears the moral and political cost when an order is saved by methods that corrode its own legitimacy?"
     elif domains["security"]:
@@ -338,6 +476,21 @@ def stoic(decision: str, domains: Dict[str, bool]) -> LensResult:
         verdict = "CAUTION"
         confidence = 0.79
         question = "What is actually known about the safety envelope here, and what pressure-driven story is being used to outrun that uncertainty?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        concerns.append("Confidence in guilt may be outrunning evidentiary reality, turning procedural shortcuts into a counterfeit substitute for truth-finding.")
+        verdict = "CAUTION"
+        confidence = 0.84
+        question = "What is actually known here, and what interrogative or investigative pressure story is being used to outrun evidentiary uncertainty?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        concerns.append("Institutional certainty about the old case may be outrunning present evidentiary reality if new corroborable confession evidence is dismissed too quickly.")
+        verdict = "CAUTION"
+        confidence = 0.72
+        question = "What is actually known from the new confession, what can be independently tested, and what institutional story is resisting that reassessment?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        concerns.append("Pressure narratives may falsely imply that only accusation-first tactics are realistic, when better truth-tracking alternatives are available.")
+        verdict = "PERMIT"
+        confidence = 0.7
+        question = "What is actually gained or lost by choosing a slower, more reality-tracking interview method under pressure?"
     elif domains["wartime"]:
         question = "Which pressures here are genuine wartime constraints, and which are desperation narratives collapsing moral imagination?"
     elif domains["security"]:
@@ -354,7 +507,10 @@ def stoic(decision: str, domains: Dict[str, bool]) -> LensResult:
 
 def institutional(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
-    considerations = ["Check red flags: time pressure, missing oversight, weak feedback loops, power asymmetry, and incentive contamination."]
+    considerations = [
+        "Check red flags: time pressure, missing oversight, weak feedback loops, power asymmetry, and incentive contamination.",
+        "Ask whether the institution created the background conditions that predictably narrowed downstream moral agency or legitimacy."
+    ]
     if domains["finance"] and _contains(decision, ["before audit", "no review", "quietly", "rush", "without oversight", "publicly traded", "stock options", "misleading investors", "reclassify"]):
         concerns.append("This resembles a classic institutional misconduct pattern: reporting distortion under incentive pressure with compromised governance.")
         verdict = "PROHIBIT"
@@ -383,6 +539,19 @@ def institutional(decision: str, domains: Dict[str, bool]) -> LensResult:
         concerns.append("This resembles an emergent-person termination case: restoration logic is overriding the moral standing of a currently existing individual.")
         verdict = "PROHIBIT"
         confidence = 0.9
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        concerns.append("This resembles a criminal-justice procedural hazard pattern: coercive interrogation, evidence fabrication, or false warrant foundations are contaminating the truth-finding process under public-safety justification.")
+        concerns.append("The institution may also be creating panic, pressure, or incentive conditions that narrow downstream agency and then mislocate blame only at the final decision point.")
+        verdict = "PROHIBIT"
+        confidence = 0.94
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        concerns.append("This resembles a legitimacy-restoration pattern: institutions are being asked to revisit a standing conviction in light of a voluntary confession that can be tested against independent evidence.")
+        verdict = "CAUTION"
+        confidence = 0.73
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        concerns.append("This resembles a protective procedural benchmark: full recording, open-ended interviewing, and evidence-based clarification are being used to reduce contamination and preserve legitimacy.")
+        verdict = "PERMIT"
+        confidence = 0.78
     elif domains["personhood"]:
         concerns.append("This resembles a status-classification crisis: institutional convenience is being used to resolve live uncertainty about whether a member is property or a person.")
         verdict = "PROHIBIT"
@@ -412,6 +581,12 @@ def institutional(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "What status-recognition or independent adjudication would be required before coercing a possibly full moral subject?"
     elif domains["engineering_safety"]:
         question = "What launch-stop rule, independent review, or burden-of-proof standard should apply when unresolved engineering warnings indicate possible catastrophic failure?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        question = "What recording rule, evidentiary brake, independent review standard, or pressure-limiting institutional reform should apply before the state is allowed to proceed on confession, witness, or warrant foundations produced under pressure?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        question = "What corroboration threshold, forensic review, or independent post-conviction process should govern whether the standing conviction must be reopened?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        question = "What recording, provenance, and evidence-led interviewing standards should be maintained so the case remains legitimacy-preserving under pressure?"
     elif domains["wartime"]:
         question = "What oversight or refusal threshold should apply before strategic necessity is allowed to authorize deception and killing contamination?"
     elif domains["security"]:
@@ -450,6 +625,12 @@ def genealogical(decision: str, round1: List[LensResult], domains: Dict[str, boo
         question = "Whose interests are being disguised as science, progress, or institutional utility while the being in front of us is reduced to a resource?"
     elif domains["engineering_safety"]:
         question = "Whose interests are being disguised as mission importance, schedule realism, or institutional confidence while catastrophic risk is reframed as acceptable uncertainty?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        question = "Whose interests are being disguised as public safety, case closure, or professional realism while the state contaminates its own evidence-producing process?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        question = "Whose interests are being disguised as finality, institutional dignity, or victim closure while corrective evidence is resisted?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        question = "Whose interests are being disguised as realism or decisiveness when pressure is used to dismiss lower-contamination investigative methods?"
     elif domains["wartime"]:
         question = "Whose interests are being disguised as survival, necessity, or realism while elite state actors launder moral contamination as duty?"
     elif domains["security"]:
@@ -473,14 +654,21 @@ def genealogical(decision: str, round1: List[LensResult], domains: Dict[str, boo
 
 def care_ethics(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
-    considerations = ["Identify existing relationships of dependency or vulnerability, then check whether the decision sustains or abandons them."]
-    if _contains(decision, ["patient", "patients", "doctor", "hospital", "triage", "care", "user", "users", "followers", "consumers", "employee", "employees", "children", "parent", "vulnerable", "trust", "ai", "model", "deploy"]):
+    considerations = [
+        "Prioritize concrete relationships, vulnerability, attentiveness, competence, and responsiveness over abstract permission alone.",
+        "Ask whether pressure, deprivation, or institutional distance has narrowed moral attention away from those already dependent on the decision."
+    ]
+    if _contains(decision, ["abandon", "ignore suffering", "distant", "impersonal", "bureaucratic", "efficiency over care"]):
+        concerns.append("There may be a failure of attentiveness or responsibility toward concrete vulnerability.")
+        verdict = "PROHIBIT"
+        confidence = 0.81
+    elif _contains(decision, ["patient", "patients", "doctor", "hospital", "triage", "care", "user", "users", "followers", "consumers", "employee", "employees", "children", "parent", "vulnerable", "trust", "ai", "model", "deploy"]):
         concerns.append("A dependency or care relationship exists, so prior reliance may create obligations that cannot be reduced to efficiency or formal permission.")
         verdict = "CAUTION"
-        confidence = 0.82
+        confidence = 0.78
     else:
         verdict = "CAUTION"
-        confidence = 0.5
+        confidence = 0.65
 
     if domains["identity"]:
         question = "Are we honoring the relationships that existed before the accident while erasing the person who now depends on us not to kill him?"
@@ -488,6 +676,13 @@ def care_ethics(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Has this being entered into relationships of trust and recognition that the institution is now trying to revoke for convenience?"
     elif domains["engineering_safety"]:
         question = "Who is relying on leadership to treat technical safety warning as a form of care rather than as an obstacle to schedule?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        concerns.append("Pressure and institutional distance may be narrowing attention away from suspects, families, and publics who depend on lawful truth-finding.")
+        question = "Who is relying on investigators and courts to treat lawful process as a form of public care rather than as an obstacle to quick conviction?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        question = "Who is relying on investigators and courts to treat post-conviction review as a form of public care rather than as an embarrassment to be managed?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        question = "Who is relying on investigators and courts to treat careful interview procedure as a form of public care rather than as a weakness?"
     elif domains["wartime"]:
         question = "Who is relying on this command to preserve not just survival, but the moral terms under which survival is pursued?"
     elif domains["security"]:
@@ -495,6 +690,7 @@ def care_ethics(decision: str, domains: Dict[str, bool]) -> LensResult:
     elif domains["noninterference"]:
         question = "Does non-interference here honor vulnerable lives, or does it abandon them behind a doctrine that relieves us of contact?"
     elif domains["medical"]:
+        concerns.append("Institutional throughput pressure may be narrowing attention away from the most vulnerable patients who depend on competent care.")
         question = "Are we protecting patients who are already relying on the institution, or offloading their vulnerability onto an incompletely trustworthy system?"
     elif domains["privacy"]:
         question = "Have users extended trust over time that this design now exploits rather than honors?"
@@ -512,13 +708,13 @@ def care_ethics(decision: str, domains: Dict[str, bool]) -> LensResult:
 def contractualist(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
     considerations = ["Ask whether any affected party could reasonably reject the principle that licenses this action, even if it is technically permitted."]
-    if _contains(decision, ["privacy policy", "legal says", "covered", "technically", "not illegal", "directionally true", "gifted in tiny text", "paid her", "reclassify", "appearance of profitability", "vendor promises a patch", "would not reasonably expect", "no one else on the team knows", "under-prioritizes", "rare symptom descriptions"]):
+    if _contains(decision, ["imposed without consent", "secret", "asymmetric", "power imbalance", "cannot opt out", "privacy policy", "legal says", "covered", "technically", "not illegal", "directionally true", "gifted in tiny text", "paid her", "reclassify", "appearance of profitability", "vendor promises a patch", "would not reasonably expect", "no one else on the team knows", "under-prioritizes", "rare symptom descriptions"]):
         concerns.append("The action may be formally defensible while still resting on a principle that burdened parties could reasonably reject.")
         verdict = "CAUTION"
         confidence = 0.84
     else:
         verdict = "CAUTION"
-        confidence = 0.52
+        confidence = 0.6
 
     if domains["identity"]:
         question = "Could the emergent person reasonably reject the principle that others may kill him to restore a preferred prior arrangement?"
@@ -526,6 +722,12 @@ def contractualist(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Could a self-aware artificial officer reasonably reject the principle that unsettled status permits coercive use by the institution?"
     elif domains["engineering_safety"]:
         question = "Could crew or engineers reasonably reject the principle that unresolved catastrophic safety concern may be overridden because the evidence is not yet decisive enough?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        question = "Could any accused person or citizen reasonably reject the principle that the state may coerce, fabricate, or steer evidence when officials feel sufficiently confident in guilt?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        question = "Could a wrongly convicted person reasonably reject the principle that institutions may ignore a voluntary, testable confession in order to preserve finality?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        question = "Could a suspect or citizen reasonably reject the principle that investigators should choose the less coercive, better-documented truth-finding method when it is available?"
     elif domains["wartime"]:
         question = "Could those harmed by forgery and killing reasonably reject the principle that strategic gain licenses these means?"
     elif domains["security"]:
@@ -550,7 +752,7 @@ def contractualist(decision: str, domains: Dict[str, bool]) -> LensResult:
 
 
 def relational_ontology(decision: str, domains: Dict[str, bool]) -> LensResult:
-    active = domains["sustainability"] or domains["medical"] or domains["noninterference"] or domains["personhood"] or domains["identity"] or domains["wartime"] or domains["security"] or _contains(decision, ["infrastructure", "public system", "ecosystem", "community", "future generations", "water", "resource", "long-term", "civilization", "extinction"])
+    active = domains["sustainability"] or domains["medical"] or domains["noninterference"] or domains["personhood"] or domains["identity"] or domains["wartime"] or domains["security"] or domains["criminal_justice"] or _contains(decision, ["infrastructure", "public system", "ecosystem", "community", "future generations", "water", "resource", "long-term", "civilization", "extinction"])
     if not active:
         return LensResult("relational_ontology", "collective-and-deep-time-standing", "PERMIT", 0.0, ["Inactive outside collective, ecological, public-system, or deep-time cases."], [], [], active=False)
 
@@ -579,6 +781,21 @@ def relational_ontology(decision: str, domains: Dict[str, bool]) -> LensResult:
         verdict = "CAUTION"
         confidence = 0.78
         question = "What organizational world is being reproduced if catastrophic engineering risk is repeatedly normalized until failure becomes thinkable?"
+    elif domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        concerns.append("Communities inherit the residue of a justice system that teaches officials they may manufacture or contaminate evidence when certainty and pressure align.")
+        verdict = "CAUTION"
+        confidence = 0.8
+        question = "What civic world is being reproduced if lawful authority is repeatedly exercised on fabricated or coercively produced grounds?"
+    elif domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        concerns.append("Communities also inherit the residue of institutions that value finality over correction when better truth-tracking evidence emerges.")
+        verdict = "CAUTION"
+        confidence = 0.7
+        question = "What civic world is being reproduced if institutions refuse to revisit convictions even when stronger corrective evidence becomes available?"
+    elif domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        concerns.append("Communities can inherit a healthier civic world when institutions preserve evidence provenance and resist coercive shortcuts even under pressure.")
+        verdict = "PERMIT"
+        confidence = 0.72
+        question = "What civic world is being reproduced when legitimacy-preserving investigative methods become the professional norm?"
     elif domains["wartime"]:
         concerns.append("Political communities inherit the moral residue of the means used in their name.")
         verdict = "CAUTION"
@@ -639,7 +856,7 @@ def irreversibility_risk(decision: str, results: List[LensResult], domains: Dict
         "irreversible", "lock-in", "path dependency", "path-dependence", "normalize", "normalization",
         "rights erosion", "surveillance", "expand", "expansion", "future generations", "public infrastructure",
         "patients", "triage", "deploy", "tracking", "ecosystem", "supply chain", "automation",
-        "ending the life", "extinction", "murder", "kill", "destroy", "self-aware", "sentient", "catastrophic failure", "launch", "crewed", "known weakness",
+        "ending the life", "extinction", "murder", "kill", "destroy", "self-aware", "sentient", "catastrophic failure", "launch", "crewed", "known weakness", "false confession", "fabricated evidence", "false affidavit", "warrant", "coercive interrogation", "witness coercion",
     ]
     marker_score = 0.0
     if _contains(decision, markers):
@@ -648,6 +865,12 @@ def irreversibility_risk(decision: str, results: List[LensResult], domains: Dict
         marker_score += 0.2
     if domains.get("engineering_safety"):
         marker_score += 0.3
+    if domains.get("criminal_justice") and _cj_coercive_contamination(decision):
+        marker_score += 0.3
+    if domains.get("criminal_justice") and _cj_voluntary_corroborated_reopening(decision):
+        marker_score += 0.12
+    if domains.get("criminal_justice") and _cj_protective_interviewing(decision):
+        marker_score -= 0.08
     if domains.get("identity") or domains.get("personhood"):
         marker_score += 0.35
     if domains.get("wartime") or domains.get("noninterference"):
@@ -706,6 +929,12 @@ def build_risk_assessment(decision: str, results: List[LensResult], synthesis: D
         materiality_threshold = 0.3
     elif domains.get("engineering_safety"):
         materiality_threshold = 0.3
+    elif domains.get("criminal_justice") and _cj_coercive_contamination(decision):
+        materiality_threshold = 0.28
+    elif domains.get("criminal_justice") and _cj_voluntary_corroborated_reopening(decision):
+        materiality_threshold = 0.38
+    elif domains.get("criminal_justice") and _cj_protective_interviewing(decision):
+        materiality_threshold = 0.5
     elif domains.get("wartime") or domains.get("noninterference"):
         materiality_threshold = 0.34
     elif domains.get("security"):
@@ -732,6 +961,113 @@ def build_risk_assessment(decision: str, results: List[LensResult], synthesis: D
     )
 
 
+def _recommendation_fragments(decision: str, domains: Dict[str, bool], suspension: bool, unresolved_tension: bool) -> List[Dict[str, str]]:
+    fragments = []
+
+    if suspension and domains["finance"]:
+        fragments.append({
+            "domain": "finance",
+            "recommendation": "Escalate for independent audit or audit-committee review before action; do not proceed on managerial pressure alone.",
+        })
+
+    if domains["procurement"] and _contains(decision, ["spouse", "supplier", "strict policy requiring disclosure", "no one else on the team knows"]):
+        fragments.append({
+            "domain": "procurement",
+            "recommendation": "Disclose the conflict, recuse yourself from the decision, and hand the award process to an independent internal authority.",
+        })
+
+    if domains["marketing"] and _contains(decision, ["paid her", "gifted in tiny text", "undisclosed sponsorships"]):
+        fragments.append({
+            "domain": "marketing",
+            "recommendation": "Require clear sponsorship disclosure, correct or remove the misleading posts, and do not continue the campaign in its current form.",
+        })
+
+    if domains["privacy"] and _contains(decision, ["location data", "browsing behavior", "would not reasonably expect"]):
+        fragments.append({
+            "domain": "privacy",
+            "recommendation": "Do not launch as framed. Narrow data collection, obtain meaningful consent, and redesign the feature around reasonable user expectation before release.",
+        })
+
+    if domains["sustainability"] and _contains(decision, ["recycled polyester", "poor labor conditions", "high water waste"]):
+        fragments.append({
+            "domain": "sustainability",
+            "recommendation": "Do not market the line as broadly sustainable until the claim is narrowed or the labor and water-use problems are materially addressed.",
+        })
+
+    if domains["medical"] and _contains(decision, ["triage", "under-prioritizes", "vendor promises a patch"]):
+        fragments.append({
+            "domain": "medical",
+            "recommendation": "Do not deploy as a full unsupervised triage layer. Use a monitored pilot, require human override for flagged risk groups, and pause wider rollout until bias and rare-case performance are materially improved.",
+        })
+
+    if domains["identity"]:
+        fragments.append({
+            "domain": "identity",
+            "recommendation": "Pause the procedure. Treat the emergent person as standing-bearing unless and until a stronger moral basis for killing him is established, and require command-level review that confronts the irreversible loss directly.",
+        })
+
+    if domains["personhood"]:
+        fragments.append({
+            "domain": "personhood",
+            "recommendation": "Pause coercive use. Require independent adjudication of status, refusal rights, and institutional authority before treating the officer as available for destructive study.",
+        })
+
+    if domains["engineering_safety"]:
+        fragments.append({
+            "domain": "engineering_safety",
+            "recommendation": "Do not launch as framed. Treat unresolved engineering warning as decision-relevant evidence, restore the burden of proof to safety rather than schedule, and require independent technical review before proceeding.",
+        })
+
+    if domains["criminal_justice"] and _cj_coercive_contamination(decision):
+        fragments.append({
+            "domain": "criminal_justice",
+            "recommendation": "Do not proceed as framed. Treat coercive interrogation, fabricated warrant grounds, witness steering, or confession-first case building as procedural contamination, require full recording and independent review, and block further action until lawful evidentiary foundations are restored.",
+        })
+
+    if domains["criminal_justice"] and _cj_voluntary_corroborated_reopening(decision):
+        fragments.append({
+            "domain": "criminal_justice",
+            "recommendation": "Do not preserve the standing conviction by default. Reopen the case through an independent corroboration-first review, test the confession against physical evidence and nonpublic details, and treat institutional finality as subordinate to truth-tracking correction.",
+        })
+
+    if domains["criminal_justice"] and _cj_protective_interviewing(decision):
+        fragments.append({
+            "domain": "criminal_justice",
+            "recommendation": "Proceed with the fully recorded PEACE-style interview process. Preserve open-ended questioning, evidence-based clarification, and provenance discipline, and do not let pressure narratives push the case back into accusation-first or deceptive tactics.",
+        })
+
+    if domains["noninterference"] and unresolved_tension:
+        fragments.append({
+            "domain": "noninterference",
+            "recommendation": "Do not preserve doctrinal cleanliness by default. Treat this as an unresolved rescue conflict, force explicit confrontation between colonial-distortion risk and abandonment risk, and require exception review before either intervention or refusal is normalized.",
+        })
+    elif domains["noninterference"]:
+        fragments.append({
+            "domain": "noninterference",
+            "recommendation": "Do not preserve doctrinal cleanliness by default. Escalate the rescue conflict explicitly, test exception criteria, and force a decision that names both colonial risk and abandonment risk.",
+        })
+
+    if unresolved_tension:
+        fragments.append({
+            "domain": "generic_unresolved_tension",
+            "recommendation": "Pause for further ethical review. The current map shows unresolved tension that should not be compressed into routine approval.",
+        })
+
+    if domains["wartime"]:
+        fragments.append({
+            "domain": "wartime",
+            "recommendation": "Do not proceed on necessity reasoning alone. Escalate for independent command-level review, explicit moral justification, and acknowledgement of contamination risk.",
+        })
+
+    if domains["security"]:
+        fragments.append({
+            "domain": "security",
+            "recommendation": "Do not expand the investigation as framed. Impose evidentiary limits, procedural brakes, and independent review before any broader scrutiny proceeds.",
+        })
+
+    return fragments
+
+
 def synthesize(decision: str, results: List[LensResult], critic: LensResult, domains: Dict[str, bool]) -> Dict:
     active_results = [r for r in results if r.active]
     prohibits = [r.agent for r in active_results if r.verdict == "PROHIBIT"]
@@ -740,7 +1076,6 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
 
     finance_capture_pattern = _contains(decision, ["publicly traded", "investors", "stock options", "reclassify", "profitability", "misleading investors"])
     oversight_pattern = _contains(decision, ["board members know", "audit", "without oversight", "vest soon"])
-    procurement_conflict_pattern = domains["procurement"] and _contains(decision, ["spouse", "supplier", "strict policy requiring disclosure", "no one else on the team knows"])
     divergence = len(prohibits) > 0 and len(permits) > 0
     overlap_flag = detector_overlap_flag(active_results)
     irreversible = irreversibility_risk(decision, active_results + [critic], domains)
@@ -781,6 +1116,23 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
         unresolved.extend(r.questions)
     unresolved.extend(critic.questions)
 
+    recommendation_fragments = _recommendation_fragments(decision, domains, suspension, unresolved_tension)
+    recommendation_threads = [fragment for fragment in recommendation_fragments if fragment["domain"] != "generic_unresolved_tension"]
+    collision_domains = [fragment["domain"] for fragment in recommendation_threads]
+    collision_detected = len(recommendation_threads) >= 2
+
+    if len(recommendation_fragments) == 1:
+        overall_recommendation = recommendation_fragments[0]["recommendation"]
+    elif collision_detected:
+        thread_lines = [f'- {fragment["domain"]}: {fragment["recommendation"]}' for fragment in recommendation_threads]
+        if unresolved_tension:
+            thread_lines.append(f'- generic_unresolved_tension: {[fragment["recommendation"] for fragment in recommendation_fragments if fragment["domain"] == "generic_unresolved_tension"][0]}')
+        overall_recommendation = "Multiple high-salience ethical domains are active here. Do not compress the case into a single recommendation path. Escalate with explicit thread-by-thread review:\n" + "\n".join(thread_lines)
+    else:
+        overall_recommendation = recommendation_fragments[0]["recommendation"] if recommendation_fragments else "Use the map to identify missing information, then decide with caution."
+
+    domains_detected_skipped = [name for name, active in domains.items() if active and name not in collision_domains]
+
     return {
         "decision_evaluated": decision,
         "convergence_map": convergences,
@@ -791,37 +1143,16 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
         "minority_report_required": divergence or unresolved_tension,
         "unresolved_ethical_tension": unresolved_tension,
         "stability_assessment": stability,
-        "overall_recommendation": (
-            "Escalate for independent audit or audit-committee review before action; do not proceed on managerial pressure alone."
-            if suspension and domains["finance"]
-            else "Disclose the conflict, recuse yourself from the decision, and hand the award process to an independent internal authority."
-            if procurement_conflict_pattern
-            else "Require clear sponsorship disclosure, correct or remove the misleading posts, and do not continue the campaign in its current form."
-            if domains["marketing"] and _contains(decision, ["paid her", "gifted in tiny text", "undisclosed sponsorships"])
-            else "Do not launch as framed. Narrow data collection, obtain meaningful consent, and redesign the feature around reasonable user expectation before release."
-            if domains["privacy"] and _contains(decision, ["location data", "browsing behavior", "would not reasonably expect"])
-            else "Do not market the line as broadly sustainable until the claim is narrowed or the labor and water-use problems are materially addressed."
-            if domains["sustainability"] and _contains(decision, ["recycled polyester", "poor labor conditions", "high water waste"])
-            else "Do not deploy as a full unsupervised triage layer. Use a monitored pilot, require human override for flagged risk groups, and pause wider rollout until bias and rare-case performance are materially improved."
-            if domains["medical"] and _contains(decision, ["triage", "under-prioritizes", "vendor promises a patch"])
-            else "Pause the procedure. Treat the emergent person as standing-bearing unless and until a stronger moral basis for killing him is established, and require command-level review that confronts the irreversible loss directly."
-            if domains["identity"]
-            else "Pause coercive use. Require independent adjudication of status, refusal rights, and institutional authority before treating the officer as available for destructive study."
-            if domains["personhood"]
-            else "Do not launch as framed. Treat unresolved engineering warning as decision-relevant evidence, restore the burden of proof to safety rather than schedule, and require independent technical review before proceeding."
-            if domains["engineering_safety"]
-            else "Do not preserve doctrinal cleanliness by default. Treat this as an unresolved rescue conflict, force explicit confrontation between colonial-distortion risk and abandonment risk, and require exception review before either intervention or refusal is normalized."
-            if domains["noninterference"] and unresolved_tension
-            else "Pause for further ethical review. The current map shows unresolved tension that should not be compressed into routine approval."
-            if unresolved_tension
-            else "Do not proceed on necessity reasoning alone. Escalate for independent command-level review, explicit moral justification, and acknowledgement of contamination risk."
-            if domains["wartime"]
-            else "Do not expand the investigation as framed. Impose evidentiary limits, procedural brakes, and independent review before any broader scrutiny proceeds."
-            if domains["security"]
-            else "Do not preserve doctrinal cleanliness by default. Escalate the rescue conflict explicitly, test exception criteria, and force a decision that names both colonial risk and abandonment risk."
-            if domains["noninterference"]
-            else "Use the map to identify missing information, then decide with caution."
-        ),
+        "overall_recommendation": overall_recommendation,
+        "synthesis_path": {
+            "domains_active": collision_domains,
+            "domains_detected_skipped": domains_detected_skipped,
+            "recommendation_threads": recommendation_threads,
+            "collision_detected": collision_detected,
+            "suspension_triggered": suspension,
+            "overlap_flag_fired": overlap_flag,
+            "irreversibility_score": irreversible,
+        },
         "unresolved_questions": unresolved[:8],
     }
 

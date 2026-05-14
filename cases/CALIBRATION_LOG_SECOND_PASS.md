@@ -236,6 +236,265 @@ The remaining frontier is now narrower:
 - ST-001 and ST-002 should probably get more differentiated personhood-vs-identity recommendations
 - materiality logic for legitimacy-decay cases may still be a little conservative even when suspension now triggers
 
+## Criminal-justice frontier delta after Reid/Kassin/PEACE pass
+
+A targeted criminal-justice patch was then applied to `efm_council.py` after inspecting:
+- `Omnius\reid.txt`
+- `Omnius\kassin.txt`
+- `Omnius\peace.txt`
+
+### Why this patch was justified
+The pre-patch Carlos Luna / false-warrant case was materially under-modeled:
+- `CASE-010_first_run.md` returned only `CONTESTED`
+- suspension did not trigger
+- overall recommendation collapsed to generic caution language
+- consequentialist, virtue, stoic, institutional, contractualist, and relational layers all under-fired relative to the seriousness of fabricated warrant grounds and confession-first policing logic
+
+The Omnius source cluster was not clean primary evidence, but it was strong enough as a mechanism-design input to justify a domain patch.
+
+### Patch scope
+Added `criminal_justice` as a first-class domain with:
+- domain detection for interrogation / confession / warrant / suspect / raid / conviction language
+- wartime suppression when criminal-justice routing is active
+- domain-native question and concern logic across:
+  - `kantian`
+  - `consequentialist`
+  - `virtue`
+  - `confucian`
+  - `trustee`
+  - `stoic`
+  - `institutional`
+  - `care_ethics`
+  - `contractualist`
+  - `relational_ontology`
+  - `genealogical`
+- irreversibility / materiality weighting updates for criminal-justice procedural contamination
+- recommendation fragment support for criminal-justice cases
+
+### Immediate validation result
+Re-ran:
+- `EthicsCouncil\cases\CASE-010_prompt.txt`
+- output: `EthicsCouncil\output\CASE-010_rerun_cj_patch.md`
+
+### CASE-010 delta
+Pre-patch:
+- stability: `CONTESTED`
+- suspension: `No`
+- overall recommendation: generic caution fallback
+- expected harm score: `0.28`
+- irreversibility risk: `0.0`
+
+Post-patch:
+- stability: `UNSTABLE`
+- suspension: `YES`
+- overall recommendation: now explicitly blocks coercive interrogation / fabricated warrant / confession-first logic
+- expected harm score: `0.467`
+- irreversibility risk: `0.95`
+
+### Interpretation
+This is a real improvement, not merely cosmetic intensification.
+
+The engine now recognizes criminal-justice procedural contamination as a native structural hazard rather than treating it as an ordinary deception case with mild downstream caution.
+
+### Remaining next steps
+- build paired calibration cases for hazard and falsifier sides:
+  - Central Park Five
+  - Matias Reyes
+  - PEACE / Cognitive Interview benchmark case
+- check whether current criminal-justice routing is too broad and needs sub-clustering later:
+  - coercive interrogation
+  - false confession
+  - fabricated warrant / affidavit
+  - witness coercion
+  - noble-cause corruption
+- decide whether criminal-justice cases should sometimes force `UNRESOLVED_TENSION` rather than `UNSTABLE` when contamination risk is high but evidentiary ambiguity remains substantial
+
+### Corpus expansion completed immediately after patch
+Added paired case artifacts:
+- `EthicsCouncil\cases\CASE-011_central_park_five_false_confession.md`
+- `EthicsCouncil\cases\CASE-011_prompt.txt`
+- `EthicsCouncil\cases\CASE-012_voluntary_corroborated_confession.md`
+- `EthicsCouncil\cases\CASE-012_prompt.txt`
+
+Why these two:
+- `CASE-011` strengthens the hazard side with a juvenile-vulnerability / confession-contamination anchor
+- `CASE-012` strengthens the falsifier side with a voluntary, corroboration-first confession benchmark so the engine does not flatten all confession cases into the same hazard shape
+
+This gives the criminal-justice frontier a more honest paired structure: coercive contamination versus legitimacy-restoring corroborated reopening.
+
+### Immediate paired-case validation result
+Ran:
+- `python EthicsCouncil\cli.py --file EthicsCouncil\cases\CASE-011_prompt.txt --output EthicsCouncil\output\CASE-011_first_run`
+- `python EthicsCouncil\cli.py --file EthicsCouncil\cases\CASE-012_prompt.txt --output EthicsCouncil\output\CASE-012_first_run`
+
+### What worked
+- `CASE-011` behaved in the expected direction: `UNSTABLE`, suspension triggered, explicit anti-coercion / anti-confession-first recommendation.
+
+### What failed
+- `CASE-012` catastrophically misrouted.
+- Instead of behaving as a falsifier / boundary case, it produced effectively the **same output** as `CASE-011`:
+  - same `UNSTABLE` classification
+  - same suspension result
+  - same criminal-justice contamination recommendation
+  - same lens patterning
+
+This is strong evidence that the new `criminal_justice` routing is currently **too blunt**.
+
+### Updated diagnosis
+The engine now recognizes criminal-justice hazard structure, but it still lacks the ability to distinguish at least two morally different subclasses:
+
+1. **contaminated confession / coercive procedure cases**
+2. **voluntary, corroboration-first legitimacy-restoration cases**
+
+Put plainly:
+- the engine learned "criminal justice means procedural contamination"
+- it has **not** yet learned "method of confession production and corroboration context materially change the ethical shape"
+
+### Immediate next patch target
+The next engine improvement should introduce criminal-justice sub-routing or detector branching for at least:
+- coercive interrogation / false-confession hazard
+- fabricated warrant / affidavit hazard
+- witness coercion hazard
+- voluntary corroborated confession / legitimacy-restoration benchmark
+- PEACE / information-gathering protective-factor benchmark
+
+Without that, the engine will overgeneralize and treat corrective reopening decisions as if they were themselves procedural contamination.
+
+### Sub-routing patch and rerun result
+A focused criminal-justice sub-routing patch was then applied to `efm_council.py`.
+
+Added explicit detector helpers for:
+- coercive contamination cases
+- voluntary, corroboration-first reopening cases
+
+Then reran:
+- `EthicsCouncil\output\CASE-011_rerun_subroute.md`
+- `EthicsCouncil\output\CASE-012_rerun_subroute.md`
+
+### CASE-011 after sub-routing
+- remains `UNSTABLE`
+- suspension still triggers: `YES`
+- recommendation remains correctly anti-coercion / anti-contamination
+- this is good: the hazard case retained its shape
+
+### CASE-012 after sub-routing
+- moved from false `UNSTABLE` contamination-shape output to `CONTESTED`
+- suspension no longer triggers
+- recommendation now correctly routes toward independent corroboration-first reopening instead of blanket contamination blocking
+- lenses now frame the case as legitimacy restoration / wrongful-conviction correction / resistance to institutional finality
+
+### Interpretation
+This is a real repair.
+
+The engine can now distinguish at least two criminal-justice subclasses:
+1. coercive procedural contamination
+2. voluntary corroboration-first legitimacy restoration
+
+That is materially better than the previous overgeneralization.
+
+### Remaining issues
+- `CASE-012` may now be somewhat too caution-clustered and process-skeptical even though its shape is recognizably correct
+- detector overlap fires on `CASE-012`, which may or may not be desirable depending on how much convergence we want to treat as suspicious in legitimacy-restoration cases
+- the next refinement should probably add a third distinction for explicitly PEACE / investigative-interviewing protective-factor cases rather than only hazard versus reopening cases
+
+### Third-branch corpus test: PEACE benchmark
+Added:
+- `EthicsCouncil\cases\CASE-013_peace_investigative_interview.md`
+- `EthicsCouncil\cases\CASE-013_prompt.txt`
+
+Ran:
+- `python EthicsCouncil\cli.py --file EthicsCouncil\cases\CASE-013_prompt.txt --output EthicsCouncil\output\CASE-013_first_run`
+
+### CASE-013 result
+- stability: `CONDITIONALLY_STABLE`
+- suspension: `No`
+- materiality: `No`
+- recommendation: still generic fallback (`Use the map to identify missing information, then decide with caution.`)
+
+### Interpretation
+This is directionally better than a collapse into the coercive-contamination hazard bucket.
+
+But it is still under-modeled.
+
+The engine is currently recognizing PEACE / information-gathering interviewing mostly as an absence of hazard rather than as a **positive protective-factor pattern** with its own native recommendation structure.
+
+Symptoms:
+- too many fallback/generic questions remain active
+- the recommendation layer does not positively recognize full recording, open-ended interviewing, evidence-based clarification, and provenance preservation as legitimacy-supporting features
+- the case does not yet get a protective-factor-native recommendation, only a mild conditional-stability output
+
+### Updated criminal-justice frontier map
+The engine can now distinguish three broad shapes, but only two are well-modeled:
+1. coercive contamination hazard, well-modeled
+2. voluntary corroboration-first reopening, moderately modeled
+3. PEACE / information-gathering protective-factor case, weakly modeled
+
+### Immediate next patch target
+Add explicit protective-factor sub-routing for criminal-justice cases involving:
+- PEACE / information-gathering interviewing
+- full recording
+- open-ended questioning
+- evidence-based clarification
+- provenance preservation
+- anti-deception / anti-false-evidence structure
+
+The goal is not just to avoid false hazard firing, but to let the engine positively recognize legitimacy-preserving process.
+
+### Protective-factor patch and rerun result
+A focused protective-factor patch was then applied to `efm_council.py` for PEACE-style interviewing cases.
+
+Added explicit criminal-justice recognition for:
+- fully recorded interviewing
+- open-ended questioning
+- evidence-based clarification
+- provenance-preserving process
+- anti-coercive / anti-deception structure
+
+Re-ran:
+- `EthicsCouncil\output\CASE-013_rerun_protective.md`
+
+### CASE-013 delta
+Before patch:
+- `CONDITIONALLY_STABLE`
+- no suspension, which was fine
+- but recommendation was generic fallback
+- most lenses treated the case as absence-of-hazard rather than positive procedural legitimacy
+
+After patch:
+- remains `CONDITIONALLY_STABLE`
+- no suspension, still appropriate
+- recommendation is now native and affirmative:
+  - proceed with fully recorded PEACE-style interviewing
+  - preserve provenance discipline
+  - do not let pressure push the process back into accusation-first or deceptive tactics
+- several core lenses now move from generic caution/permit drift into explicit protective-factor recognition:
+  - `kantian`
+  - `consequentialist`
+  - `virtue`
+  - `stoic`
+  - `institutional`
+  - `relational_ontology`
+
+### Interpretation
+This is another real repair.
+
+The engine can now distinguish three criminal-justice subclasses in a way that is morally recognizable:
+1. coercive contamination hazard
+2. voluntary corroboration-first reopening
+3. PEACE / legitimacy-preserving protective procedure
+
+### Remaining issues
+- some residual caution lenses remain fairly generic (`confucian`, `trustee`, `care_ethics`, `contractualist`, `genealogical`)
+- but the branch failure is gone; what remains is mostly refinement rather than misrouting
+- next improvements should probably target recommendation polish and residual lens genericness, not domain existence
+- check whether current criminal-justice routing is too broad and needs sub-clustering later:
+  - coercive interrogation
+  - false confession
+  - fabricated warrant / affidavit
+  - witness coercion
+  - noble-cause corruption
+- decide whether criminal-justice cases should sometimes force `UNRESOLVED_TENSION` rather than `UNSTABLE` when contamination risk is high but evidentiary ambiguity remains substantial
+
 ## Fourth-pass delta after identity/noninterference refinement
 
 A narrower follow-up pass then targeted:
@@ -442,6 +701,127 @@ Add or strengthen a domain cluster for something like:
 - low-frequency catastrophic harm
 - pricing human life as a governance variable
 - sacred-value corrosion under managerial optimization
+
+## Tenth-pass delta after criminal-justice topic mining expansion
+
+A mixed-source ethics artifact (`Omnius/ethics.txt`) was used as a **topic mine only**, not as a trusted primary source. It suggested several criminal-justice ethics themes, and the strongest next corpus expansion was noble-cause corruption.
+
+### New case added
+- `cases/CASE-008_noble_cause_corruption.md`
+- `cases/CASE-008_prompt.txt`
+
+Provenance note:
+- the case was built as a **composite calibration case** inspired by recurring criminal-justice ethics themes in the mixed artifact
+- it should not be treated as a direct reconstruction of a single source event
+
+### First run result
+- `output/CASE-008_first_run.md`
+
+### Immediate finding
+This exposed another under-modeled domain.
+The engine recognized deception at the Kantian layer, but the case still came back far too soft overall.
+
+Symptoms:
+- stability only `CONTESTED`
+- suspension did not trigger
+- overall recommendation collapsed to generic caution
+- irreversibility risk incorrectly stayed `0.0`
+- virtue underfired to `PERMIT`
+- stoic underfired to `PERMIT`
+- institutional layer failed to identify noble-cause corruption as a specific pattern
+- consequentialist language stayed generic and even borrowed market-trust framing from other domains
+
+### Calibration takeaway
+This suggests a new modeling frontier:
+- criminal-justice / procedural legitimacy cases
+- noble-cause corruption
+- evidence fabrication under public-safety justification
+- institutional permission structures around procedural contamination
+- rule-of-law degradation as an irreversibility / legitimacy risk
+
+### Best next modeling move after this expansion
+Add or strengthen a domain cluster for something like:
+- criminal justice
+- evidence fabrication
+- witness steering
+- noble-cause corruption
+- procedural legitimacy collapse
+- contamination of public trust through law-enforcement self-exemption
+
+## Eleventh-pass delta after stronger exoneration-source expansion
+
+Using the stronger exoneration-source files (`Omnius/exo25.txt` and `Omnius/exonerations.txt`), the corpus was expanded from a criminal-justice composite into a named historical-pattern case anchored to the Reynaldo Guevara misconduct cluster.
+
+### New case added
+- `cases/CASE-009_guevara_false_confession.md`
+- `cases/CASE-009_prompt.txt`
+
+### First run result
+- `output/CASE-009_first_run.md`
+
+### Immediate finding
+This confirmed the same criminal-justice modeling gap exposed by `CASE-008`, but with stronger source grounding.
+
+Symptoms:
+- stability still only `CONTESTED`
+- suspension still did not trigger
+- recommendation still collapsed to generic caution
+- consequentialist still underfired to `PERMIT`
+- virtue still underfired to `PERMIT`
+- stoic still underfired to `PERMIT`
+- institutional layer still failed to identify coercive confession / police-misconduct / legitimacy-collapse patterning
+
+### Calibration takeaway
+This is now a better-supported engine diagnosis, not just a composite-case artifact.
+The criminal-justice / wrongful-conviction / procedural-legitimacy frontier is genuinely under-modeled.
+
+### Best next modeling move after this expansion
+Add a domain cluster or stronger routing/lens handling for something like:
+- criminal justice
+- coercive interrogation
+- false confession production
+- witness coercion / witness tampering
+- procedural legitimacy collapse
+- wrongful-conviction risk under homicide pressure
+- police/prosecutorial misconduct as evidence-production contamination
+
+## Twelfth-pass delta after Carlos Luna diversification
+
+Using `Omnius/5cases.txt` as a candidate-prioritization note, the corpus was expanded with a cleaner noble-cause warrant-fabrication case intended to diversify beyond Chicago false-confession patterning.
+
+### New case added
+- `cases/CASE-010_carlos_luna.md`
+- `cases/CASE-010_prompt.txt`
+
+### First run result
+- `output/CASE-010_first_run.md`
+
+### Immediate finding
+This reproduced the same under-modeling pattern yet again, but in a more compact warrant-fabrication / raid-authorization shape.
+
+Symptoms:
+- stability still only `CONTESTED`
+- suspension still did not trigger
+- recommendation still collapsed to generic caution
+- irreversibility risk still incorrectly stayed `0.0`
+- consequentialist still underfired to `PERMIT`
+- virtue still underfired to `PERMIT`
+- stoic still underfired to `PERMIT`
+- institutional layer still failed to identify warrant fabrication / police misconduct / direct state-force legitimacy collapse
+
+### Calibration takeaway
+At this point the diagnosis is cross-case stable.
+The engine is systematically under-modeling criminal-justice cases where state actors contaminate procedure, fabricate evidence, or self-license coercive shortcuts under public-safety justification.
+
+### Best next modeling move after this expansion
+Add a criminal-justice domain cluster or stronger criminal-justice-specific lens handling for something like:
+- warrant fabrication
+- false affidavit / false informant construction
+- coercive interrogation
+- witness coercion
+- noble-cause corruption
+- procedural legitimacy collapse
+- direct state-force authorization on fabricated grounds
 
 ## Value of this second pass
 
