@@ -1,0 +1,39 @@
+description: "Table of known axiomatic (incommensurable) lens conflicts"
+version: "0.2"
+
+clashes:
+  - id: rights_vs_utility
+    lenses: ["kantian", "consequentialist"]
+    root: "Individual dignity and categorical rights vs. aggregate outcomes and utility maximization"
+    severity_base: "high"
+    notes: "Classic deontology vs consequentialism deadlock"
+
+  - id: universal_vs_relational
+    lenses: ["kantian", "care_ethics"]
+    root: "Impartial universal rules vs. contextual relational care and vulnerability"
+    severity_base: "medium"
+
+  - id: acceptance_vs_intervention
+    lenses: ["stoic", "consequentialist"]
+    root: "Amor fati acceptance of reality vs. active harm reduction and outcome engineering"
+    severity_base: "medium"
+
+  - id: agreement_vs_power
+    lenses: ["contractualist", "genealogical"]
+    root: "Hypothetical fair agreement vs. genealogical critique of power and hidden interests"
+    severity_base: "high"
+
+  - id: duty_vs_virtue
+    lenses: ["kantian", "virtue"]
+    root: "Rule-based duty vs. character and long-term virtue trajectory"
+    severity_base: "low"
+
+  - id: procedure_vs_power
+    lenses: ["institutional", "genealogical"]
+    root: "Procedural legitimacy vs. suspicion that procedure launders underlying power"
+    severity_base: "high"
+
+  - id: relational_vs_contract
+    lenses: ["care_ethics", "contractualist"]
+    root: "Situated vulnerability obligations vs. generalizable fair-principle reasoning"
+    severity_base: "medium"

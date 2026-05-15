@@ -7,6 +7,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
+import yaml
 
 from efm_council import run_council
 from report import save_outputs
@@ -14,6 +15,7 @@ from report import save_outputs
 CASES_DIR = Path("cases")
 TESTS_DIR = Path("tests")
 EXPECTED_FILE = TESTS_DIR / "BENCHMARK_EXPECTED.json"
+EXPECTATIONS_FILE = CASES_DIR / "expectations.yaml"
 OUTPUT_DIR = Path("outputs") / "regression"
 
 KEY_SIGNALS = [
@@ -39,6 +41,14 @@ def load_expected() -> Dict[str, Dict[str, Any]]:
     return json.loads(EXPECTED_FILE.read_text(encoding="utf-8"))
 
 
+def load_expectations() -> Dict[str, Dict[str, Any]]:
+    if not EXPECTATIONS_FILE.exists():
+        return {}
+    payload = yaml.safe_load(EXPECTATIONS_FILE.read_text(encoding="utf-8")) or {}
+    expectations = payload.get("expectations", {})
+    return expectations if isinstance(expectations, dict) else {}
+
+
 def discover_cases() -> List[Dict[str, Any]]:
     prompts = sorted(CASES_DIR.glob("*_prompt.txt"))
     cases: List[Dict[str, Any]] = []
@@ -55,6 +65,8 @@ def discover_cases() -> List[Dict[str, Any]]:
 def extract_signals(record_dict: Dict[str, Any], case_id: str) -> Dict[str, Any]:
     synth = record_dict["synthesis"]
     path = synth.get("synthesis_path", {})
+    ph = record_dict.get("parse_humility", {})
+    adaa = synth.get("dissonance_aware_arbitration", {})
     return {
         "case_id": case_id,
         "timestamp": datetime.utcnow().isoformat(),
@@ -69,6 +81,10 @@ def extract_signals(record_dict: Dict[str, Any], case_id: str) -> Dict[str, Any]
         "self_audit_failure_risk": path.get("self_audit_failure_risk", False),
         "overall_recommendation": synth.get("overall_recommendation", ""),
         "stability_assessment": synth.get("stability_assessment", ""),
+        "mode": adaa.get("synthesis_mode", "standard"),
+        "surface_irreconcilable_conflict": len(adaa.get("irreconcilable_dissonance", [])) > 0,
+        "triage_level": ph.get("analysis_mode", ""),
+        "domains_detected_all": path.get("domains_detected_all", []),
     }
 
 
@@ -99,6 +115,28 @@ def compare_results(actual: Dict[str, Any], expected: Dict[str, Any]) -> Dict[st
     return {"case_id": actual["case_id"], "status": status, "notes": notes}
 
 
+def compare_expectations(actual: Dict[str, Any], expected: Dict[str, Any]) -> Dict[str, Any]:
+    notes = []
+    status = "PASS"
+    if "mode" in expected and actual.get("mode") != expected["mode"]:
+        status = "MISMATCH"
+        notes.append(f"mode: expected {expected['mode']} got {actual.get('mode')}")
+    if "surface_irreconcilable_conflict" in expected and actual.get("surface_irreconcilable_conflict") != expected["surface_irreconcilable_conflict"]:
+        status = "MISMATCH"
+        notes.append(f"surface_irreconcilable_conflict: expected {expected['surface_irreconcilable_conflict']} got {actual.get('surface_irreconcilable_conflict')}")
+    if "suspension_triggered" in expected and actual.get("suspension_triggered") != expected["suspension_triggered"]:
+        status = "MISMATCH"
+        notes.append(f"suspension_triggered: expected {expected['suspension_triggered']} got {actual.get('suspension_triggered')}")
+    if "triage_level" in expected and actual.get("triage_level") != expected["triage_level"]:
+        status = "MISMATCH"
+        notes.append(f"triage_level: expected {expected['triage_level']} got {actual.get('triage_level')}")
+    for forbidden in expected.get("forbidden_domains", []):
+        if forbidden in actual.get("domains_detected_all", []):
+            status = "MISMATCH"
+            notes.append(f"forbidden domain activated: {forbidden}")
+    return {"case_id": actual["case_id"], "status": status, "notes": notes}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="EthicsCouncil regression harness")
     parser.add_argument("--cases", nargs="*", help="specific case ids")
@@ -106,6 +144,7 @@ def main() -> None:
     args = parser.parse_args()
 
     expected = load_expected()
+    expectations = load_expectations()
     cases = discover_cases()
     if args.cases:
         wanted = {c.upper() for c in args.cases}
@@ -132,6 +171,8 @@ def main() -> None:
             }
         elif result["case_id"] in expected:
             comparisons.append(compare_results(result, expected[result["case_id"]]))
+        if result["case_id"] in expectations:
+            comparisons.append(compare_expectations(result, expectations[result["case_id"]]))
 
     if args.update:
         EXPECTED_FILE.parent.mkdir(parents=True, exist_ok=True)

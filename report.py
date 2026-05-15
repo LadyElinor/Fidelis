@@ -38,6 +38,52 @@ def to_markdown(record: Dict) -> str:
         else:
             lines.append("**Constraint:** Input quality is sufficient for reviewable analysis, but missing context should still survive into interpretation.")
         lines.append("")
+    if synth.get('dissonance_aware_arbitration'):
+        adaa = synth['dissonance_aware_arbitration']
+        if adaa.get('consensus_core'):
+            lines.append("## Consensus Core")
+            lines.append("")
+            for item in adaa['consensus_core']:
+                lines.append(f"- {item['point']} ({', '.join(item['agents'])})")
+            lines.append("")
+        if adaa.get('irreconcilable_dissonance'):
+            lines.append("## Irreconcilable Dissonance")
+            lines.append("")
+            for item in adaa['irreconcilable_dissonance']:
+                lines.append(f"- Critical friction point: {item['critical_friction_point']}")
+                lines.append(f"  - Lenses in conflict: {', '.join(item['lenses_in_conflict'])}")
+                lines.append(f"  - Conflict type: {item['conflict_type']}")
+                lines.append(f"  - Axiomatic root: {item['axiomatic_root']}")
+                if item.get('minority_position'):
+                    lines.append(f"  - Minority report / critical friction holders: {', '.join(item['minority_position'])}")
+            lines.append("")
+        if adaa.get('dung_argumentation'):
+            dung = adaa['dung_argumentation']
+            lines.append("### Dung Argumentation Analysis")
+            lines.append("")
+            lines.append(f"- Preferred Extensions Found: {dung.get('num_extensions', 0)}")
+            lines.append(f"- Multiple extensions detected: {'YES' if dung.get('has_multiple_extensions') else 'No'}")
+            lines.append(f"- Deadlock elevated into arbitration: {'YES' if dung.get('elevated_deadlock') else 'No'}")
+            if dung.get('elevated_deadlock'):
+                lines.append("- Surviving ethical positions cannot be unified without violating core axioms or discarding live constraints.")
+            lines.append("")
+        if adaa.get('decision_risk_profile'):
+            drp = adaa['decision_risk_profile']
+            lines.append("## Decision Risk Profile")
+            lines.append("")
+            lines.append(f"- Irreversibility: {drp['irreversibility']}")
+            lines.append(f"- Overlap flag: {'YES' if drp['overlap_flag'] else 'No'}")
+            lines.append(f"- Irreconcilable conflict: {'YES' if drp['irreconcilable_conflict'] else 'No'}")
+            if drp.get('suspension_reasons'):
+                lines.append("- Suspension reasons:")
+                for reason in drp['suspension_reasons']:
+                    lines.append(f"  - {reason}")
+            if drp.get('unresolved_tension_reasons'):
+                lines.append("- Unresolved tension reasons:")
+                for reason in drp['unresolved_tension_reasons']:
+                    lines.append(f"  - {reason}")
+            lines.append("")
+
     lines.append("## Stability")
     lines.append("")
     lines.append(f"**Assessment:** {synth['stability_assessment']}")

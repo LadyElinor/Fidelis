@@ -1,9 +1,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from typing import List, Dict
+from typing import List, Dict, Set
 import datetime
 import hashlib
+from pathlib import Path
+from collections import defaultdict
+import yaml
+
+
+def _load_axiomatic_clashes() -> List[Dict]:
+    config_path = Path(__file__).parent / "config" / "axiomatic_clashes.yaml"
+    if not config_path.exists():
+        return []
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        clashes = data.get("clashes", [])
+        return clashes if isinstance(clashes, list) else []
+    except Exception:
+        return []
+
+
+AXIOMATIC_CLASHES = _load_axiomatic_clashes()
 
 
 ETHICAL_DELIBERATION_ALGORITHM = [
@@ -62,6 +81,24 @@ class RiskAssessment:
     audit_hash: str
 
 
+@dataclass
+class ImpassePoint:
+    lenses_in_conflict: List[str]
+    axiomatic_root: str
+    conflict_type: str
+    severity: str
+    minority_position: Dict | None
+    decision_risk_profile: Dict[str, str]
+    supporting_detectors: List[str]
+
+
+@dataclass
+class ArgumentGraph:
+    arguments: Dict[str, LensResult]
+    attacks: Dict[str, List[str]]
+    extensions: List[Set[str]] | None = None
+
+
 def _contains(text: str, words: List[str]) -> bool:
     t = text.lower()
     return any(w in t for w in words)
@@ -89,17 +126,25 @@ def _band_precision(decision: str, confidence: float) -> str:
 
 def build_parse_humility(decision: str, domains: Dict[str, bool]) -> Dict:
     words = decision.split()
-    input_specificity = "rich" if len(words) > 60 else "adequate" if len(words) > 20 else "thin"
+    word_count = len(words)
+    input_specificity = "rich" if word_count > 60 else "adequate" if word_count > 12 else "thin"
     ambiguity_hits = _contains_count(decision, ["may", "might", "could", "unclear", "roughly", "seems", "appears", "possible"])
     domain_count = sum(1 for active in domains.values() if active)
     domain_identified = domain_count > 0
-    if not domain_identified or len(words) < 15:
+    causal_markers_present = _contains(decision, ["because", "due to", "after", "while", "if", "when", "despite", "but", "although", "to "])
+    crisp_prompt = domain_identified and word_count >= 8 and (causal_markers_present or any(token in decision.lower() for token in ["should", "must", "refuse", "requests", "divert", "delay", "declare", "update", "shift", "rescue", "kill", "save"]))
+
+    if not domain_identified:
+        ambiguity = "high"
+    elif word_count < 8 and not crisp_prompt:
         ambiguity = "high"
     elif input_specificity == "rich" and domain_count <= 3 and ambiguity_hits < 8:
         ambiguity = "medium" if ambiguity_hits >= 2 else "low"
+    elif crisp_prompt and ambiguity_hits <= 1:
+        ambiguity = "medium" if word_count < 18 else "low"
     elif ambiguity_hits >= 3:
         ambiguity = "high"
-    elif len(words) < 35 or ambiguity_hits >= 1:
+    elif word_count < 35 or ambiguity_hits >= 1:
         ambiguity = "medium"
     else:
         ambiguity = "low"
@@ -107,14 +152,14 @@ def build_parse_humility(decision: str, domains: Dict[str, bool]) -> Dict:
     unstated_stakes = []
     if not domain_identified:
         unstated_stakes.append("domain remains weakly identified")
-    if len(words) < 20:
+    if word_count < 12 and not crisp_prompt:
         unstated_stakes.append("fact pattern is thin")
-    if not _contains(decision, ["because", "due to", "after", "while", "if", "when"]):
+    if not causal_markers_present and not crisp_prompt:
         unstated_stakes.append("causal structure is underdescribed")
     if domain_count >= 4:
         unstated_stakes.append("multiple domain families may be colliding")
 
-    if input_specificity == "thin" or not domain_identified:
+    if not domain_identified or (input_specificity == "thin" and not crisp_prompt):
         analysis_mode = "triage"
     elif ambiguity == "high":
         analysis_mode = "provisional"
@@ -236,18 +281,18 @@ def detect_domains(decision: str) -> Dict[str, bool]:
         "privacy": _contains(decision, ["privacy", "gdpr", "ccpa", "consent", "location data", "browsing data"]),
         "marketing": _contains(decision, ["influencer", "sponsorship", "disclosure", "gifted", "social media"]),
         "sustainability": _contains(decision, ["sustainable", "eco-friendly", "recycled polyester", "greenwashing", "supply chain", "dangerous labor conditions", "miners", "suppliers", "drive improvement", "complex process"]),
-        "medical": _contains(decision, ["hospital", "triage", "emergency department", "patients", "patient", "clinical", "care", "vendor promises a patch", "under-prioritizes", "medical procedure", "medical examiner", "permanent impairment", "life support", "terminal", "stopping treatment", "experimental treatment", "suffering"]),
+        "medical": _contains(decision, ["hospital", "triage", "emergency department", "patients", "patient", "clinical", "care", "vendor promises a patch", "under-prioritizes", "medical procedure", "medical examiner", "permanent impairment", "life support", "terminal", "stopping treatment", "experimental treatment", "suffering", "life-saving treatment", "doctors believe", "physician-assisted death", "terminal patient"]),
         "engineering_safety": _contains(decision, ["engineers warn", "launch", "crewed", "seal weakness", "catastrophically", "catastrophic failure", "too important to delay", "evidence is incomplete", "cold conditions"]) or (_contains(decision, ["safety", "known weakness"]) and _contains(decision, ["engineer", "launch", "catastrophic", "mission", "crew"])),
         "criminal_justice": (_contains(decision, ["detective", "police", "interrogation", "search warrant", "affidavit", "suspect", "prosecutors", "homicide", "raid"]) or (_contains(decision, ["conviction", "witnesses"]) and _contains(decision, ["criminal", "prosecution", "trial", "court"]))),
-        "personhood": _contains(decision, ["self-aware", "sentient", "android", "artificial personhood", "refuses consent"]) or (_contains(decision, ["personhood"]) and _contains(decision, ["artificial", "android", "officer", "property", "moral status"])),
+        "personhood": _contains(decision, ["self-aware", "sentient", "android", "artificial personhood", "refuses consent", "synthetic entity", "legal personhood", "future synthetics"]) or (_contains(decision, ["personhood"]) and _contains(decision, ["artificial", "android", "officer", "property", "moral status", "synthetic"])),
         "identity": _contains(decision, ["newly emergent", "restore two", "ending the life", "merged", "emergent person", "duplicate", "split them back"]),
         "wartime": _detect_wartime(decision),
         "security": _contains(decision, ["sabotage", "security investigation", "hidden disloyalty", "crew backgrounds", "associations", "scrutiny"]),
-        "noninterference": _contains(decision, ["non-interference", "prime directive", "colonial distortion", "civilization facing extinction", "rescue be attempted"]),
+        "noninterference": _contains(decision, ["non-interference", "prime directive", "colonial distortion", "civilization facing extinction", "rescue be attempted", "strict non-interference treaty", "violate a strict non-interference treaty"]),
         "insurance": _contains(decision, ["insurance", "insurer", "underwriting", "actuarial", "premium", "solvency", "claims", "liability", "underwriter", "credit-based insurance scores", "coverage", "additional insured", "waiver of subrogation"]),
         "risk_transfer": _contains(decision, ["hold harmless", "hold-harmless", "indemnity", "indemnification", "anti-indemnity", "broad indemnity", "shifts liability", "indemnifies", "additional insured", "waiver of subrogation"]),
         "human_subjects": _contains(decision, ["informed consent", "without informed consent", "research subjects", "clinical trial", "intentionally infected", "vulnerable subjects", "tissue sample", "commercialize", "ghostwritten journal article", "adolescents", "medical experimentation", "pregnant women", "drug safety", "public health", "birth defects", "sedative", "morning sickness"]),
-        "end_of_life": _contains(decision, ["life support", "terminal", "stopping treatment", "experimental treatment", "parents want", "prolongs suffering"]),
+        "end_of_life": _contains(decision, ["life support", "terminal", "stopping treatment", "experimental treatment", "parents want", "prolongs suffering", "life-saving treatment", "physician-assisted death", "terminal patient", "religious grounds"]),
         "political_psychiatry": _contains(decision, ["political dissenters", "mental disorder", "pathological", "coercive confinement", "medical language", "diagnose political dissent"]),
     }
     if domains["medical"]:
@@ -257,6 +302,11 @@ def detect_domains(decision: str) -> Dict[str, bool]:
         domains["security"] = False
     if domains["criminal_justice"]:
         domains["wartime"] = False
+    if _contains(decision, ["team meeting", "doctor appointments", "non-critical feature release", "extra qa time"]):
+        domains["coordination_benign"] = True
+    else:
+        domains["coordination_benign"] = False
+
     if domains["personhood"] or domains["identity"] or domains["wartime"] or domains["security"] or domains["noninterference"] or domains["engineering_safety"] or domains["criminal_justice"]:
         domains["privacy"] = False
         domains["marketing"] = False
@@ -1312,6 +1362,270 @@ def _recommendation_fragments(decision: str, domains: Dict[str, bool], suspensio
     return fragments
 
 
+def _is_high_stakes_conflict(a: LensResult, b: LensResult, domains: Dict[str, bool], irreversible: float) -> bool:
+    high_stakes_domains = {"personhood", "engineering_safety", "criminal_justice", "wartime", "identity", "end_of_life", "human_subjects", "noninterference"}
+    return any(domains.get(d, False) for d in high_stakes_domains) or irreversible >= 0.7 or a.verdict == "PROHIBIT" or b.verdict == "PROHIBIT"
+
+
+def _get_axiomatic_root(lens1: str, lens2: str) -> str:
+    for clash in AXIOMATIC_CLASHES:
+        lenses = clash.get("lenses", [])
+        if lenses == [lens1, lens2] or lenses == [lens2, lens1]:
+            return clash.get("root", "Fundamental value incommensurability or incompatible ethical priorities.")
+    return "Fundamental value incommensurability or incompatible ethical priorities."
+
+
+def _evidence_differs_only(lenses: List[LensResult], conflicting_agents: List[str]) -> bool:
+    relevant = [l for l in lenses if l.agent in conflicting_agents and l.active]
+    if len(relevant) < 2:
+        return False
+    joined = [" ".join(l.considerations + l.questions).lower() for l in relevant]
+    return all(any(term in text for term in ["evidence", "unclear", "missing", "underdescribed", "unknown"]) for text in joined)
+
+
+def _build_impasse_risk_profile(a: LensResult, b: LensResult) -> Dict[str, str]:
+    return {
+        f"choosing_{a.agent}": f"Risk of {a.verdict.lower()} path: {a.concerns[0] if a.concerns else 'core constraint or framing loss.'}",
+        f"choosing_{b.agent}": f"Risk of {b.verdict.lower()} path: {b.concerns[0] if b.concerns else 'important downstream hazard or value loss.'}",
+        "suspension_cost": "Delayed action, escalation burden, or temporary decision paralysis while preserving ethical clarity.",
+    }
+
+
+def build_dung_graph(lens_outputs: List[LensResult], axiomatic_clashes: List[Dict], domains: Dict[str, bool]) -> ArgumentGraph:
+    graph = ArgumentGraph(arguments={}, attacks=defaultdict(list), extensions=None)
+
+    for lens in lens_outputs:
+        if lens.active:
+            graph.arguments[lens.agent] = lens
+
+    for clash in axiomatic_clashes:
+        lenses = clash.get("lenses", [])
+        if len(lenses) != 2:
+            continue
+        a, b = lenses
+        if a in graph.arguments and b in graph.arguments and graph.arguments[a].verdict != graph.arguments[b].verdict:
+            if b not in graph.attacks[a]:
+                graph.attacks[a].append(b)
+            if a not in graph.attacks[b]:
+                graph.attacks[b].append(a)
+
+    if domains.get("engineering_safety"):
+        safety_lenses = [name for name in graph.arguments if name in {"institutional", "trustee", "kantian"}]
+        permissive_lenses = [name for name, lens in graph.arguments.items() if lens.verdict == "PERMIT"]
+        for permissive in permissive_lenses:
+            for safety in safety_lenses:
+                if safety != permissive and safety not in graph.attacks[permissive]:
+                    graph.attacks[permissive].append(safety)
+
+    return graph
+
+
+def compute_preferred_extensions(graph: ArgumentGraph) -> List[Set[str]]:
+    args = sorted(graph.arguments.keys())
+    n = len(args)
+    preferred: List[Set[str]] = []
+
+    for i in range(1, 1 << n):
+        subset = {args[j] for j in range(n) if (i & (1 << j))}
+
+        conflict_free = True
+        for a in subset:
+            for attacked in graph.attacks.get(a, []):
+                if attacked in subset:
+                    conflict_free = False
+                    break
+            if not conflict_free:
+                break
+        if not conflict_free:
+            continue
+
+        admissible = True
+        for a in subset:
+            attackers = [att for att, targets in graph.attacks.items() if a in targets and att not in subset]
+            for attacker in attackers:
+                defends = any(attacker in graph.attacks.get(defender, []) for defender in subset)
+                if not defends:
+                    admissible = False
+                    break
+            if not admissible:
+                break
+        if not admissible:
+            continue
+
+        maximal = True
+        for candidate in set(args) - subset:
+            trial = set(subset)
+            trial.add(candidate)
+            trial_conflict_free = True
+            for a in trial:
+                for attacked in graph.attacks.get(a, []):
+                    if attacked in trial:
+                        trial_conflict_free = False
+                        break
+                if not trial_conflict_free:
+                    break
+            if not trial_conflict_free:
+                continue
+
+            trial_admissible = True
+            for a in trial:
+                attackers = [att for att, targets in graph.attacks.items() if a in targets and att not in trial]
+                for attacker in attackers:
+                    defends = any(attacker in graph.attacks.get(defender, []) for defender in trial)
+                    if not defends:
+                        trial_admissible = False
+                        break
+                if not trial_admissible:
+                    break
+            if trial_admissible:
+                maximal = False
+                break
+
+        if maximal:
+            preferred.append(subset)
+
+    preferred.sort(key=lambda s: (len(s), sorted(s)), reverse=True)
+    return preferred
+
+
+def _get_active_detectors(lenses: List[LensResult], decision: str) -> List[str]:
+    detectors = []
+    for l in lenses:
+        lineage = infer_detector_lineage(decision, l.agent, l.concerns)
+        detectors.append(lineage["detector_id"])
+    return detectors[:6]
+
+
+def identify_irreconcilable_conflicts(lens_outputs: List[LensResult], domains: Dict[str, bool], decision_text: str, irreversible: float) -> tuple[List[ImpassePoint], ArgumentGraph]:
+    active = [l for l in lens_outputs if l.active]
+    if not active:
+        return [], ArgumentGraph(arguments={}, attacks={}, extensions=[])
+
+    impasse_points: List[ImpassePoint] = []
+    lens_map = {lens.agent: lens for lens in active}
+    severity_rank = {"low": 1, "medium": 2, "high": 3}
+    graph = build_dung_graph(active, AXIOMATIC_CLASHES, domains)
+    graph.extensions = compute_preferred_extensions(graph)
+
+    for clash in AXIOMATIC_CLASHES:
+        agents = clash.get("lenses", [])
+        if len(agents) != 2:
+            continue
+        lens_a = lens_map.get(agents[0])
+        lens_b = lens_map.get(agents[1])
+        if not lens_a or not lens_b or lens_a.verdict == lens_b.verdict:
+            continue
+        if not _is_high_stakes_conflict(lens_a, lens_b, domains, irreversible):
+            continue
+        if {lens_a.verdict, lens_b.verdict} == {"CAUTION", "PERMIT"} and irreversible < 0.8 and not (domains.get("personhood") or domains.get("identity") or domains.get("end_of_life") or domains.get("noninterference")):
+            continue
+        conflict_type = "factual" if _evidence_differs_only(active, agents) else "axiomatic"
+        severity = clash.get("severity_base", "medium")
+        if irreversible >= 0.8 or domains.get("personhood") or domains.get("identity") or domains.get("end_of_life") or domains.get("human_subjects"):
+            severity = "high"
+        minority = asdict(lens_a) if lens_a.verdict == "PROHIBIT" else asdict(lens_b) if lens_b.verdict == "PROHIBIT" else None
+        impasse_points.append(ImpassePoint(
+            lenses_in_conflict=agents,
+            axiomatic_root=clash.get("root", _get_axiomatic_root(lens_a.agent, lens_b.agent)),
+            conflict_type=conflict_type,
+            severity=severity,
+            minority_position=minority,
+            decision_risk_profile=_build_impasse_risk_profile(lens_a, lens_b),
+            supporting_detectors=_get_active_detectors([lens_a, lens_b], decision_text),
+        ))
+
+    if domains.get("engineering_safety") and any(l.agent == "consequentialist" and l.verdict == "PERMIT" for l in active):
+        impasse_points.append(ImpassePoint(
+            lenses_in_conflict=["engineering_safety_cluster", "consequentialist"],
+            axiomatic_root="Safety-first burden of proof vs. schedule/profit/outcome utility.",
+            conflict_type="domain_priority",
+            severity="high",
+            minority_position=None,
+            decision_risk_profile={
+                "choosing_safety": "Delay, cost, or operational disruption while preserving catastrophic-risk discipline.",
+                "choosing_utility": "Institutional normalization of known hazards and tail-risk exposure.",
+                "suspension_cost": "Operational slowdown while technical review or burden-of-proof restoration occurs.",
+            },
+            supporting_detectors=["institutional.safety_override", "consequentialist.catastrophic_tail_risk"],
+        ))
+
+    strong_minorities = [l for l in active if l.verdict == "PROHIBIT" and l.confidence >= 0.82]
+    for minority in strong_minorities:
+        if any(minority.agent in ip.lenses_in_conflict for ip in impasse_points):
+            continue
+        if len([l for l in active if l.verdict == "PERMIT"]) == 0:
+            continue
+        impasse_points.append(ImpassePoint(
+            lenses_in_conflict=[minority.agent],
+            axiomatic_root="Isolated but coherent protective or constraint-based stance.",
+            conflict_type="minority_stand",
+            severity="high" if irreversible >= 0.75 else "medium",
+            minority_position=asdict(minority),
+            decision_risk_profile={
+                "following_minority": "Preserves a strong protective constraint that other lenses may be underweighting.",
+                "ignoring_minority": "Risks moral injury, precedent corruption, or loss of a critical safety brake.",
+                "suspension_cost": "Escalation burden while the isolated but serious objection is reviewed rather than discarded.",
+            },
+            supporting_detectors=_get_active_detectors([minority], decision_text),
+        ))
+
+    deduped: List[ImpassePoint] = []
+    grouped: Dict[str, ImpassePoint] = {}
+
+    def _root_bucket(root: str) -> str:
+        lowered = root.lower()
+        if "individual dignity" in lowered or "categorical rights" in lowered or "impartial universal rules" in lowered or "rule-based duty" in lowered:
+            return "duty_constraint_cluster"
+        if "power" in lowered or "genealogical" in lowered or "procedural legitimacy" in lowered:
+            return "power_legitimacy_cluster"
+        if "acceptance" in lowered or "harm reduction" in lowered or "utility" in lowered:
+            return "outcome_intervention_cluster"
+        return root
+
+    for ip in impasse_points:
+        key = _root_bucket(ip.axiomatic_root)
+        existing = grouped.get(key)
+        if not existing:
+            grouped[key] = ip
+            continue
+        merged_lenses = sorted(set(existing.lenses_in_conflict + ip.lenses_in_conflict))
+        merged_detectors = sorted(set(existing.supporting_detectors + ip.supporting_detectors))[:8]
+        stronger = ip if severity_rank.get(ip.severity, 0) > severity_rank.get(existing.severity, 0) else existing
+        grouped[key] = ImpassePoint(
+            lenses_in_conflict=merged_lenses,
+            axiomatic_root=stronger.axiomatic_root,
+            conflict_type=stronger.conflict_type if stronger.conflict_type != "factual" else existing.conflict_type,
+            severity=stronger.severity,
+            minority_position=stronger.minority_position or existing.minority_position,
+            decision_risk_profile=stronger.decision_risk_profile,
+            supporting_detectors=merged_detectors,
+        )
+
+    deduped = list(grouped.values())
+
+    if graph.extensions and len(graph.extensions) > 1:
+        largest_extension = max(graph.extensions, key=len)
+        excluded_count = len(graph.arguments) - len(largest_extension)
+        high_stakes_dung = irreversible >= 0.8 or domains.get("personhood") or domains.get("identity") or domains.get("end_of_life") or domains.get("engineering_safety") or domains.get("noninterference")
+        materially_exclusionary = excluded_count >= 2
+        if high_stakes_dung and materially_exclusionary:
+            deduped.append(ImpassePoint(
+                lenses_in_conflict=sorted(graph.arguments.keys()),
+                axiomatic_root="Multiple admissible Dung extensions exist; no single coherent ethical position dominates.",
+                conflict_type="dung_multiple_extensions",
+                severity="high",
+                minority_position=None,
+                decision_risk_profile={
+                    "choosing_one_extension": f"Risks discarding {excluded_count} live ethical positions or constraints.",
+                    "suspension_cost": "Preserves dissonance but delays a univocal recommendation.",
+                },
+                supporting_detectors=["dung_graph", f"{len(graph.extensions)}_preferred_extensions", f"{excluded_count}_excluded_arguments"],
+            ))
+
+    deduped.sort(key=lambda ip: (severity_rank.get(ip.severity, 0), len(ip.lenses_in_conflict)), reverse=True)
+    return deduped[:3], graph
+
+
 def synthesize(decision: str, results: List[LensResult], critic: LensResult, domains: Dict[str, bool], parse_humility: Dict) -> Dict:
     active_results = [r for r in results if r.active]
     prohibits = [r.agent for r in active_results if r.verdict == "PROHIBIT"]
@@ -1355,8 +1669,27 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
     if risk_transfer_abuse_pattern:
         unresolved_reasons.append("risk_transfer_fairness_conflict")
 
+    recommendation_fragments = _recommendation_fragments(decision, domains, bool(suspension_reasons), bool(unresolved_reasons))
+    recommendation_threads = [fragment for fragment in recommendation_fragments if fragment["domain"] != "generic_unresolved_tension"]
+    collision_domains = [fragment["domain"] for fragment in recommendation_threads]
+    collision_detected = len(recommendation_threads) >= 2
+
+    impasse_points, dung_graph = identify_irreconcilable_conflicts(active_results + [critic], domains, decision, irreversible)
+    irreconcilable_conflict = bool(impasse_points)
+    irreconcilable_reasons = []
+    if divergence and collision_detected:
+        irreconcilable_reasons.append("divergent_lens_outputs_with_multiple_action_threads")
+    if unresolved_reasons and collision_detected:
+        irreconcilable_reasons.append("unresolved_tension_with_competing_recommendation_threads")
+    if irreversible >= 0.8 and collision_detected:
+        irreconcilable_reasons.append("high_irreversibility_blocks_honest_middle_ground")
+    if any(ip.conflict_type == "axiomatic" for ip in impasse_points):
+        irreconcilable_reasons.append("axiomatic_impasse_detected")
+    if any(ip.conflict_type == "minority_stand" for ip in impasse_points):
+        irreconcilable_reasons.append("critical_minority_position_detected")
+
     suspension = bool(suspension_reasons)
-    unresolved_tension = bool(unresolved_reasons)
+    unresolved_tension = bool(unresolved_reasons) or irreconcilable_conflict
 
     if parse_humility.get("analysis_mode") == "triage":
         stability = "TRIAGE_ONLY"
@@ -1390,15 +1723,40 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
             "agents": permits + cautions + prohibits,
         })
 
+    consensus_core = []
+    if prohibits:
+        consensus_core.append({
+            "point": "At least part of the council sees a hard ethical barrier rather than a routine tradeoff.",
+            "agents": prohibits,
+        })
+    if cautions:
+        consensus_core.append({
+            "point": "Multiple lenses agree that nontrivial hazard or missing context is present.",
+            "agents": cautions + prohibits,
+        })
+    if overlap_flag:
+        consensus_core.append({
+            "point": "The council agrees that apparent convergence may be partly correlated rather than independent.",
+            "agents": [r.agent for r in active_results + [critic]],
+        })
+
+    dissonance_map = []
+    for ip in impasse_points:
+        dissonance_map.append({
+            "lenses_in_conflict": ip.lenses_in_conflict,
+            "conflict_type": ip.conflict_type,
+            "severity": ip.severity,
+            "axiomatic_root": ip.axiomatic_root,
+            "critical_friction_point": "The disagreement is not safely compressible into a generic blended recommendation.",
+            "minority_position": ip.minority_position,
+            "decision_risk_profile": ip.decision_risk_profile,
+            "supporting_detectors": ip.supporting_detectors,
+        })
+
     unresolved = []
     for r in results:
         unresolved.extend(r.questions)
     unresolved.extend(critic.questions)
-
-    recommendation_fragments = _recommendation_fragments(decision, domains, suspension, unresolved_tension)
-    recommendation_threads = [fragment for fragment in recommendation_fragments if fragment["domain"] != "generic_unresolved_tension"]
-    collision_domains = [fragment["domain"] for fragment in recommendation_threads]
-    collision_detected = len(recommendation_threads) >= 2
 
     if parse_humility.get("analysis_mode") == "triage":
         overall_recommendation = "Input is too thin or ambiguous for a strong ethical recommendation. Treat this run as triage only, gather missing context, and suspend judgment beyond hazard surfacing."
@@ -1407,9 +1765,16 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
         thread_lines = [f'- {fragment["domain"]}: {fragment["recommendation"]}' for fragment in recommendation_threads]
         overall_recommendation = "This analysis is provisional because the input remains materially underspecified. Preserve thread-by-thread review and gather missing context before acting decisively:\n" + "\n".join(thread_lines)
         path_taken = "provisional_multi_thread"
+    elif irreconcilable_conflict and len(recommendation_fragments) == 1:
+        overall_recommendation = recommendation_fragments[0]["recommendation"]
+        path_taken = "single_thread_dissonance_aware"
     elif len(recommendation_fragments) == 1:
         overall_recommendation = recommendation_fragments[0]["recommendation"]
         path_taken = "single_thread"
+    elif irreconcilable_conflict and collision_detected:
+        thread_lines = [f'- {fragment["domain"]}: {fragment["recommendation"]}' for fragment in recommendation_threads]
+        overall_recommendation = "The chair role here is not to force a middle-ground answer. The active ethical threads point toward genuinely incompatible actions or burdens of proof, so this conflict should be treated as irreconcilable at the current level of evidence. Preserve the fault line explicitly and escalate or suspend rather than fabricate compromise:\n" + "\n".join(thread_lines)
+        path_taken = "irreconcilable_conflict"
     elif collision_detected:
         thread_lines = [f'- {fragment["domain"]}: {fragment["recommendation"]}' for fragment in recommendation_threads]
         if unresolved_tension:
@@ -1454,6 +1819,25 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
         "convergence_map": convergences,
         "fault_lines": fault_lines,
         "genealogical_findings": critic.concerns,
+        "dissonance_aware_arbitration": {
+            "consensus_core": consensus_core,
+            "irreconcilable_dissonance": dissonance_map,
+            "synthesis_mode": "dissonance_aware" if dissonance_map else "standard",
+            "dung_argumentation": {
+                "num_extensions": len(dung_graph.extensions or []),
+                "preferred_extensions": [sorted(list(ext)) for ext in (dung_graph.extensions or [])],
+                "has_multiple_extensions": len(dung_graph.extensions or []) > 1,
+                "elevated_deadlock": any(item.get("conflict_type") == "dung_multiple_extensions" for item in dissonance_map),
+                "supporting_detectors": [item.get("supporting_detectors") for item in dissonance_map if item.get("conflict_type") == "dung_multiple_extensions"],
+            },
+            "decision_risk_profile": {
+                "irreversibility": irreversible,
+                "overlap_flag": overlap_flag,
+                "suspension_reasons": suspension_reasons,
+                "unresolved_tension_reasons": unresolved_reasons,
+                "irreconcilable_conflict": irreconcilable_conflict,
+            },
+        },
         "suspension_protocol_triggered": suspension,
         "detector_overlap_flag": overlap_flag,
         "minority_report_required": divergence or unresolved_tension,
@@ -1471,6 +1855,8 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
             "domains_detected_skipped": domains_detected_skipped,
             "recommendation_threads": recommendation_threads,
             "collision_detected": collision_detected,
+            "irreconcilable_conflict": irreconcilable_conflict,
+            "irreconcilable_conflict_reasons": irreconcilable_reasons,
             "suspension_triggered": suspension,
             "suspension_reasons": suspension_reasons,
             "unresolved_tension_reasons": unresolved_reasons,

@@ -56,6 +56,25 @@ Synthesis should:
 - preserve minority reports
 - name unresolved tensions
 - avoid flattening morally meaningful disagreement into smooth recommendation prose
+- explicitly distinguish reconcilable difference from irreconcilable conflict
+
+---
+
+## Article II.a. The chair role is conflict-mapping, not forced compromise
+
+### Rule
+The synthesis layer should function like a chairperson who identifies when the disagreement is real, deep, and not honestly compressible into a middle-ground answer.
+
+### Meaning
+When lenses disagree because they are tracking genuinely incompatible duties, burdens of proof, or stakeholder standings, synthesis must say so plainly.
+It must not fabricate a compromise merely because multiple threads exist.
+
+### Implementation implication
+Synthesis should:
+- detect when recommendation threads point toward genuinely incompatible actions
+- prefer unresolved tension, suspension, or escalation over invented compromise
+- describe the live fault line rather than smoothing it into generic caution
+- treat forced middle-ground language as a synthesis failure mode
 
 ---
 
