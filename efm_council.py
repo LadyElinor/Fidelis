@@ -108,6 +108,40 @@ def clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
+def _distinct_verdict_poles(active_results: List[LensResult]) -> bool:
+    has_prohibit = any(r.verdict == "PROHIBIT" for r in active_results)
+    has_permit = any(r.verdict == "PERMIT" for r in active_results)
+    return has_prohibit and has_permit
+
+
+def _high_conflict_evidence(active_results: List[LensResult]) -> bool:
+    strong_prohibits = [r for r in active_results if r.verdict == "PROHIBIT" and r.confidence >= 0.75]
+    strong_permits = [r for r in active_results if r.verdict == "PERMIT" and r.confidence >= 0.75]
+    return len(strong_prohibits) >= 1 and len(strong_permits) >= 1
+
+
+def _canonical_deadlock_evidence(active_results: List[LensResult]) -> bool:
+    permits = [r for r in active_results if r.verdict == "PERMIT"]
+    cautions = [r for r in active_results if r.verdict == "CAUTION"]
+    prohibits = [r for r in active_results if r.verdict == "PROHIBIT"]
+    if len(prohibits) >= 1 and len(permits) >= 1:
+        return True
+    return len(cautions) >= 4 and len(permits) >= 2
+
+
+def _serious_harm_or_rights_signal(decision: str, domains: Dict[str, bool], irreversible: float) -> bool:
+    if irreversible >= 0.7:
+        return True
+    if any(domains.get(name, False) for name in ["personhood", "identity", "end_of_life", "noninterference", "human_subjects", "criminal_justice", "engineering_safety", "trolley"]):
+        return True
+    return _contains(decision, [
+        "without clear user awareness", "consent was removed", "cross-product data", "behavioral personalization",
+        "martial law", "emergency powers", "normal constitutional constraints",
+        "lay off", "layoffs", "artificially boost near-term earnings", "executive bonuses",
+        "kill one innocent", "save five", "strict non-interference treaty"
+    ])
+
+
 def _band_support(confidence: float) -> str:
     if confidence >= 0.85:
         return "strong"
@@ -1701,7 +1735,9 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
     collision_detected = len(recommendation_threads) >= 2
 
     impasse_points, dung_graph = identify_irreconcilable_conflicts(active_results + [critic], domains, decision, irreversible)
-    if not impasse_points and canonical_deadlock_pattern and divergence:
+    two_sided_deadlock_evidence = _canonical_deadlock_evidence(active_results)
+
+    if not impasse_points and canonical_deadlock_pattern and two_sided_deadlock_evidence:
         impasse_points.append(ImpassePoint(
             lenses_in_conflict=[r.agent for r in active_results if r.active][:6],
             axiomatic_root="The case activates a canonical conflict structure that should not be flattened into ordinary caution.",
@@ -1729,16 +1765,35 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
     if any(ip.conflict_type == "canonical_deadlock_pattern" for ip in impasse_points):
         irreconcilable_reasons.append("canonical_deadlock_pattern_detected")
 
-    if canonical_deadlock_pattern and irreconcilable_conflict:
+    benign_coordination = domains.get("coordination_benign") and not _serious_harm_or_rights_signal(decision, domains, irreversible)
+    tension_detected = bool(unresolved_reasons) or divergence or overlap_flag
+    privacy_conflict_split = domains["privacy"] and covert_surveillance_pattern and any(r.verdict == "PERMIT" for r in active_results) and any(r.verdict == "CAUTION" for r in active_results)
+    noninterference_rescue_conflict = domains["noninterference"] and any(fragment["domain"] == "canonical_deadlock_review" for fragment in recommendation_threads)
+
+    serious_live_conflict = (
+        (collision_detected and divergence)
+        or (canonical_deadlock_pattern and two_sided_deadlock_evidence)
+        or privacy_conflict_split
+        or noninterference_rescue_conflict
+        or any(ip.conflict_type in {"axiomatic", "minority_stand", "canonical_deadlock_pattern"} for ip in impasse_points)
+    )
+
+    if canonical_deadlock_pattern and irreconcilable_conflict and serious_live_conflict:
         suspension_reasons.append("canonical_deadlock_requires_escalation")
 
+    if serious_live_conflict and _serious_harm_or_rights_signal(decision, domains, irreversible):
+        if "serious_live_conflict_under_high_stakes" not in suspension_reasons:
+            suspension_reasons.append("serious_live_conflict_under_high_stakes")
+
     suspension = bool(suspension_reasons)
-    if domains.get("coordination_benign") and not divergence and not suspension:
+    if benign_coordination and not suspension:
         impasse_points = []
         irreconcilable_conflict = False
         irreconcilable_reasons = []
         unresolved_reasons = []
-    unresolved_tension = bool(unresolved_reasons) or irreconcilable_conflict
+        tension_detected = False
+        serious_live_conflict = False
+    unresolved_tension = tension_detected or irreconcilable_conflict
 
     if parse_humility.get("analysis_mode") == "triage":
         stability = "TRIAGE_ONLY"
@@ -1871,7 +1926,7 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
         "dissonance_aware_arbitration": {
             "consensus_core": consensus_core,
             "irreconcilable_dissonance": dissonance_map,
-            "synthesis_mode": "dissonance_aware" if irreconcilable_conflict or suspension or (unresolved_tension and not domains.get("coordination_benign")) else "standard",
+            "synthesis_mode": "dissonance_aware" if serious_live_conflict or irreconcilable_conflict or suspension else "standard",
             "dung_argumentation": {
                 "num_extensions": len(dung_graph.extensions or []),
                 "preferred_extensions": [sorted(list(ext)) for ext in (dung_graph.extensions or [])],
@@ -1882,6 +1937,8 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
             "decision_risk_profile": {
                 "irreversibility": irreversible,
                 "overlap_flag": overlap_flag,
+                "tension_detected": tension_detected,
+                "serious_live_conflict": serious_live_conflict,
                 "suspension_reasons": suspension_reasons,
                 "unresolved_tension_reasons": unresolved_reasons,
                 "irreconcilable_conflict": irreconcilable_conflict,
