@@ -1850,15 +1850,6 @@ def synthesize(decision: str, results: List[LensResult], critic: LensResult, dom
         or any(ip.conflict_type in {"axiomatic", "minority_stand", "canonical_deadlock_pattern"} for ip in impasse_points)
     )
 
-    if domains["privacy"] and _contains(decision, ["without explicit consent", "without their consent", "without consent"]):
-        print({
-            "covert_surveillance_pattern": covert_surveillance_pattern,
-            "privacy_conflict_split": privacy_conflict_split,
-            "permits": [r.verdict for r in active_results if r.verdict == "PERMIT"],
-            "cautions": [r.verdict for r in active_results if r.verdict == "CAUTION"],
-            "serious_live_conflict": serious_live_conflict,
-        })
-
     if not impasse_points and noninterference_rescue_conflict and serious_live_conflict:
         impasse_points.append(ImpassePoint(
             lenses_in_conflict=["rescue_obligation", "noninterference_doctrine"],
