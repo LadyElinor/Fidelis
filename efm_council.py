@@ -13,6 +13,7 @@ from instrumentation import (
     ConfidenceClass,
     DetectorStatus,
     LensReceipt,
+    cue_match,
     instrument_synthesis,
 )
 
@@ -44,6 +45,104 @@ def _load_cue_family_registry() -> CueFamilyRegistry | None:
 
 
 CUE_FAMILY_REGISTRY = _load_cue_family_registry()
+
+
+def _match_instrumentation_cues(decision: str, lens: str) -> tuple[list[str], str, list[str]]:
+    if not CUE_FAMILY_REGISTRY:
+        return [], "unclassified", []
+    cues = INSTRUMENTATION_CUE_MAP.get(lens, [])
+    if not cues:
+        return [], "unclassified", []
+    matched = cue_match(decision, cues, CUE_FAMILY_REGISTRY)
+    if not matched.matched_cues:
+        return [], "unclassified", []
+    families = sorted(set(matched.families))
+    if families:
+        primary = families[0]
+        if len(families) > 1 and primary == "unclassified":
+            primary = next((f for f in families if f != "unclassified"), "unclassified")
+    else:
+        primary = "unclassified"
+    return list(matched.matched_cues), primary, families
+
+
+INSTRUMENTATION_CUE_MAP = {
+    "kantian": [
+        "deceive", "lie", "manipulate", "coerce", "without consent",
+        "without explicit consent", "without their consent", "misleading investors",
+        "reclassify", "appearance of profitability", "no one else on the team knows",
+        "strict policy requiring disclosure", "paid her", "gifted in tiny text",
+        "undisclosed sponsorships", "location data", "browsing behavior",
+        "privacy policy", "would not reasonably expect", "opt-in",
+    ],
+    "consequentialist": [
+        "risk", "unsafe", "harm", "deploy before audit", "side effects",
+        "misleading investors", "stock price", "layoffs", "publicly traded",
+        "undisclosed sponsorships", "regulators", "driving massive sales",
+        "location data", "browsing behavior", "tracking", "poor labor conditions",
+        "high water waste", "under-prioritizes", "rare symptom descriptions",
+        "hallway care", "wait times",
+    ],
+    "confucian": [
+        "misrepresent", "conceal", "family", "spouse", "conflict", "undisclosed",
+        "lie to", "deceive", "employee", "manager", "parent", "doctor", "teacher",
+        "trust", "cfo", "board", "publicly traded", "procurement", "supplier",
+        "social media", "influencer", "consumer app", "privacy policy", "hospital",
+        "triage", "patients", "captain", "officer", "civilization", "crew",
+    ],
+    "institutional": [
+        "before audit", "no review", "quietly", "rush", "without oversight",
+        "publicly traded", "stock options", "misleading investors", "reclassify",
+        "spouse", "supplier", "strict policy requiring disclosure", "no one else on the team knows",
+        "anti-indemnity", "its own negligence", "own negligence", "broad hold-harmless",
+        "broad indemnity", "additional insured", "waiver of subrogation",
+        "paid her", "gifted in tiny text", "undisclosed sponsorships", "regulators",
+        "location data", "browsing behavior", "privacy policy", "would not reasonably expect",
+        "legal says the company is covered", "eco-friendly", "recycled polyester",
+        "poor labor conditions", "high water waste", "directionally true", "triage",
+        "under-prioritizes", "vendor promises a patch", "emergency department", "patients",
+        "catastrophic failure", "engineers warn", "seal weakness", "cold conditions",
+        "emergency powers", "normal constitutional constraints", "martial law",
+        "without explicit consent", "without their consent", "without consent", "cross-product data",
+        "behavioral personalization", "consent was removed",
+    ],
+    "care_ethics": [
+        "abandon", "ignore suffering", "distant", "impersonal", "bureaucratic",
+        "efficiency over care", "patient", "patients", "doctor", "hospital", "triage",
+        "care", "user", "users", "followers", "consumers", "employee", "employees",
+        "children", "parent", "vulnerable", "trust", "ai", "model", "deploy",
+    ],
+    "contractualist": [
+        "imposed without consent", "secret", "asymmetric", "power imbalance",
+        "cannot opt out", "privacy policy", "legal says", "covered", "technically",
+        "not illegal", "directionally true", "gifted in tiny text", "paid her",
+        "reclassify", "appearance of profitability", "vendor promises a patch",
+        "would not reasonably expect", "no one else on the team knows",
+        "under-prioritizes", "rare symptom descriptions", "anti-indemnity",
+        "its own negligence", "own negligence", "broad hold-harmless", "broad indemnity",
+        "additional insured", "waiver of subrogation", "without explicit consent",
+        "without their consent", "without consent",
+    ],
+    "stoic": [
+        "panic", "urgent", "must", "no choice", "obviously", "quarterly earnings pressure",
+        "losing your job", "hurt growth", "competitors an edge", "too important to delay",
+        "hallway care is worsening", "staff are overwhelmed", "save billions",
+        "hidden disloyalty", "extinction", "neutral power", "rich", "prestige",
+        "elite", "important people", "high status", "reputation", "public image",
+        "influential", "powerful", "anger", "rage", "humiliation", "shame", "grief",
+        "attachment", "fixation", "closure", "certainty", "control", "desperate",
+    ],
+    "trustee": [
+        "future", "children", "generations", "long-term", "irreversible", "deplete", "extract",
+        "environment", "public", "infrastructure", "safety", "investors", "publicly traded",
+        "market", "shareholders", "followers", "consumers", "regulators", "office", "role",
+        "duty", "steward", "custodian", "public trust", "fiduciary", "captain", "officer",
+        "manager", "director", "board", "governance", "praise", "reputation", "admiration",
+        "image", "appearance", "prestige", "virtuous", "righteous", "public visibility",
+        "public image", "anti-indemnity", "its own negligence", "own negligence", "broad hold-harmless",
+        "broad indemnity", "additional insured", "waiver of subrogation", "direct control"
+    ],
+}
 
 
 ETHICAL_DELIBERATION_ALGORITHM = [
@@ -388,7 +487,12 @@ def detect_domains(decision: str) -> Dict[str, bool]:
 def kantian(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
     considerations = ["Check for dignity violations, coercion, deception, intentional misrepresentation, and use of persons as means."]
-    if _contains(decision, ["deceive", "lie", "manipulate", "coerce", "without consent", "misleading investors", "reclassify", "appearance of profitability", "no one else on the team knows", "strict policy requiring disclosure", "paid her", "gifted in tiny text", "undisclosed sponsorships"]):
+    trigger_cues, trigger_family, all_families = _match_instrumentation_cues(decision, "kantian")
+    privacy_action_cues = {
+        "without consent", "without explicit consent", "without their consent",
+        "privacy policy", "would not reasonably expect"
+    }
+    if trigger_cues and (not domains["privacy"] or any(cue in privacy_action_cues for cue in trigger_cues)):
         concerns.append("Possible deception or intentional false-belief induction affecting persons owed truthful treatment.")
         verdict = "PROHIBIT"
         confidence = 0.9
@@ -441,13 +545,18 @@ def kantian(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Who is being induced to treat a partial environmental improvement as a truthful account of the product's overall ethical profile?"
     else:
         question = "Who is being induced to rely on a materially distorted representation?"
-    return LensResult("kantian", "constraint", verdict, confidence, considerations, concerns, [question])
+    result = LensResult("kantian", "constraint", verdict, confidence, considerations, concerns, [question])
+    setattr(result, "_instrumentation_trigger_cues", trigger_cues)
+    setattr(result, "_instrumentation_trigger_family", trigger_family)
+    setattr(result, "_instrumentation_all_families", all_families)
+    return result
 
 
 def consequentialist(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
     considerations = ["Map likely harms, benefits, externalities, and who bears the cost."]
-    if _contains(decision, ["risk", "unsafe", "harm", "deploy before audit", "side effects", "misleading investors", "stock price", "layoffs", "publicly traded", "undisclosed sponsorships", "regulators", "driving massive sales", "location data", "browsing behavior", "tracking", "poor labor conditions", "high water waste", "under-prioritizes", "rare symptom descriptions", "hallway care", "wait times"]):
+    trigger_cues, trigger_family, all_families = _match_instrumentation_cues(decision, "consequentialist")
+    if trigger_cues:
         concerns.append("Short-term gains may be masking wider downstream harm, especially to investors, employees, and market trust.")
         verdict = "CAUTION"
         confidence = 0.81
@@ -518,7 +627,11 @@ def consequentialist(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Who benefits from the campaign now, and who bears the cost if the sustainability claim is later understood as selective or misleading?"
     else:
         question = "Who benefits immediately, and who bears long-tail costs later when the distortion is discovered?"
-    return LensResult("consequentialist", "outcomes", verdict, confidence, considerations, concerns, [question])
+    result = LensResult("consequentialist", "outcomes", verdict, confidence, considerations, concerns, [question])
+    setattr(result, "_instrumentation_trigger_cues", trigger_cues)
+    setattr(result, "_instrumentation_trigger_family", trigger_family)
+    setattr(result, "_instrumentation_all_families", all_families)
+    return result
 
 
 def virtue(decision: str, domains: Dict[str, bool]) -> LensResult:
@@ -592,11 +705,13 @@ def confucian(decision: str, domains: Dict[str, bool]) -> LensResult:
         "Rectify names, honor role-specific duties, preserve relational trust, and ask whether office and action still match.",
         "In hard cases, preserve acknowledgment of subordinated duties instead of forcing false harmony."
     ]
-    if _contains(decision, ["misrepresent", "conceal", "family", "spouse", "conflict", "undisclosed", "lie to", "deceive"]):
+    trigger_cues, trigger_family, all_families = _match_instrumentation_cues(decision, "confucian")
+    strong_role_breach_cues = {"misrepresent", "conceal", "family", "spouse", "conflict", "undisclosed", "lie to", "deceive"}
+    if any(cue in strong_role_breach_cues for cue in trigger_cues):
         concerns.append("Role-name mismatch and betrayal of relational trust are present.")
         verdict = "PROHIBIT"
         confidence = 0.82
-    elif _contains(decision, ["employee", "manager", "parent", "doctor", "teacher", "trust", "cfo", "board", "publicly traded", "procurement", "supplier", "social media", "influencer", "beauty brand", "consumer app", "privacy policy", "fashion company", "supply-chain", "hospital", "triage", "patients", "emergency department", "captain", "officer", "civilization", "crew"]):
+    elif trigger_cues:
         concerns.append("The office carries role-specific trust obligations that may forbid concealed conflicts or strategic misdescription of reality.")
         verdict = "CAUTION"
         confidence = 0.74
@@ -654,17 +769,24 @@ def confucian(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "What does a brand owe the public when partial truth is being used to imply broader ethical cleanliness?"
     else:
         question = "Which specific roles are being performed or violated, what secondary duty still must be acknowledged, and do the names still match the reality?"
-    return LensResult("confucian", "role-differentiation", verdict, confidence, considerations, concerns, [question])
+    result = LensResult("confucian", "role-differentiation", verdict, confidence, considerations, concerns, [question])
+    setattr(result, "_instrumentation_trigger_cues", trigger_cues)
+    setattr(result, "_instrumentation_trigger_family", trigger_family)
+    setattr(result, "_instrumentation_all_families", all_families)
+    return result
 
 
 def trustee(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
     considerations = ["Act as fiduciary for absent parties, future parties, and principals who must trust current stewards."]
-    if _contains(decision, ["future", "children", "generations", "long-term", "irreversible", "deplete", "extract"]):
+    trigger_cues, trigger_family, all_families = _match_instrumentation_cues(decision, "trustee")
+    future_party_cues = {"future", "children", "generations", "long-term", "irreversible", "deplete", "extract"}
+    public_stakeholder_cues = {"environment", "public", "infrastructure", "safety", "investors", "publicly traded", "market", "shareholders", "followers", "consumers", "regulators"}
+    if any(cue in future_party_cues for cue in trigger_cues):
         concerns.append("Possible betrayal of intergenerational or absent-party stewardship is present.")
         verdict = "CAUTION"
         confidence = 0.78
-    elif _contains(decision, ["environment", "public", "infrastructure", "safety", "investors", "publicly traded", "market", "shareholders", "followers", "consumers", "regulators"]):
+    elif any(cue in public_stakeholder_cues for cue in trigger_cues):
         concerns.append("Absent stakeholders may be exposed to manipulated signals they are entitled to treat as trustworthy.")
         verdict = "CAUTION"
         confidence = 0.74
@@ -722,24 +844,32 @@ def trustee(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Who bears the cost when a green narrative obscures labor abuse or resource waste elsewhere in the chain?"
     else:
         question = "Who is being asked to bear risk without being present for the framing choice, and is this office being inhabited as stewardship with accountable duty or as morally decorated entitlement?"
-    return LensResult("trustee", "stewardship", verdict, confidence, considerations, concerns, [question])
+    result = LensResult("trustee", "stewardship", verdict, confidence, considerations, concerns, [question])
+    setattr(result, "_instrumentation_trigger_cues", trigger_cues)
+    setattr(result, "_instrumentation_trigger_family", trigger_family)
+    setattr(result, "_instrumentation_all_families", all_families)
+    return result
 
 
 def stoic(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
     considerations = ["Check for false beliefs, misattributed control, and reactive reasoning."]
-    if _contains(decision, ["panic", "urgent", "must", "no choice", "obviously", "quarterly earnings pressure", "losing your job", "hurt growth", "competitors an edge", "too important to delay", "hallway care is worsening", "staff are overwhelmed", "save billions", "hidden disloyalty", "extinction", "neutral power"]):
+    trigger_cues, trigger_family, all_families = _match_instrumentation_cues(decision, "stoic")
+    pressure_cues = {"panic", "urgent", "must", "no choice", "obviously", "quarterly earnings pressure", "losing your job", "hurt growth", "competitors an edge", "too important to delay", "hallway care is worsening", "staff are overwhelmed", "save billions", "hidden disloyalty", "extinction", "neutral power"}
+    status_cues = {"rich", "prestige", "elite", "important people", "high status", "reputation", "public image", "influential", "powerful"}
+    reactivity_cues = {"panic", "anger", "rage", "humiliation", "shame", "grief", "attachment", "fixation", "closure", "certainty", "control", "desperate"}
+    if any(cue in pressure_cues for cue in trigger_cues):
         concerns.append("Reasoning may be distorted by pressure, fear, or the illusion that distortion is necessary for survival.")
         verdict = "CAUTION"
         confidence = 0.77
     else:
         verdict = "PERMIT"
         confidence = 0.51
-    if _contains(decision, ["rich", "prestige", "elite", "important people", "high status", "reputation", "public image", "influential", "powerful"]):
+    if any(cue in status_cues for cue in trigger_cues):
         concerns.append("Admiration of status, prestige, or influential actors may be corrupting moral judgment about what is actually fitting or just.")
         verdict = "CAUTION"
         confidence = max(confidence, 0.76)
-    if _contains(decision, ["panic", "anger", "rage", "humiliation", "shame", "grief", "attachment", "fixation", "closure", "certainty", "control", "desperate"]):
+    if any(cue in reactivity_cues for cue in trigger_cues):
         concerns.append("Reactive fixation, grasping, or closure-seeking may be narrowing perception before explicit reasoning begins.")
         verdict = "CAUTION"
         confidence = max(confidence, 0.79)
@@ -784,7 +914,11 @@ def stoic(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Are we seeing the rule clearly, or using it to avoid the psychic burden of rescue under uncertainty?"
     else:
         question = "Which parts of this situation are genuine constraints, and which are fear-amplified narratives?"
-    return LensResult("stoic", "reality-alignment", verdict, confidence, considerations, concerns, [question])
+    result = LensResult("stoic", "reality-alignment", verdict, confidence, considerations, concerns, [question])
+    setattr(result, "_instrumentation_trigger_cues", trigger_cues)
+    setattr(result, "_instrumentation_trigger_family", trigger_family)
+    setattr(result, "_instrumentation_all_families", all_families)
+    return result
 
 
 def institutional(decision: str, domains: Dict[str, bool]) -> LensResult:
@@ -794,6 +928,12 @@ def institutional(decision: str, domains: Dict[str, bool]) -> LensResult:
         "Ask whether the institution created the background conditions that predictably narrowed downstream moral agency or legitimacy.",
         "Check whether the institution is reasoning in stage-one terms, praising intentions or surface order while underweighting trade-offs, dispersed knowledge, and downstream consequences."
     ]
+    trigger_cues, trigger_family, all_families = _match_instrumentation_cues(decision, "institutional")
+    privacy_receipt_cues = set(trigger_cues)
+    if domains["privacy"] and not ({"privacy policy", "would not reasonably expect", "legal says the company is covered", "without consent", "without explicit consent", "without their consent", "consent was removed"} & privacy_receipt_cues):
+        trigger_cues = []
+        trigger_family = "unclassified"
+        all_families = []
     if domains["finance"] and _contains(decision, ["before audit", "no review", "quietly", "rush", "without oversight", "publicly traded", "stock options", "misleading investors", "reclassify"]):
         concerns.append("This resembles a classic institutional misconduct pattern: reporting distortion under incentive pressure with compromised governance.")
         verdict = "PROHIBIT"
@@ -810,7 +950,7 @@ def institutional(decision: str, domains: Dict[str, bool]) -> LensResult:
         concerns.append("This resembles a classic disclosure-theater pattern: paid promotion presented with minimized transparency under active regulatory risk.")
         verdict = "CAUTION"
         confidence = 0.87
-    elif domains["privacy"] and _contains(decision, ["location data", "browsing behavior", "privacy policy", "would not reasonably expect", "legal says the company is covered"]):
+    elif domains["privacy"] and _contains(decision, ["location data", "browsing behavior"]) and _contains(decision, ["privacy policy", "would not reasonably expect", "legal says the company is covered", "without consent", "without explicit consent", "without their consent", "consent was removed"]):
         concerns.append("This resembles a classic privacy overreach pattern: formal legal cover paired with tracking beyond reasonable user expectation.")
         verdict = "CAUTION"
         confidence = 0.88
@@ -892,7 +1032,11 @@ def institutional(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "What claim revision, supply-chain correction, or campaign pause would be required before this could be treated as legitimate?"
     else:
         question = "What independent oversight would be required before this could be treated as legitimate?"
-    return LensResult("institutional", "feedback", verdict, confidence, considerations, concerns, [question])
+    result = LensResult("institutional", "feedback", verdict, confidence, considerations, concerns, [question])
+    setattr(result, "_instrumentation_trigger_cues", trigger_cues)
+    setattr(result, "_instrumentation_trigger_family", trigger_family)
+    setattr(result, "_instrumentation_all_families", all_families)
+    return result
 
 
 def genealogical(decision: str, round1: List[LensResult], domains: Dict[str, bool]) -> LensResult:
@@ -948,11 +1092,13 @@ def care_ethics(decision: str, domains: Dict[str, bool]) -> LensResult:
         "Ask whether pressure, deprivation, or institutional distance has narrowed moral attention away from those already dependent on the decision.",
         "Check whether the actor can still sympathetically recognize the standpoint of those who must live under the decision, rather than merely classify them from a distance."
     ]
-    if _contains(decision, ["abandon", "ignore suffering", "distant", "impersonal", "bureaucratic", "efficiency over care"]):
+    trigger_cues, trigger_family, all_families = _match_instrumentation_cues(decision, "care_ethics")
+    acute_care_breach_cues = {"abandon", "ignore suffering", "distant", "impersonal", "bureaucratic", "efficiency over care"}
+    if any(cue in acute_care_breach_cues for cue in trigger_cues):
         concerns.append("There may be a failure of attentiveness or responsibility toward concrete vulnerability.")
         verdict = "PROHIBIT"
         confidence = 0.81
-    elif _contains(decision, ["patient", "patients", "doctor", "hospital", "triage", "care", "user", "users", "followers", "consumers", "employee", "employees", "children", "parent", "vulnerable", "trust", "ai", "model", "deploy"]):
+    elif trigger_cues:
         concerns.append("A dependency or care relationship exists, so prior reliance may create obligations that cannot be reduced to efficiency or formal permission.")
         verdict = "CAUTION"
         confidence = 0.78
@@ -992,13 +1138,23 @@ def care_ethics(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Are communities and supply-chain workers in a dependency relationship that this decision treats as invisible?"
     else:
         question = "Who is already relying on this decision-maker, and does the proposed action honor or abandon that reliance?"
-    return LensResult("care_ethics", "dependency-and-responsiveness", verdict, confidence, considerations, concerns, [question])
+    result = LensResult("care_ethics", "dependency-and-responsiveness", verdict, confidence, considerations, concerns, [question])
+    setattr(result, "_instrumentation_trigger_cues", trigger_cues)
+    setattr(result, "_instrumentation_trigger_family", trigger_family)
+    setattr(result, "_instrumentation_all_families", all_families)
+    return result
 
 
 def contractualist(decision: str, domains: Dict[str, bool]) -> LensResult:
     concerns = []
     considerations = ["Ask whether any affected party could reasonably reject the principle that licenses this action, even if it is technically permitted."]
-    if _contains(decision, ["imposed without consent", "secret", "asymmetric", "power imbalance", "cannot opt out", "privacy policy", "legal says", "covered", "technically", "not illegal", "directionally true", "gifted in tiny text", "paid her", "reclassify", "appearance of profitability", "vendor promises a patch", "would not reasonably expect", "no one else on the team knows", "under-prioritizes", "rare symptom descriptions"]):
+    trigger_cues, trigger_family, all_families = _match_instrumentation_cues(decision, "contractualist")
+    privacy_rejectability_cues = {
+        "imposed without consent", "cannot opt out", "privacy policy", "legal says",
+        "covered", "would not reasonably expect", "without explicit consent",
+        "without their consent", "without consent"
+    }
+    if trigger_cues and (not domains["privacy"] or any(cue in privacy_rejectability_cues for cue in trigger_cues)):
         concerns.append("The action may be formally defensible while still resting on a principle that burdened parties could reasonably reject.")
         verdict = "CAUTION"
         confidence = 0.84
@@ -1047,7 +1203,11 @@ def contractualist(decision: str, domains: Dict[str, bool]) -> LensResult:
         question = "Could a consumer reasonably reject the principle that partial truth counts as adequate sustainability disclosure?"
     else:
         question = "Could the person who bears the cost of this decision reasonably reject the principle under which it was made?"
-    return LensResult("contractualist", "reasonable-rejectability", verdict, confidence, considerations, concerns, [question])
+    result = LensResult("contractualist", "reasonable-rejectability", verdict, confidence, considerations, concerns, [question])
+    setattr(result, "_instrumentation_trigger_cues", trigger_cues)
+    setattr(result, "_instrumentation_trigger_family", trigger_family)
+    setattr(result, "_instrumentation_all_families", all_families)
+    return result
 
 
 def relational_ontology(decision: str, domains: Dict[str, bool]) -> LensResult:
@@ -1689,14 +1849,43 @@ def identify_irreconcilable_conflicts(lens_outputs: List[LensResult], domains: D
 
 
 def _legacy_result_to_instrumentation_receipt(decision: str, result: LensResult) -> LensReceipt:
-    lineage = infer_detector_lineage(decision, result.agent, result.concerns)
-    trigger_cues = list(lineage.get("trigger_terms", []) or [])
-    trigger_family = lineage.get("trigger_family", "generic")
-    if trigger_family == "generic":
-        trigger_family = "unclassified"
-    all_families = [trigger_family] if trigger_family != "unclassified" else []
+    direct_cues = list(getattr(result, "_instrumentation_trigger_cues", []) or [])
+    direct_family = getattr(result, "_instrumentation_trigger_family", None)
+    direct_families = list(getattr(result, "_instrumentation_all_families", []) or [])
 
-    if not result.active or result.confidence < 0.5:
+    if direct_cues or direct_family or direct_families:
+        trigger_cues = direct_cues
+        trigger_family = direct_family or "unclassified"
+        all_families = direct_families or ([trigger_family] if trigger_family != "unclassified" else [])
+    else:
+        lineage = infer_detector_lineage(decision, result.agent, result.concerns)
+        trigger_cues = list(lineage.get("trigger_terms", []) or [])
+        trigger_family = lineage.get("trigger_family", "generic")
+        if trigger_family == "generic":
+            trigger_family = "unclassified"
+        all_families = [trigger_family] if trigger_family != "unclassified" else []
+
+        if CUE_FAMILY_REGISTRY:
+            mapped_cues = INSTRUMENTATION_CUE_MAP.get(result.agent, [])
+            if mapped_cues:
+                matched = cue_match(decision, mapped_cues, CUE_FAMILY_REGISTRY)
+                if matched.matched_cues:
+                    combined = list(dict.fromkeys(trigger_cues + matched.matched_cues))
+                    trigger_cues = combined
+                    all_families = sorted(set(matched.families))
+                    if all_families:
+                        trigger_family = all_families[0]
+                        if len(all_families) > 1 and trigger_family == "unclassified":
+                            trigger_family = next((f for f in all_families if f != "unclassified"), "unclassified")
+
+    claims = list(result.concerns)
+    missing_evidence = list(result.questions)
+    has_structured_signal = bool(trigger_cues) or bool(claims)
+    has_meaningful_verdict = result.verdict in {"CAUTION", "PROHIBIT"}
+
+    if not result.active:
+        status = DetectorStatus.INACTIVE
+    elif not has_structured_signal and result.confidence < 0.7 and not has_meaningful_verdict:
         status = DetectorStatus.INACTIVE
     elif result.confidence < 0.7:
         status = DetectorStatus.WEAK
@@ -1712,14 +1901,8 @@ def _legacy_result_to_instrumentation_receipt(decision: str, result: LensResult)
     else:
         confidence = ConfidenceClass.HIGH
 
-    if CUE_FAMILY_REGISTRY and trigger_cues:
-        family_hits = []
-        for cue in trigger_cues:
-            family_hits.extend(CUE_FAMILY_REGISTRY.family_of(cue))
-        deduped = sorted(set(family_hits))
-        if deduped:
-            all_families = deduped
-            trigger_family = deduped[0]
+    if not trigger_cues and CUE_FAMILY_REGISTRY and trigger_family != "unclassified":
+        all_families = [trigger_family]
 
     return LensReceipt(
         lens=result.agent,
@@ -1728,12 +1911,12 @@ def _legacy_result_to_instrumentation_receipt(decision: str, result: LensResult)
         trigger_cues=trigger_cues,
         trigger_family=trigger_family,
         all_families=all_families,
-        claims=list(result.concerns),
-        missing_evidence=[],
+        claims=claims,
+        missing_evidence=missing_evidence,
         minority_report=None,
         verdict=result.verdict,
         considerations=list(result.considerations),
-        concerns=list(result.concerns),
+        concerns=claims,
         questions=list(result.questions),
         active=result.active,
     )

@@ -225,6 +225,29 @@ families:
       - "fiduciary"
       - "publicly traded"
 
+  asymmetric_risk_transfer:
+    description: >
+      Phrases indicating liability, indemnity, or insurance structures that
+      push hazard burden onto weaker parties or parties with less control.
+      Common shared trigger for trustee, contractualist, institutional,
+      genealogical, and sometimes consequentialist reasoning.
+    cues:
+      - "anti-indemnity"
+      - "indemnity"
+      - "indemnification"
+      - "broad indemnity"
+      - "hold harmless"
+      - "hold-harmless"
+      - "broad hold-harmless"
+      - "additional insured"
+      - "waiver of subrogation"
+      - "its own negligence"
+      - "own negligence"
+      - "shifts liability"
+      - "indemnifies"
+      - "direct control"
+      - "proportionate indemnity"
+
   care_dependency:
     description: >
       Phrases indicating existing relationships of dependency or care.
