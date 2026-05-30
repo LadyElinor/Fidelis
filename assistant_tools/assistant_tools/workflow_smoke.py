@@ -5,12 +5,12 @@ import json
 import time
 from pathlib import Path
 
-from assistant_tools.cer_openclaw_integration import OpenClawCerSession
-from assistant_tools.prompt_contract_lint import lint_prompt_contract
-from assistant_tools.receipt import generate_receipt
-from assistant_tools.repo_ingest import ingest_repo
-from assistant_tools.safety_gate import run_safety_gates
-from assistant_tools.tool_call_log import append_tool_call
+from assistant_tools.assistant_tools.cer_openclaw_integration import OpenClawCerSession
+from assistant_tools.assistant_tools.prompt_contract_lint import lint_prompt_contract
+from assistant_tools.assistant_tools.receipt import generate_receipt
+from assistant_tools.assistant_tools.repo_ingest import ingest_repo
+from assistant_tools.assistant_tools.safety_gate import run_safety_gates
+from assistant_tools.assistant_tools.tool_call_log import append_tool_call
 
 
 def run_workflow_smoke(
