@@ -1,0 +1,10 @@
+{
+  "name": "trustworthy-agent-stack-node-collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "node demoCollector.js",
+    "test:parity": "node demoCollector.js --check-vectors"
+  }
+}
