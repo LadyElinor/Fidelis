@@ -9,6 +9,9 @@
     "record_type",
     "run_id",
     "provenance_hash",
+    "signature",
+    "signature_algorithm",
+    "signing_key_id",
     "payload"
   ],
   "properties": {
@@ -21,6 +24,9 @@
     },
     "run_id": {"type": "string", "minLength": 1},
     "provenance_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "signature": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "signature_algorithm": {"const": "hmac-sha256"},
+    "signing_key_id": {"type": "string", "minLength": 1},
     "payload": {"type": "object"}
   },
   "additionalProperties": false

@@ -9,10 +9,10 @@ from typing import Any, Dict, List
 
 try:
     from .cer_emitter import VALID_DECISIONS, VALID_GATES
-    from .hash_utils import CANONICAL_JSON_VERSION, deterministic_hash
+    from .hash_utils import CANONICAL_JSON_VERSION, DEFAULT_SIGNING_KEY_ID, deterministic_hash, verify_signature
 except ImportError:  # pragma: no cover
     from cer_emitter import VALID_DECISIONS, VALID_GATES
-    from hash_utils import CANONICAL_JSON_VERSION, deterministic_hash
+    from hash_utils import CANONICAL_JSON_VERSION, DEFAULT_SIGNING_KEY_ID, deterministic_hash, verify_signature
 
 REQUIRED_ENVELOPE_FIELDS = {
     "contract_version",
@@ -22,6 +22,9 @@ REQUIRED_ENVELOPE_FIELDS = {
     "record_type",
     "run_id",
     "provenance_hash",
+    "signature",
+    "signature_algorithm",
+    "signing_key_id",
     "payload",
 }
 VALID_RECORD_TYPES = {"run", "hazard_map", "gate_check", "confirmation", "external_action", "data_issue"}
@@ -185,12 +188,18 @@ def validate_cer_export(export_path: str) -> Dict[str, Any]:
                 violations.append(f"Line {line_num}: Invalid run_id")
             if not _valid_timestamp(str(record.get("export_timestamp", ""))):
                 violations.append(f"Line {line_num}: Invalid export_timestamp")
+            if record.get("signature_algorithm") != "hmac-sha256":
+                violations.append(f"Line {line_num}: Unsupported signature_algorithm")
+            if record.get("signing_key_id") != DEFAULT_SIGNING_KEY_ID:
+                violations.append(f"Line {line_num}: Unknown signing_key_id")
 
             payload = record.get("payload", {})
             if isinstance(payload, dict):
                 expected_hash = deterministic_hash(payload)
                 if record.get("provenance_hash") != expected_hash:
                     violations.append(f"Line {line_num}: Provenance hash mismatch")
+                if not verify_signature(payload, str(record.get("signature", ""))):
+                    violations.append(f"Line {line_num}: Signature verification failed")
             else:
                 violations.append(f"Line {line_num}: Payload is not an object")
 

@@ -38,13 +38,14 @@ No external runtime dependencies are required for the demo. `pytest` is only nee
 - EthicsCouncil output influences operational gate behavior.
 - Escalation has a real branch and can block execution.
 - CER exports deterministic provenance hashes.
-- SOPHRON-style ingestion recomputes and verifies hashes.
+- CER exports deterministic demo signatures for receipt verification.
+- SOPHRON-style ingestion recomputes and verifies hashes and signatures.
 - Deliberately broken records fail validation.
 
 ## What this does not yet claim
 
 - Production-grade MCP enforcement.
-- Cryptographic signing.
+- Production key management or public-key infrastructure.
 - Full SOPHRON statistical analysis.
 - Real human approval UX.
 - Live database-backed telemetry.

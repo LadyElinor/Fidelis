@@ -42,6 +42,28 @@ def test_bad_hash_fails(tmp_path):
     assert any("Provenance hash mismatch" in v for v in result["violations"])
 
 
+def test_bad_signature_fails(tmp_path):
+    export_path = run_demo(output_dir=str(tmp_path), approve_confirmation=True)
+    records = _read_jsonl(export_path)
+    records[0]["signature"] = "0" * 64
+    broken_path = tmp_path / "bad_signature.jsonl"
+    _write_jsonl(broken_path, records)
+    result = validate_cer_export(str(broken_path))
+    assert result["valid"] is False
+    assert any("Signature verification failed" in v for v in result["violations"])
+
+
+def test_unknown_signing_key_fails(tmp_path):
+    export_path = run_demo(output_dir=str(tmp_path), approve_confirmation=True)
+    records = _read_jsonl(export_path)
+    records[0]["signing_key_id"] = "unknown-key"
+    broken_path = tmp_path / "bad_key.jsonl"
+    _write_jsonl(broken_path, records)
+    result = validate_cer_export(str(broken_path))
+    assert result["valid"] is False
+    assert any("Unknown signing_key_id" in v for v in result["violations"])
+
+
 def test_missing_payload_fails(tmp_path):
     export_path = run_demo(output_dir=str(tmp_path), approve_confirmation=True)
     records = _read_jsonl(export_path)

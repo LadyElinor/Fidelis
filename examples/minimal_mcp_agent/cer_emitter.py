@@ -17,9 +17,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from .hash_utils import CANONICAL_JSON_VERSION, deterministic_hash
+    from .hash_utils import (
+        CANONICAL_JSON_VERSION,
+        DEFAULT_SIGNING_KEY_ID,
+        deterministic_hash,
+        sign_payload,
+    )
 except ImportError:  # pragma: no cover
-    from hash_utils import CANONICAL_JSON_VERSION, deterministic_hash
+    from hash_utils import CANONICAL_JSON_VERSION, DEFAULT_SIGNING_KEY_ID, deterministic_hash, sign_payload
 
 
 VALID_GATES = {
@@ -166,6 +171,9 @@ class CerEmitter:
                     "record_type": record["record_type"],
                     "run_id": self.run_id,
                     "provenance_hash": deterministic_hash(payload),
+                    "signature": sign_payload(payload),
+                    "signature_algorithm": "hmac-sha256",
+                    "signing_key_id": DEFAULT_SIGNING_KEY_ID,
                     "payload": payload,
                 }
                 f.write(json.dumps(envelope, sort_keys=True, ensure_ascii=False) + "\n")
