@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "meaning-assay"
+version = "0.1.0"
+description = "A deterministic, receipts-first engine for reading acts through twenty-seven traditions of meaning, separating significance from warrant."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["ethics", "philosophy", "auditing", "meaning", "deterministic"]
+authors = [{ name = "LadyElinor" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+meaning-assay = "meaning_assay.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meaning_assay"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
