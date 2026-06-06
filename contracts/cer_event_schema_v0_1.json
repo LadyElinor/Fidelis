@@ -20,7 +20,7 @@
     "export_timestamp": {"type": "string"},
     "record_type": {
       "type": "string",
-      "enum": ["run", "hazard_map", "gate_check", "confirmation", "external_action", "data_issue"]
+      "enum": ["run", "hazard_map", "gate_check", "confirmation", "external_action", "data_issue", "warrant_assay"]
     },
     "run_id": {"type": "string", "minLength": 1},
     "provenance_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},

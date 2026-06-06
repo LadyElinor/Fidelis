@@ -80,3 +80,7 @@ The implementation is intentionally modest. It demonstrates typed evidence, risk
 ## Adversarial test posture
 
 The repo now includes a small adversarial test matrix aimed at prompt-injection, jailbreak, prompt-leak, anomalous-output, and never-auto-route cases. These tests are designed as local hardening checks, not endorsements of external jailbreak corpora.
+
+## Warrant assay seam
+
+The CER/SOPHRON contract now reserves a `warrant_assay` record type for a future bridge to `meaning-assay`. In the current repo state, validator support exists for that record shape so a warrant layer can be added as a receipt-bearing artifact without reworking the downstream verification contract.

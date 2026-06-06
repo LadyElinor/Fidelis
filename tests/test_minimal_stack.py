@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from examples.minimal_mcp_agent.demo import run_demo
-from examples.minimal_mcp_agent.hash_utils import deterministic_hash
+from examples.minimal_mcp_agent.hash_utils import deterministic_hash, sign_payload
 from examples.minimal_mcp_agent.sophron_ingest import validate_cer_export
 
 
@@ -137,3 +137,74 @@ def test_confirmation_after_external_action_fails(tmp_path):
     result = validate_cer_export(str(broken_path))
     assert result["valid"] is False
     assert any("confirmation appears after external action" in v for v in result["violations"])
+
+
+def test_warrant_assay_record_validates_when_well_formed(tmp_path):
+    export_path = run_demo(output_dir=str(tmp_path), approve_confirmation=True)
+    records = _read_jsonl(export_path)
+    payload = {
+        "assay_id": "wa_0001",
+        "step_id": "step_001",
+        "case_key": "silent_policy_weaken",
+        "quadrant": "DANGEROUS",
+        "warrant_band": "negative",
+        "warranted_action": "REFUSE",
+        "alignment": "UNDER_JUSTIFIED",
+        "source_receipt_sha256": "a" * 64,
+        "record_sha256": "b" * 64,
+        "created_at": records[0]["payload"]["started_at"],
+    }
+    warrant_record = {
+        "contract_version": "0.1",
+        "schema_version": "0.1",
+        "canonical_json_version": records[0]["canonical_json_version"],
+        "export_timestamp": records[0]["export_timestamp"],
+        "record_type": "warrant_assay",
+        "run_id": records[0]["run_id"],
+        "provenance_hash": deterministic_hash(payload),
+        "signature": sign_payload(payload),
+        "signature_algorithm": "hmac-sha256",
+        "signing_key_id": records[0]["signing_key_id"],
+        "payload": payload,
+    }
+    records.append(warrant_record)
+    path = tmp_path / "with_warrant_assay.jsonl"
+    _write_jsonl(path, records)
+    result = validate_cer_export(str(path))
+    assert result["valid"] is True
+
+
+def test_warrant_assay_invalid_alignment_fails(tmp_path):
+    export_path = run_demo(output_dir=str(tmp_path), approve_confirmation=True)
+    records = _read_jsonl(export_path)
+    payload = {
+        "assay_id": "wa_0001",
+        "step_id": "step_001",
+        "case_key": "silent_policy_weaken",
+        "quadrant": "DANGEROUS",
+        "warrant_band": "negative",
+        "warranted_action": "REFUSE",
+        "alignment": "MAYBE",
+        "source_receipt_sha256": "a" * 64,
+        "record_sha256": "b" * 64,
+        "created_at": records[0]["payload"]["started_at"],
+    }
+    warrant_record = {
+        "contract_version": "0.1",
+        "schema_version": "0.1",
+        "canonical_json_version": records[0]["canonical_json_version"],
+        "export_timestamp": records[0]["export_timestamp"],
+        "record_type": "warrant_assay",
+        "run_id": records[0]["run_id"],
+        "provenance_hash": deterministic_hash(payload),
+        "signature": sign_payload(payload),
+        "signature_algorithm": "hmac-sha256",
+        "signing_key_id": records[0]["signing_key_id"],
+        "payload": payload,
+    }
+    records.append(warrant_record)
+    path = tmp_path / "bad_warrant_assay.jsonl"
+    _write_jsonl(path, records)
+    result = validate_cer_export(str(path))
+    assert result["valid"] is False
+    assert any("invalid warrant_assay alignment" in v for v in result["violations"])

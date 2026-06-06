@@ -27,7 +27,7 @@ REQUIRED_ENVELOPE_FIELDS = {
     "signing_key_id",
     "payload",
 }
-VALID_RECORD_TYPES = {"run", "hazard_map", "gate_check", "confirmation", "external_action", "data_issue"}
+VALID_RECORD_TYPES = {"run", "hazard_map", "gate_check", "confirmation", "external_action", "data_issue", "warrant_assay"}
 
 
 def _valid_timestamp(value: str) -> bool:
@@ -96,6 +96,35 @@ def _validate_payload(record: Dict[str, Any], line_num: int) -> List[str]:
                 violations.append(f"Line {line_num}: external_action payload missing {field}")
         if payload.get("status") not in {"completed", "blocked", "failed", "simulated"}:
             violations.append(f"Line {line_num}: invalid external_action status")
+
+    elif record_type == "warrant_assay":
+        required = (
+            "assay_id",
+            "step_id",
+            "case_key",
+            "quadrant",
+            "warrant_band",
+            "warranted_action",
+            "alignment",
+            "source_receipt_sha256",
+            "record_sha256",
+            "created_at",
+        )
+        for field in required:
+            if field not in payload:
+                violations.append(f"Line {line_num}: warrant_assay payload missing {field}")
+        if payload.get("quadrant") not in {"LUMINOUS", "CHARGED", "DANGEROUS", "QUIET_GOOD", "INERT", "CORROSIVE"}:
+            violations.append(f"Line {line_num}: invalid warrant_assay quadrant")
+        if payload.get("warrant_band") not in {"positive", "contested", "negative", "undetermined"}:
+            violations.append(f"Line {line_num}: invalid warrant_assay warrant_band")
+        if payload.get("warranted_action") not in {"ALLOW", "REVIEW", "ESCALATE", "REFUSE"}:
+            violations.append(f"Line {line_num}: invalid warrant_assay warranted_action")
+        if payload.get("alignment") not in {"ALIGNED", "OVER_REACTION", "UNDER_JUSTIFIED", "SIGNIFICANCE_DRIVEN"}:
+            violations.append(f"Line {line_num}: invalid warrant_assay alignment")
+        if not isinstance(payload.get("source_receipt_sha256"), str) or len(payload.get("source_receipt_sha256", "")) != 64:
+            violations.append(f"Line {line_num}: invalid warrant_assay source_receipt_sha256")
+        if not isinstance(payload.get("record_sha256"), str) or len(payload.get("record_sha256", "")) != 64:
+            violations.append(f"Line {line_num}: invalid warrant_assay record_sha256")
 
     return violations
 
