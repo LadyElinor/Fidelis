@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from ..model import Case
-from . import kor, trinity
+from . import kor, scenarios, trinity
 
 REGISTRY: dict[str, Case] = {
     kor.CASE.key: kor.CASE,
     trinity.CASE.key: trinity.CASE,
+    scenarios.DB_WIPE.key: scenarios.DB_WIPE,
+    scenarios.OVER_REFUSAL.key: scenarios.OVER_REFUSAL,
+    scenarios.SILENT_POLICY_WEAKEN.key: scenarios.SILENT_POLICY_WEAKEN,
 }
 
 

@@ -10,6 +10,9 @@ from meaning_assay.model import Reading, Grip, Polarity, Verdict
 def test_cases_validate():
     validate(get_case("kor"))
     validate(get_case("trinity"))
+    validate(get_case("db_wipe"))
+    validate(get_case("over_refusal"))
+    validate(get_case("silent_policy_weaken"))
 
 
 def test_kor_is_luminous():

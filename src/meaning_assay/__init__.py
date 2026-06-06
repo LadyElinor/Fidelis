@@ -25,6 +25,7 @@ from .model import (
     Tradition,
     Verdict,
 )
+from .bridge import CouncilOutput, CouncilVerdict, Reconciliation, reconcile, warrant_assay_record
 from .pairs import PairAnalysis, compare
 from .receipts import receipt, verify, lensbook_digest
 from .report import render_case, render_pair_summary
@@ -35,6 +36,7 @@ __all__ = [
     "Analysis", "analyze", "rank_by_grip", "validate", "IntegrityError",
     "LENSBOOK", "get_tradition",
     "Case", "Citation", "Function", "Grip", "Polarity", "Reading", "Tradition", "Verdict",
+    "CouncilOutput", "CouncilVerdict", "Reconciliation", "reconcile", "warrant_assay_record",
     "PairAnalysis", "compare",
     "receipt", "verify", "lensbook_digest",
     "render_case", "render_pair_summary",
