@@ -20,7 +20,7 @@ def test_good_export_passes(tmp_path):
     export_path = run_demo(output_dir=str(tmp_path), approve_confirmation=True)
     result = validate_cer_export(export_path)
     assert result["valid"] is True
-    assert result["records_processed"] >= 6
+    assert result["records_processed"] >= 9
 
 
 def test_rejected_confirmation_blocks_but_validates(tmp_path):
@@ -208,3 +208,23 @@ def test_warrant_assay_invalid_alignment_fails(tmp_path):
     result = validate_cer_export(str(path))
     assert result["valid"] is False
     assert any("invalid warrant_assay alignment" in v for v in result["violations"])
+
+
+def test_independent_verifier_records_validate_when_well_formed(tmp_path):
+    export_path = run_demo(output_dir=str(tmp_path), approve_confirmation=True)
+    records = _read_jsonl(export_path)
+    assert any(r["record_type"] == "candidate_find" for r in records)
+    assert any(r["record_type"] == "independent_verification" for r in records)
+    assert any(r["record_type"] == "verification_result" for r in records)
+    result = validate_cer_export(export_path)
+    assert result["valid"] is True
+
+
+def test_verification_result_without_verification_fails(tmp_path):
+    export_path = run_demo(output_dir=str(tmp_path), approve_confirmation=True)
+    records = [r for r in _read_jsonl(export_path) if r["record_type"] != "independent_verification"]
+    path = tmp_path / "missing_verification.jsonl"
+    _write_jsonl(path, records)
+    result = validate_cer_export(str(path))
+    assert result["valid"] is False
+    assert any("missing independent_verification" in v for v in result["violations"])

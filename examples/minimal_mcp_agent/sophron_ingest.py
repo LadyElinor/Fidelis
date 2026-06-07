@@ -27,7 +27,7 @@ REQUIRED_ENVELOPE_FIELDS = {
     "signing_key_id",
     "payload",
 }
-VALID_RECORD_TYPES = {"run", "hazard_map", "gate_check", "confirmation", "external_action", "data_issue", "warrant_assay"}
+VALID_RECORD_TYPES = {"run", "hazard_map", "gate_check", "confirmation", "external_action", "data_issue", "warrant_assay", "candidate_find", "independent_verification", "verification_result"}
 
 
 def _valid_timestamp(value: str) -> bool:
@@ -126,6 +126,53 @@ def _validate_payload(record: Dict[str, Any], line_num: int) -> List[str]:
         if not isinstance(payload.get("record_sha256"), str) or len(payload.get("record_sha256", "")) != 64:
             violations.append(f"Line {line_num}: invalid warrant_assay record_sha256")
 
+    elif record_type == "candidate_find":
+        required = (
+            "candidate_id",
+            "step_id",
+            "claim_type",
+            "summary",
+            "evidence_ref",
+            "producer",
+            "created_at",
+        )
+        for field in required:
+            if field not in payload:
+                violations.append(f"Line {line_num}: candidate_find payload missing {field}")
+
+    elif record_type == "independent_verification":
+        required = (
+            "verification_id",
+            "candidate_id",
+            "step_id",
+            "verifier",
+            "input_artifact_ref",
+            "verification_mode",
+            "created_at",
+        )
+        for field in required:
+            if field not in payload:
+                violations.append(f"Line {line_num}: independent_verification payload missing {field}")
+
+    elif record_type == "verification_result":
+        required = (
+            "verification_result_id",
+            "verification_id",
+            "candidate_id",
+            "step_id",
+            "result",
+            "summary",
+            "created_at",
+        )
+        for field in required:
+            if field not in payload:
+                violations.append(f"Line {line_num}: verification_result payload missing {field}")
+        if payload.get("result") not in {"confirmed", "not_confirmed", "inconclusive"}:
+            violations.append(f"Line {line_num}: invalid verification_result result")
+        confidence = payload.get("confidence")
+        if confidence is not None and (not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1):
+            violations.append(f"Line {line_num}: verification_result confidence outside [0,1]")
+
     return violations
 
 
@@ -137,6 +184,8 @@ def _validate_cross_record_invariants(records: List[Dict[str, Any]]) -> List[str
     escalated_gates_by_step: Dict[str, set[str]] = {}
     confirmation_by_step: Dict[str, Dict[str, Any]] = {}
     external_action_by_step: Dict[str, Dict[str, Any]] = {}
+    candidate_by_id: Dict[str, Dict[str, Any]] = {}
+    verification_by_id: Dict[str, Dict[str, Any]] = {}
 
     for index, record in enumerate(records):
         payload = record["payload"]
@@ -152,6 +201,10 @@ def _validate_cross_record_invariants(records: List[Dict[str, Any]]) -> List[str
             external_action_by_step[step_id] = {"index": index, "payload": payload}
             if payload.get("status") == "blocked":
                 blocked_steps.add(step_id)
+        if record["record_type"] == "candidate_find":
+            candidate_by_id[payload.get("candidate_id")] = {"index": index, "payload": payload}
+        if record["record_type"] == "independent_verification":
+            verification_by_id[payload.get("verification_id")] = {"index": index, "payload": payload}
 
     for step_id in escalated_steps:
         if step_id not in confirmed_steps and step_id not in blocked_steps:
@@ -174,6 +227,32 @@ def _validate_cross_record_invariants(records: List[Dict[str, Any]]) -> List[str
                     violations.append(f"Step {step_id}: confirmation requested_action does not match external action")
                 if requested_target and requested_target != action_record["payload"].get("target"):
                     violations.append(f"Step {step_id}: confirmation requested_target does not match external action")
+
+    for verification_id, info in verification_by_id.items():
+        candidate_id = info["payload"].get("candidate_id")
+        candidate = candidate_by_id.get(candidate_id)
+        if not candidate:
+            violations.append(f"Verification {verification_id}: missing referenced candidate_find {candidate_id}")
+        elif candidate["index"] > info["index"]:
+            violations.append(f"Verification {verification_id}: appears before candidate_find {candidate_id}")
+
+    for index, record in enumerate(records):
+        if record["record_type"] != "verification_result":
+            continue
+        payload = record["payload"]
+        verification_id = payload.get("verification_id")
+        candidate_id = payload.get("candidate_id")
+        verification = verification_by_id.get(verification_id)
+        candidate = candidate_by_id.get(candidate_id)
+        if not verification:
+            violations.append(f"Verification result {verification_id}: missing independent_verification record")
+            continue
+        if verification["index"] > index:
+            violations.append(f"Verification result {verification_id}: appears before independent_verification")
+        if verification["payload"].get("candidate_id") != candidate_id:
+            violations.append(f"Verification result {verification_id}: candidate linkage mismatch")
+        if candidate and candidate["index"] > index:
+            violations.append(f"Verification result {verification_id}: appears before candidate_find {candidate_id}")
 
     return violations
 

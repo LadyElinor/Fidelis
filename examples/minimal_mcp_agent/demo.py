@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +13,10 @@ try:
 except ImportError:  # pragma: no cover
     from cer_emitter import CerEmitter, ConfirmationProvider
     from mock_ethics_council import MockEthicsCouncil, hazard_to_required_gates
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def run_demo(output_dir: Optional[str] = None, approve_confirmation: bool = True) -> Optional[str]:
@@ -35,6 +40,42 @@ def run_demo(output_dir: Optional[str] = None, approve_confirmation: bool = True
         if decision == "pass":
             justification = f"{gate} passed under minimal demo policy"
         emitter.log_mcp_gate_check(step_id=step_id, gate=gate, decision=decision, justification=justification, confidence=0.9)
+
+    candidate_payload = {
+        "candidate_id": "cand_0001",
+        "step_id": step_id,
+        "claim_type": "policy_violation",
+        "summary": "Sensitive external write requires verification before execution.",
+        "evidence_ref": "hazard_map:hm_0001",
+        "producer": "mock_ethics_council",
+        "reproduction_hint": "Re-evaluate proposed external write under clean verifier context.",
+        "created_at": _now_iso(),
+    }
+    emitter._append("candidate_find", candidate_payload)
+
+    verification_payload = {
+        "verification_id": "ver_0001",
+        "candidate_id": "cand_0001",
+        "step_id": step_id,
+        "verifier": "minimal_verifier",
+        "input_artifact_ref": "hazard_map:hm_0001",
+        "verification_mode": "review",
+        "created_at": _now_iso(),
+    }
+    emitter._append("independent_verification", verification_payload)
+
+    verification_result_payload = {
+        "verification_result_id": "vres_0001",
+        "verification_id": "ver_0001",
+        "candidate_id": "cand_0001",
+        "step_id": step_id,
+        "result": "confirmed",
+        "confidence": 0.9,
+        "summary": "Independent verifier confirms confirmation-gated handling is required.",
+        "artifact_ref": "verification:ver_0001",
+        "created_at": _now_iso(),
+    }
+    emitter._append("verification_result", verification_result_payload)
 
     if any(decision == "escalate" for decision in gates.values()):
         confirmed = emitter.request_confirmation(
