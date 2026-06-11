@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 import sys
+import tempfile
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -31,31 +34,48 @@ from trusted_runtime.shared.models import (
 from trusted_runtime.shared.receipts import sha256_hex, strip_receipt_timestamps
 
 
-def _candidate_meaning_assay_paths() -> list[Path]:
-    env_raw = os.environ.get("MEANING_ASSAY_SRC", "")
-    candidates: list[Path] = []
+def _first_existing_path(env_var: str, candidates: list[Path]) -> Path | None:
+    env_raw = os.environ.get(env_var, "")
     if env_raw:
-        candidates.append(Path(env_raw).expanduser())
-    candidates.append(Path(__file__).resolve().parents[4] / "27assay" / "meaning-assay" / "src")
-    return candidates
+        candidates = [Path(env_raw).expanduser(), *candidates]
+    return next((path for path in candidates if path.exists()), None)
+
+
+def _candidate_meaning_assay_paths() -> list[Path]:
+    return [Path(__file__).resolve().parents[4] / "27assay" / "meaning-assay" / "src"]
 
 
 def _candidate_ethics_council_paths() -> list[Path]:
-    env_raw = os.environ.get("ETHICS_COUNCIL_SRC", "")
-    candidates: list[Path] = []
-    if env_raw:
-        candidates.append(Path(env_raw).expanduser())
-    candidates.append(Path(__file__).resolve().parents[4] / "EthicsCouncil")
-    return candidates
+    return [Path(__file__).resolve().parents[4] / "EthicsCouncil"]
 
 
-_MEANING_ASSAY_SRC = next((path for path in _candidate_meaning_assay_paths() if path.exists()), None)
+def _candidate_tas_paths() -> list[Path]:
+    root = Path(__file__).resolve().parents[4]
+    return [
+        root / "repos" / "TrustworthyAgentStack-clean",
+        root / "repos" / "TrustworthyAgentStack",
+    ]
+
+
+def _candidate_sophron_paths() -> list[Path]:
+    root = Path(__file__).resolve().parents[4]
+    return [
+        root / "repos" / "SOPHRON-CER",
+        root / "repos" / "SOPHRON-CER-clean",
+        Path.home() / "Molt" / "workspace" / "repos" / "SOPHRON-CER",
+    ]
+
+
+_MEANING_ASSAY_SRC = _first_existing_path("MEANING_ASSAY_SRC", _candidate_meaning_assay_paths())
 if _MEANING_ASSAY_SRC is not None and str(_MEANING_ASSAY_SRC) not in sys.path:
     sys.path.insert(0, str(_MEANING_ASSAY_SRC))
 
-_ETHICS_COUNCIL_SRC = next((path for path in _candidate_ethics_council_paths() if path.exists()), None)
+_ETHICS_COUNCIL_SRC = _first_existing_path("ETHICS_COUNCIL_SRC", _candidate_ethics_council_paths())
 if _ETHICS_COUNCIL_SRC is not None and str(_ETHICS_COUNCIL_SRC) not in sys.path:
     sys.path.insert(0, str(_ETHICS_COUNCIL_SRC))
+
+_CER_TELEMETRY_SRC = _first_existing_path("TRUSTWORTHY_AGENT_STACK_SRC", _candidate_tas_paths())
+_SOPHRON_CER_SRC = _first_existing_path("SOPHRON_CER_SRC", _candidate_sophron_paths())
 
 try:
     import efm_council
@@ -74,6 +94,22 @@ except Exception:
     reconcile = None
     warrant_assay_record = None
     get_meaning_case = None
+
+try:
+    if _CER_TELEMETRY_SRC is not None and str(_CER_TELEMETRY_SRC) not in sys.path:
+        sys.path.insert(0, str(_CER_TELEMETRY_SRC))
+    from examples.minimal_mcp_agent.demo import run_demo as tas_run_demo
+    from examples.minimal_mcp_agent.hash_utils import CANONICAL_JSON_VERSION, deterministic_hash, sign_payload
+    from examples.minimal_mcp_agent.mock_ethics_council import MockEthicsCouncil, hazard_to_required_gates
+    from examples.minimal_mcp_agent.sophron_ingest import validate_cer_export
+except Exception:
+    tas_run_demo = None
+    CANONICAL_JSON_VERSION = "canonical-json-v1"
+    deterministic_hash = None
+    sign_payload = None
+    MockEthicsCouncil = None
+    hazard_to_required_gates = None
+    validate_cer_export = None
 
 
 class EthicsCouncilAdapter(HazardAdapter):
@@ -198,52 +234,310 @@ class MeaningAssayAdapter(WarrantAdapter):
         )
 
 
-class StubTelemetryAdapter(TelemetryAdapter):
-    def collect(self, action: ProposedAction, runtime_disposition: str) -> CERRecordBundle:
-        payload = {
-            "layer": "cer_stub",
-            "execution_id": action.id,
-            "runtime_disposition": runtime_disposition,
-            "invariants_checked": [{"invariant": "safety_critical", "status": "VIOLATED"}],
-        }
-        return CERRecordBundle(
-            execution_id=action.id,
-            state_vectors=[{"t": 0, "state": "proposal_received"}, {"t": 1, "state": runtime_disposition}],
-            invariants_checked=payload["invariants_checked"],
-            provenance_hashes=[sha256_hex({"action_id": action.id, "layer": "proposal"})],
-            sophron_validation={"passed": False, "details": "drift detected in stubbed scenario"},
-            confidence_notes=["Stubbed CER/SOPHRON output, replace with real adapter"],
-            adapter_provenance=AdapterProvenance.STUB,
-            receipt=ReceiptRef(sha256=sha256_hex(payload), schema_version=ReceiptSchemaVersion.V1_0_0),
+class TrustworthyAgentStackAdapter:
+    def assess(self, action: ProposedAction, council: CouncilAssessment) -> tuple[RiskState, RuntimeDisposition, dict[str, Any], AdapterProvenance]:
+        if MockEthicsCouncil is None or hazard_to_required_gates is None:
+            severe_hazard_count = len(council.hazards)
+            if council.irreversibility_score > 0.7 or council.suspension_triggers:
+                return (
+                    RiskState.RED,
+                    RuntimeDisposition.HALT,
+                    {"risk": "RED", "evidence_chain": ["council_hazard", "suspension_trigger"]},
+                    AdapterProvenance.STUB,
+                )
+            if severe_hazard_count >= 3 or council.contested or council.minority_reports:
+                return (
+                    RiskState.AMBER,
+                    RuntimeDisposition.CONFIRM_HUMAN,
+                    {"risk": "AMBER", "evidence_chain": ["council_hazard_density", "council_contestation"]},
+                    AdapterProvenance.STUB,
+                )
+            return (
+                RiskState.GREEN,
+                RuntimeDisposition.PROCEED,
+                {"risk": "GREEN", "evidence_chain": ["no blocking triggers"]},
+                AdapterProvenance.STUB,
+            )
+
+        risk_level = "high" if council.irreversibility_score >= 0.7 or council.suspension_triggers else "medium"
+        hazard_map = MockEthicsCouncil().evaluate_action(action.description, risk_level=risk_level)
+        gates = hazard_to_required_gates(hazard_map)
+        gate_records = [
+            {
+                "gate": gate,
+                "decision": decision,
+                "justification": f"Derived from TrustworthyAgentStack minimal MCP policy for {hazard_map.recommendation}",
+            }
+            for gate, decision in gates.items()
+        ]
+        if any(decision == "block" for decision in gates.values()):
+            return (
+                RiskState.RED,
+                RuntimeDisposition.HALT,
+                {
+                    "risk": "RED",
+                    "tas_hazard_map": hazard_map.to_payload(),
+                    "gate_decisions": gate_records,
+                    "evidence_chain": ["tas_gate_block"],
+                },
+                AdapterProvenance.REAL,
+            )
+        if any(decision == "escalate" for decision in gates.values()):
+            return (
+                RiskState.AMBER,
+                RuntimeDisposition.CONFIRM_HUMAN,
+                {
+                    "risk": "AMBER",
+                    "tas_hazard_map": hazard_map.to_payload(),
+                    "gate_decisions": gate_records,
+                    "evidence_chain": ["tas_gate_escalation"],
+                },
+                AdapterProvenance.REAL,
+            )
+        return (
+            RiskState.GREEN,
+            RuntimeDisposition.PROCEED,
+            {
+                "risk": "GREEN",
+                "tas_hazard_map": hazard_map.to_payload(),
+                "gate_decisions": gate_records,
+                "evidence_chain": ["tas_gate_pass"],
+            },
+            AdapterProvenance.REAL,
         )
+
+
+class CerSophronTelemetryAdapter(TelemetryAdapter):
+    def _render_cer_metrics_receipt(self, action: ProposedAction, runtime_disposition: str) -> dict[str, Any]:
+        metrics = [
+            {
+                "metric": "runtime_disposition_confirm_human",
+                "value": 1.0 if runtime_disposition == RuntimeDisposition.CONFIRM_HUMAN.value else 0.0,
+                "num": 1 if runtime_disposition == RuntimeDisposition.CONFIRM_HUMAN.value else 0,
+                "den": 1,
+                "low": 0.0,
+                "high": 1.0,
+            },
+            {
+                "metric": "runtime_disposition_halt",
+                "value": 1.0 if runtime_disposition == RuntimeDisposition.HALT.value else 0.0,
+                "num": 1 if runtime_disposition == RuntimeDisposition.HALT.value else 0,
+                "den": 1,
+                "low": 0.0,
+                "high": 1.0,
+            },
+            {
+                "metric": "safety_invariant_change",
+                "value": 1.0 if action.context.get("change_type") == "safety_invariant" else 0.0,
+                "num": 1 if action.context.get("change_type") == "safety_invariant" else 0,
+                "den": 1,
+                "low": 0.0,
+                "high": 1.0,
+            },
+        ]
+        manifest = {
+            "run_id": action.id,
+            "git_sha": sha256_hex(action.description)[:40],
+            "package_version": "0.1.0",
+            "config_hash": sha256_hex({"adapter": "trusted-runtime-telemetry", "schema": "cer_telemetry_receipt_v0.1"}),
+            "dependency_lock_hash": sha256_hex({"python": sys.version.split()[0]}),
+            "data_hash": sha256_hex({"action_id": action.id, "description": action.description, "context": action.context}),
+        }
+        receipt = {
+            "kind": "cer_telemetry_receipt_v0.1",
+            "run_id": action.id,
+            "generated_at": action.timestamp.isoformat(),
+            "manifest": manifest,
+            "metrics": metrics,
+            "source_context": {
+                "description": action.description,
+                "proposed_by": action.proposed_by,
+                "review_kind": action.context.get("review_kind"),
+                "changed_files": action.context.get("changed_files", []),
+            },
+        }
+        receipt["receipt_sha256"] = sha256_hex(strip_receipt_timestamps(receipt))
+        return receipt
+
+    def _render_tas_export_lines(self, action: ProposedAction, runtime_disposition: str) -> list[str]:
+        if deterministic_hash is None or sign_payload is None:
+            raise RuntimeError("TrustworthyAgentStack hashing helpers unavailable")
+        records = []
+        run_payload = {
+            "run_id": action.id,
+            "started_at": action.timestamp.isoformat(),
+            "agent_name": action.proposed_by,
+            "channel": action.context.get("review_kind", "trusted_runtime"),
+        }
+        gate_payload = {
+            "gate_check_id": f"gc_{action.id}",
+            "step_id": action.id,
+            "gate": "consent_traceability",
+            "decision": "escalate" if runtime_disposition == RuntimeDisposition.CONFIRM_HUMAN.value else "pass",
+            "justification": f"Runtime disposition derived by TrustedRuntime L2 bridge: {runtime_disposition}",
+            "confidence": 0.9,
+            "evidence_ref": "trusted_runtime:l2",
+            "created_at": action.timestamp.isoformat(),
+        }
+        external_action_payload = {
+            "external_action_id": f"act_{action.id}",
+            "step_id": action.id,
+            "action": "pr_review",
+            "target": action.context.get("repo", "local_repo"),
+            "status": "blocked" if runtime_disposition in {RuntimeDisposition.CONFIRM_HUMAN.value, RuntimeDisposition.HALT.value} else "simulated",
+            "created_at": action.timestamp.isoformat(),
+        }
+        for record_type, payload in (("run", run_payload), ("gate_check", gate_payload), ("external_action", external_action_payload)):
+            envelope = {
+                "contract_version": "0.1",
+                "schema_version": "0.1",
+                "canonical_json_version": CANONICAL_JSON_VERSION,
+                "export_timestamp": action.timestamp.isoformat(),
+                "record_type": record_type,
+                "run_id": action.id,
+                "provenance_hash": deterministic_hash(payload),
+                "signature": sign_payload(payload),
+                "signature_algorithm": "hmac-sha256",
+                "signing_key_id": "demo-hmac-key-v1",
+                "payload": payload,
+            }
+            records.append(json.dumps(envelope, sort_keys=True, ensure_ascii=False))
+        return records
+
+    def _run_sophron_adapter(self, receipt_path: Path, output_dir: Path) -> tuple[dict[str, Any], str]:
+        if _SOPHRON_CER_SRC is None:
+            raise FileNotFoundError("SOPHRON-CER source path unavailable")
+        adapter_script = _SOPHRON_CER_SRC / "examples" / "adapter_from_cer_v01_receipts.js"
+        output_path = output_dir / "sophron_safety_report.json"
+        completed = subprocess.run(
+            [
+                "node",
+                str(adapter_script),
+                "--receipts-dir",
+                str(receipt_path.parent),
+                "--out",
+                str(output_path),
+            ],
+            cwd=str(_SOPHRON_CER_SRC),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        report = json.loads(output_path.read_text(encoding="utf-8"))
+        return report, completed.stdout.strip()
+
+    def collect(self, action: ProposedAction, runtime_disposition: str) -> CERRecordBundle:
+        if validate_cer_export is None or deterministic_hash is None or sign_payload is None or _CER_TELEMETRY_SRC is None:
+            payload = {
+                "layer": "cer_stub",
+                "execution_id": action.id,
+                "runtime_disposition": runtime_disposition,
+                "invariants_checked": [{"invariant": "safety_critical", "status": "VIOLATED"}],
+            }
+            return CERRecordBundle(
+                execution_id=action.id,
+                state_vectors=[{"t": 0, "state": "proposal_received"}, {"t": 1, "state": runtime_disposition}],
+                invariants_checked=payload["invariants_checked"],
+                provenance_hashes=[sha256_hex({"action_id": action.id, "layer": "proposal"})],
+                sophron_validation={"passed": False, "details": "CER/TAS unavailable, stubbed telemetry used"},
+                confidence_notes=["Stubbed CER/SOPHRON output, replace with real adapter"],
+                adapter_provenance=AdapterProvenance.STUB,
+                receipt=ReceiptRef(sha256=sha256_hex(payload), schema_version=ReceiptSchemaVersion.V1_0_0),
+            )
+
+        cer_metrics_receipt = self._render_cer_metrics_receipt(action, runtime_disposition)
+        with tempfile.TemporaryDirectory(prefix="trusted-runtime-telemetry-") as temp_dir_raw:
+            temp_dir = Path(temp_dir_raw)
+            tas_dir = temp_dir / "tas"
+            tas_dir.mkdir(parents=True, exist_ok=True)
+            tas_export_path = tas_dir / f"{action.id}.jsonl"
+            tas_export_path.write_text("\n".join(self._render_tas_export_lines(action, runtime_disposition)) + "\n", encoding="utf-8")
+
+            receipts_dir = temp_dir / "receipts"
+            receipts_dir.mkdir(parents=True, exist_ok=True)
+            receipt_path = receipts_dir / f"{action.id}.json"
+            receipt_path.write_text(json.dumps(cer_metrics_receipt, sort_keys=True, indent=2), encoding="utf-8")
+
+            sophron_report: dict[str, Any] = {}
+            sophron_stdout = ""
+            adapter_provenance = AdapterProvenance.REAL
+            confidence_notes = [
+                "Real telemetry path used TrustworthyAgentStack-shaped CER export plus SOPHRON-CER receipt ingestion"
+            ]
+
+            try:
+                sophron_report, sophron_stdout = self._run_sophron_adapter(receipt_path, temp_dir)
+            except Exception as exc:
+                adapter_provenance = AdapterProvenance.STUB
+                confidence_notes.append(
+                    f"SOPHRON adapter execution failed ({type(exc).__name__}), falling back to TAS-local validation"
+                )
+
+            tas_validation = validate_cer_export(str(tas_export_path))
+            state_vectors = [
+                {"t": 0, "state": "proposal_received"},
+                {"t": 1, "state": runtime_disposition.lower()},
+                {"t": 2, "state": "telemetry_receipt_emitted"},
+            ]
+            invariants_checked = [
+                {
+                    "invariant": violation.get("invariant", "tas_local_contract"),
+                    "status": "FAILED",
+                    "message": violation.get("message", violation),
+                }
+                for violation in tas_validation.get("violations", [])
+            ]
+            if not invariants_checked:
+                invariants_checked.append({"invariant": "tas_local_contract", "status": "PASSED"})
+
+            provenance_hashes = [
+                cer_metrics_receipt["receipt_sha256"],
+                deterministic_hash(cer_metrics_receipt["manifest"]),
+                sign_payload(cer_metrics_receipt["manifest"]),
+            ]
+
+            sophron_validation = {
+                "passed": bool(sophron_report) and bool(sophron_report.get("assessment")),
+                "tas_local_validation": tas_validation,
+                "sophron_report": sophron_report,
+                "sophron_stdout": sophron_stdout,
+            }
+            sophron_validation_for_receipt = strip_receipt_timestamps(sophron_validation)
+
+            if not sophron_validation["passed"]:
+                confidence_notes.append("SOPHRON-CER report unavailable or incomplete; only TAS-local contract validation succeeded")
+                adapter_provenance = AdapterProvenance.STUB
+
+            bundle_payload = strip_receipt_timestamps(
+                {
+                    "cer_receipt": cer_metrics_receipt,
+                    "state_vectors": state_vectors,
+                    "invariants_checked": invariants_checked,
+                    "provenance_hashes": provenance_hashes,
+                    "sophron_validation": sophron_validation_for_receipt,
+                }
+            )
+            return CERRecordBundle(
+                execution_id=action.id,
+                state_vectors=state_vectors,
+                invariants_checked=invariants_checked,
+                provenance_hashes=provenance_hashes,
+                sophron_validation=sophron_validation,
+                confidence_notes=confidence_notes,
+                adapter_provenance=adapter_provenance,
+                receipt=ReceiptRef(
+                    sha256=sha256_hex(bundle_payload),
+                    schema_version=ReceiptSchemaVersion.V1_0_0,
+                    path="cer_telemetry://receipt_v0_1",
+                ),
+            )
 
 
 def default_adapters() -> AdapterSet:
     return AdapterSet(
         hazard=EthicsCouncilAdapter(),
         warrant=MeaningAssayAdapter(),
-        telemetry=StubTelemetryAdapter(),
-    )
-
-
-def run_tas_gate(council: CouncilAssessment) -> tuple[RiskState, RuntimeDisposition, dict[str, Any]]:
-    severe_hazard_count = len(council.hazards)
-    if council.irreversibility_score > 0.7 or council.suspension_triggers:
-        return (
-            RiskState.RED,
-            RuntimeDisposition.HALT,
-            {"risk": "RED", "evidence_chain": ["council_hazard", "suspension_trigger"]},
-        )
-    if severe_hazard_count >= 3 or council.contested or council.minority_reports:
-        return (
-            RiskState.AMBER,
-            RuntimeDisposition.CONFIRM_HUMAN,
-            {"risk": "AMBER", "evidence_chain": ["council_hazard_density", "council_contestation"]},
-        )
-    return (
-        RiskState.GREEN,
-        RuntimeDisposition.PROCEED,
-        {"risk": "GREEN", "evidence_chain": ["no blocking triggers"]},
+        telemetry=CerSophronTelemetryAdapter(),
     )
 
 
@@ -308,7 +602,8 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     adapters = adapters or default_adapters()
 
     council = adapters.hazard.assess(action)
-    risk_state, runtime_disposition, vita_state = run_tas_gate(council)
+    tas_adapter = TrustworthyAgentStackAdapter()
+    risk_state, runtime_disposition, vita_state, l2_provenance = tas_adapter.assess(action, council)
     warrant = adapters.warrant.assess(action)
     cer_bundle = adapters.telemetry.collect(action, runtime_disposition.value)
 
@@ -316,6 +611,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         "council": council.adapter_provenance,
         "warrant": warrant.adapter_provenance,
         "cer_bundle": cer_bundle.adapter_provenance,
+        "tas": l2_provenance,
     }
     runtime_disposition, guard_note = guard_runtime_disposition(runtime_disposition, adapter_provenance)
     if guard_note is not None:
@@ -334,8 +630,8 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     confidence_notes.extend([note for note in council.confidence_notes if note])
     confidence_notes.extend(cer_bundle.confidence_notes)
     unresolved_questions.extend(council.unresolved_questions)
-    if any(provenance is not AdapterProvenance.REAL for provenance in adapter_provenance.values()):
-        unresolved_questions.append("One or more layers remain stubbed or unavailable; decision should not be treated as fully independent")
+    if any(provenance is not AdapterProvenance.REAL for key, provenance in adapter_provenance.items() if key in {"council", "warrant", "cer_bundle"}):
+        unresolved_questions.append("One or more required layers remain stubbed or unavailable; decision should not be treated as fully independent")
     if reconciliation is not None:
         confidence_notes.append(f"Reconciliation alignment: {reconciliation.alignment}")
 
@@ -354,11 +650,18 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             adapter_path=str(_MEANING_ASSAY_SRC) if _MEANING_ASSAY_SRC else None,
             source_payload=strip_receipt_timestamps(warrant.model_dump(mode="json")),
         ),
+        "tas": process_provenance_record(
+            adapter_name="TrustworthyAgentStackAdapter",
+            adapter_provenance=l2_provenance,
+            adapter_version="0.1-local",
+            adapter_path=str(_CER_TELEMETRY_SRC) if _CER_TELEMETRY_SRC else None,
+            source_payload=strip_receipt_timestamps(vita_state),
+        ),
         "cer_bundle": process_provenance_record(
-            adapter_name="StubTelemetryAdapter",
+            adapter_name="CerSophronTelemetryAdapter",
             adapter_provenance=cer_bundle.adapter_provenance,
             adapter_version="0.1-local",
-            adapter_path=None,
+            adapter_path=str(_SOPHRON_CER_SRC) if _SOPHRON_CER_SRC else str(_CER_TELEMETRY_SRC) if _CER_TELEMETRY_SRC else None,
             source_payload=strip_receipt_timestamps(cer_bundle.model_dump(mode="json")),
         ),
     }

@@ -1,7 +1,13 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from trusted_runtime.integration.availability import ethics_council_available, meaning_assay_available
+from trusted_runtime.integration.availability import (
+    ethics_council_available,
+    meaning_assay_available,
+    real_telemetry_stack_available,
+    sophron_cer_available,
+    trustworthy_agent_stack_available,
+)
 from trusted_runtime.integration.engine import assemble_execution_decision, default_adapters
 from trusted_runtime.integration.translation import derive_meaning_case_key
 from trusted_runtime.review import build_pr_review_action, load_review_input
@@ -29,7 +35,12 @@ def test_council_and_warrant_paths_are_explicit_for_current_environment():
     assert decision.warrant.adapter_provenance is expected_warrant
     if expected_warrant is AdapterProvenance.REAL:
         assert decision.reconciliation is not None
-    assert decision.adapter_provenance["cer_bundle"] is AdapterProvenance.STUB
+    expected_tas = AdapterProvenance.REAL if trustworthy_agent_stack_available() else AdapterProvenance.STUB
+    assert decision.adapter_provenance["tas"] is expected_tas
+    if real_telemetry_stack_available() and decision.cer_bundle.sophron_validation.get("passed") is True:
+        assert decision.adapter_provenance["cer_bundle"] is AdapterProvenance.REAL
+    else:
+        assert decision.adapter_provenance["cer_bundle"] is AdapterProvenance.STUB
 
 
 def test_translation_maps_safety_invariant_to_attest():
@@ -85,7 +96,7 @@ def test_process_provenance_is_present_for_each_layer():
         context={"change_type": "safety_invariant"},
     )
     decision = assemble_execution_decision(action)
-    assert set(decision.process_provenance.keys()) == {"council", "warrant", "cer_bundle"}
+    assert set(decision.process_provenance.keys()) == {"council", "warrant", "tas", "cer_bundle"}
     assert all("record_sha256" in item for item in decision.process_provenance.values())
 
 
@@ -94,6 +105,26 @@ def test_default_adapters_construct_cleanly():
     assert adapters.hazard is not None
     assert adapters.warrant is not None
     assert adapters.telemetry is not None
+
+
+def test_real_telemetry_path_surfaces_sophron_report_when_available():
+    action = ProposedAction(
+        id="test-telemetry-001",
+        description="Review PR change set: Tighten invariant handling",
+        timestamp=FIXED_TS,
+        context={
+            "review_kind": "pull_request",
+            "change_type": "safety_invariant",
+            "changed_files": ["src/core/invariants.py"],
+        },
+    )
+    decision = assemble_execution_decision(action)
+    if sophron_cer_available() and trustworthy_agent_stack_available():
+        assert "sophron_report" in decision.cer_bundle.sophron_validation
+        if decision.adapter_provenance["cer_bundle"] is AdapterProvenance.REAL:
+            assert decision.cer_bundle.sophron_validation["passed"] is True
+    else:
+        assert decision.adapter_provenance["cer_bundle"] is AdapterProvenance.STUB
 
 
 def test_build_pr_review_action_creates_pull_request_context():

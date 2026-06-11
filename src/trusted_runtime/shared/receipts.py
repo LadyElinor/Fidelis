@@ -30,7 +30,7 @@ def strip_receipt_timestamps(payload: Any) -> Any:
     if isinstance(payload, dict):
         cleaned: dict[str, Any] = {}
         for key, value in payload.items():
-            if key == "timestamp":
+            if key in {"timestamp", "export_timestamp", "started_at", "created_at", "generated_at"}:
                 continue
             cleaned[key] = strip_receipt_timestamps(value)
         return cleaned
