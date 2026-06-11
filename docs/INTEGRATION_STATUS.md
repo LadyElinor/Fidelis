@@ -2,6 +2,13 @@
 
 ## Implemented now
 
+### EthicsCouncil
+TrustedRuntime can now import local `EthicsCouncil` code directly from:
+
+`C:\Users\arren\.openclaw\workspace\EthicsCouncil`
+
+It runs real `efm_council.run_council(...)`, maps the returned `CouncilRecord` into `CouncilAssessment`, preserves unresolved questions and minority-report signals, and hashes a deterministic receipt over the normalized record.
+
 ### meaning-assay
 TrustedRuntime can now import local `meaning-assay` code directly from:
 
@@ -17,29 +24,22 @@ When `ProposedAction.context.meaning_case_key` is present, the runtime:
 
 When the adapter is unavailable or unmapped, the runtime falls back explicitly to `adapter_provenance=STUB` instead of silently implying parity with the real path.
 
-This is the first non-stubbed external layer in the stack.
+The runtime also performs reconcile-based synthesis through `meaning_assay.bridge.reconcile` and stores a reconciliation record in the final decision.
 
 ## Still stubbed
-- EthicsCouncil hazard adapter
 - TrustworthyAgentStack gating adapter
 - CER-Telemetry evidence adapter
 - SOPHRON-CER validation adapter
 
 ## Current limitation
-The runtime currently maps a pre-existing local meaning-assay case rather than synthesizing a new case from arbitrary `ProposedAction` content.
+The runtime still maps arbitrary `ProposedAction` inputs into a known local meaning-assay case set heuristically, rather than generating a fresh first-class meaning-assay `Case` for every action.
 
-The overall receipt hash is now made deterministic by stripping receipt timestamps from the synthesis payload before hashing.
-
-That is acceptable for this stage because it proves:
-- real package import
-- real analysis invocation
-- real receipt flow
-- contract compatibility under non-fake output
+The overall receipt hash is deterministic because synthesis strips receipt timestamps before hashing, and the final decision now includes:
+- adapter provenance
+- decision integrity class
+- process provenance per layer
+- reconciliation record
 
 ## Next recommended step
-Implement the real EthicsCouncil adapter next.
-That would make both:
-- prospective hazard review
-- normative warrant interpretation
-
-external and real, leaving only enforcement and evidence stubs.
+Implement the real TrustworthyAgentStack adapter, then the CER/SOPHRON adapter.
+That would close the two remaining stubbed runtime layers.

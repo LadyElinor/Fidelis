@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .enums import AdapterProvenance, NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition
+from .enums import AdapterProvenance, DecisionIntegrity, NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition
 
 
 class ReceiptRef(BaseModel):
@@ -86,6 +86,15 @@ class CERRecordBundle(BaseModel):
     receipt: ReceiptRef
 
 
+class ReconciliationRecord(BaseModel):
+    case_key: str | None = None
+    council_verdict: str
+    warranted_action: str
+    alignment: str
+    rationale: str
+    receipt: ReceiptRef | None = None
+
+
 class ExecutionDecision(BaseModel):
     """Unified output contract.
 
@@ -104,5 +113,8 @@ class ExecutionDecision(BaseModel):
     confidence_notes: list[str] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
     contested: bool = False
+    decision_integrity: DecisionIntegrity = DecisionIntegrity.DEMO_ONLY
     adapter_provenance: dict[str, AdapterProvenance] = Field(default_factory=dict)
+    process_provenance: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    reconciliation: ReconciliationRecord | None = None
     overall_receipt: ReceiptRef

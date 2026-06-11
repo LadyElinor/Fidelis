@@ -36,3 +36,9 @@ class AdapterProvenance(str, Enum):
     REAL = "REAL"
     STUB = "STUB"
     UNAVAILABLE = "UNAVAILABLE"
+
+
+class DecisionIntegrity(str, Enum):
+    FULL = "FULL"
+    PARTIAL = "PARTIAL"
+    DEMO_ONLY = "DEMO_ONLY"

@@ -40,14 +40,16 @@ It should **not**:
 This is a scaffold with:
 - cleaned package layout
 - typed shared models
-- explicit enums for runtime and normative states
+- explicit enums for runtime, normative, provenance, and integrity states
 - canonical receipt helpers
+- formal adapter interfaces
 - a golden-scenario runner
-- a first real adapter path into local `meaning-assay`
+- a real EthicsCouncil hazard adapter
+- a real meaning-assay adapter with translation and reconciliation
 
-Today, the warrant sidecar can use a real local `meaning-assay` case when `context.meaning_case_key` is supplied. Other layers remain stubbed pending adapter work.
+Today, the runtime can produce real council hazard review and real warrant-sidecar output from local sources. Enforcement and evidence layers remain stubbed pending adapter work.
 
-Stubbed and unavailable layers are now explicit in the contract through adapter provenance, and synthesized `PROCEED` is not allowed while any required layer remains non-real.
+Stubbed and unavailable layers are explicit in the contract through adapter provenance, decision integrity is classified as `FULL | PARTIAL | DEMO_ONLY`, and synthesized `PROCEED` is not allowed while required layers remain non-real.
 
 ## Package layout
 
@@ -59,13 +61,19 @@ src/trusted_runtime/
     models.py
     receipts.py
   integration/
+    adapters.py
     engine.py
+    integrity.py
+    policy.py
+    provenance.py
     report.py
+    translation.py
 examples/
   minimal_decision.py
 docs/
   ARCHITECTURE.md
   CANONICALIZATION.md
+  INTEGRATION_STATUS.md
 ```
 
 ## Quick start
@@ -82,10 +90,10 @@ This writes:
 ## Adapter status
 
 ### Real now
-- `meaning-assay`, via local source-path adapter and case mapping or `MEANING_ASSAY_SRC`
+- `EthicsCouncil`, via local source-path adapter or `ETHICS_COUNCIL_SRC`
+- `meaning-assay`, via local source-path adapter or `MEANING_ASSAY_SRC`
 
 ### Still stubbed
-- `EthicsCouncil`
 - `TrustworthyAgentStack`
 - `CER-Telemetry`
 - `SOPHRON-CER`

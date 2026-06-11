@@ -33,17 +33,25 @@ CER-Telemetry and SOPHRON-CER preserve:
 ### L5 Integration
 TrustedRuntime defines:
 - shared contracts
+- formal adapter interfaces
 - canonical receipt hashing rules
+- decision integrity classification
 - pipeline assembly
-- operator-facing report synthesis
+- reconciliation-aware report synthesis
 
 ## Non-goals
 
 TrustedRuntime should not absorb the logic of the independent layers.
 Its job is orchestration, contract discipline, and synthesis.
 
-## Recommended real-integration order
-1. meaning-assay adapter
-2. EthicsCouncil adapter
-3. TrustworthyAgentStack adapter
-4. CER/SOPHRON adapter
+## Current state
+- Real local EthicsCouncil adapter
+- Real local meaning-assay adapter
+- ProposedAction to meaning-assay case translation
+- Reconcile-based synthesis using `meaning_assay.bridge`
+- Stubbed enforcement and evidence layers
+
+## Immediate next integrations
+1. TrustworthyAgentStack adapter
+2. CER/SOPHRON adapter
+3. richer arbitrary-action to meaning-assay case synthesis beyond heuristic mapping
