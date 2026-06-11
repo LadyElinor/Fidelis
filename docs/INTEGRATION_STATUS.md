@@ -43,3 +43,7 @@ The overall receipt hash is deterministic because synthesis strips receipt times
 ## Next recommended step
 Implement the real TrustworthyAgentStack adapter, then the CER/SOPHRON adapter.
 That would close the two remaining stubbed runtime layers.
+
+The repo now also exposes a first CI-oriented PR review surface through:
+- `trusted-runtime review-pr --input <json> --output <dir>`
+- `examples/sample_pr_review.json`

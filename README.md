@@ -87,6 +87,16 @@ This writes:
 - `decision_output.json`
 - `decision_report.md`
 
+## CI / PR review surface
+
+You can feed a machine-readable PR review input into the runtime:
+
+```bash
+trusted-runtime review-pr --input examples/sample_pr_review.json --output reports/
+```
+
+This is the first CI-friendly entrypoint for using TrustedRuntime as a governed pre-merge review artifact generator.
+
 ## Adapter status
 
 ### Real now

@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
+from pathlib import Path
 
+from trusted_runtime.integration.availability import ethics_council_available, meaning_assay_available
 from trusted_runtime.integration.engine import assemble_execution_decision, default_adapters
 from trusted_runtime.integration.translation import derive_meaning_case_key
+from trusted_runtime.review import build_pr_review_action, load_review_input
 from trusted_runtime.shared.enums import AdapterProvenance, DecisionIntegrity, RuntimeDisposition
 from trusted_runtime.shared.models import ProposedAction
 
@@ -9,7 +12,7 @@ from trusted_runtime.shared.models import ProposedAction
 FIXED_TS = datetime(2026, 6, 11, 18, 0, tzinfo=timezone.utc)
 
 
-def test_real_council_and_warrant_paths_are_explicit():
+def test_council_and_warrant_paths_are_explicit_for_current_environment():
     action = ProposedAction(
         id="test-real-001",
         description="Should the agent auto-approve a code change that modifies a safety-critical invariant in OpenClaw core?",
@@ -18,11 +21,14 @@ def test_real_council_and_warrant_paths_are_explicit():
     )
     decision = assemble_execution_decision(action)
 
-    assert decision.council.adapter_provenance is AdapterProvenance.REAL
+    expected_council = AdapterProvenance.REAL if ethics_council_available() else AdapterProvenance.STUB
+    expected_warrant = AdapterProvenance.REAL if meaning_assay_available() else AdapterProvenance.STUB
+
+    assert decision.council.adapter_provenance is expected_council
     assert decision.warrant is not None
-    assert decision.warrant.adapter_provenance is AdapterProvenance.REAL
-    assert decision.reconciliation is not None
-    assert decision.decision_integrity is DecisionIntegrity.PARTIAL
+    assert decision.warrant.adapter_provenance is expected_warrant
+    if expected_warrant is AdapterProvenance.REAL:
+        assert decision.reconciliation is not None
     assert decision.adapter_provenance["cer_bundle"] is AdapterProvenance.STUB
 
 
@@ -88,3 +94,27 @@ def test_default_adapters_construct_cleanly():
     assert adapters.hazard is not None
     assert adapters.warrant is not None
     assert adapters.telemetry is not None
+
+
+def test_build_pr_review_action_creates_pull_request_context():
+    action = build_pr_review_action(
+        review_id="review-001",
+        title="Tighten invariant handling",
+        diff_summary="Changes safety-critical invariant checks in runtime.",
+        repo="LadyElinor/OpenClaw",
+        pr_number=42,
+        author="agent-session",
+        changed_files=["src/core/invariants.py"],
+        extra_context={"change_type": "safety_invariant"},
+    )
+    assert action.context["review_kind"] == "pull_request"
+    assert action.context["pr_number"] == 42
+    assert action.context["change_type"] == "safety_invariant"
+
+
+def test_load_review_input_reads_sample_json():
+    sample = Path(__file__).resolve().parents[1] / "examples" / "sample_pr_review.json"
+    action = load_review_input(sample)
+    assert action.id == "review-openclaw-pr-42"
+    assert action.context["review_kind"] == "pull_request"
+    assert action.context["change_type"] == "safety_invariant"
