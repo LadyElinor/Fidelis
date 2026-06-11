@@ -43,6 +43,7 @@ class LensRow:
     note: str
     repair: str | None = None
     self_certified: bool = False
+    dissents: tuple[tuple[str, str, str], ...] = ()  # (analyst, verdict, rationale)
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,12 @@ class Analysis:
         return {r.key: r.repair for r in self.rows if r.repair}
 
     @property
+    def preserved_dissents(self) -> dict[str, tuple[tuple[str, str, str], ...]]:
+        """tradition_key -> preserved minority readings (analyst, verdict, rationale).
+        Surfaced, attributed, and never aggregated into either axis."""
+        return {r.key: r.dissents for r in self.rows if r.dissents}
+
+    @property
     def self_certified_keys(self) -> tuple[str, ...]:
         return tuple(r.key for r in self.rows if r.self_certified)
 
@@ -101,6 +108,13 @@ def validate(case: Case, lensbook: tuple[Tradition, ...] = LENSBOOK) -> None:
                 f"{case.key}/{t.key}: a {sorted(f.value for f in t.functions) or 'null'} "
                 f"lens returned verdict '{r.verdict.value}'; only WARRANT lenses may judge the act."
             )
+        for d in r.dissents:
+            if d.verdict is not Verdict.NA and not t.does(Function.WARRANT):
+                raise IntegrityError(
+                    f"{case.key}/{t.key}: a dissent by '{d.analyst}' delivers verdict "
+                    f"'{d.verdict.value}' through a non-WARRANT lens; preserved minority "
+                    f"opinions obey the same integrity rule as majority readings."
+                )
         if r.repair is not None:
             if not t.does(Function.WARRANT):
                 raise IntegrityError(
@@ -170,6 +184,7 @@ def analyze(case: Case, lensbook: tuple[Tradition, ...] = LENSBOOK) -> Analysis:
                 note=r.note,
                 repair=r.repair,
                 self_certified=r.self_certified,
+                dissents=tuple((d.analyst, d.verdict.value, d.rationale) for d in r.dissents),
             )
         )
 

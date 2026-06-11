@@ -106,6 +106,22 @@ class Tradition:
 
 
 @dataclass(frozen=True)
+class Dissent:
+    """A preserved minority reading of the same act through the same lens.
+
+    'These and those are the words of the living God' (Eruvin 13b): the losing
+    opinion is recorded with attribution rather than deleted, and it NEVER
+    enters the score. Preservation is not aggregation -- a dissent kept is a
+    dispute kept open, not a vote averaged in.
+    """
+
+    analyst: str
+    verdict: Verdict
+    rationale: str
+    citations: tuple[Citation, ...] = ()
+
+
+@dataclass(frozen=True)
 class Reading:
     """An analyst's reading of one act through one lens.
 
@@ -121,6 +137,7 @@ class Reading:
     note: str
     citations: tuple[Citation, ...] = ()
     repair: str | None = None  # authored counterfactual act that would flip the verdict
+    dissents: tuple[Dissent, ...] = ()  # preserved minority readings; never scored
 
     @property
     def provisional(self) -> bool:

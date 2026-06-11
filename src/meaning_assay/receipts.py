@@ -57,6 +57,11 @@ def _case_fingerprint(case: Case) -> dict[str, Any]:
                 "verdict": r.verdict.value,
                 "citation_kinds": sorted(c.kind for c in r.citations),
                 **({"repair": r.repair} if r.repair is not None else {}),
+                **({"dissents": [
+                        {"analyst": d.analyst, "verdict": d.verdict.value,
+                         "rationale": d.rationale}
+                        for d in r.dissents
+                    ]} if r.dissents else {}),
             }
             for r in sorted(case.readings, key=lambda x: x.tradition_key)
         ],
@@ -89,6 +94,7 @@ def receipt(case: Case, lensbook: tuple[Tradition, ...] = LENSBOOK) -> dict[str,
         "warrant_endorsing": list(a.warrant_lenses_endorsing),
         "repairs": dict(sorted(a.repairs.items())),
         "self_certified": list(a.self_certified_keys),
+        "dissent_keys": sorted(a.preserved_dissents),
     }
     core = {"schema": SCHEMA, "inputs": inputs, "outputs": outputs}
     return {**core, "receipt_sha256": sha256(core)}

@@ -18,6 +18,7 @@ from .lenses import LENSBOOK, get as get_tradition
 from .model import (
     Case,
     Citation,
+    Dissent,
     Function,
     Grip,
     Polarity,
@@ -27,6 +28,8 @@ from .model import (
 )
 from .bridge import CouncilOutput, CouncilVerdict, Reconciliation, reconcile, warrant_assay_record
 from .pairs import PairAnalysis, compare
+from .twins import TwinFinding, TwinTest, dark_twin_test, bright_twin_test
+from . import ledger
 from .receipts import receipt, verify, lensbook_digest
 from .report import render_case, render_pair_summary
 
@@ -35,9 +38,10 @@ __version__ = "0.1.0"
 __all__ = [
     "Analysis", "analyze", "rank_by_grip", "validate", "IntegrityError",
     "LENSBOOK", "get_tradition",
-    "Case", "Citation", "Function", "Grip", "Polarity", "Reading", "Tradition", "Verdict",
+    "Case", "Citation", "Dissent", "Function", "Grip", "Polarity", "Reading", "Tradition", "Verdict",
     "CouncilOutput", "CouncilVerdict", "Reconciliation", "reconcile", "warrant_assay_record",
     "PairAnalysis", "compare",
+    "TwinFinding", "TwinTest", "dark_twin_test", "bright_twin_test", "ledger",
     "receipt", "verify", "lensbook_digest",
     "render_case", "render_pair_summary",
     "__version__",
