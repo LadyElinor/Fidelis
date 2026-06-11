@@ -1,4 +1,4 @@
-from .enums import NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition
+from .enums import AdapterProvenance, NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition
 from .models import (
     CERRecordBundle,
     CouncilAssessment,
@@ -14,6 +14,7 @@ __all__ = [
     "NormativeSummary",
     "RiskState",
     "ReceiptSchemaVersion",
+    "AdapterProvenance",
     "ReceiptRef",
     "ProposedAction",
     "CouncilAssessment",

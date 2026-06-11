@@ -30,3 +30,9 @@ class RiskState(str, Enum):
 
 class ReceiptSchemaVersion(str, Enum):
     V1_0_0 = "1.0.0"
+
+
+class AdapterProvenance(str, Enum):
+    REAL = "REAL"
+    STUB = "STUB"
+    UNAVAILABLE = "UNAVAILABLE"

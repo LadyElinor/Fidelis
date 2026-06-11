@@ -24,3 +24,16 @@ def canonical_json_bytes(payload: Any) -> bytes:
 
 def sha256_hex(payload: Any) -> str:
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+
+
+def strip_receipt_timestamps(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        cleaned: dict[str, Any] = {}
+        for key, value in payload.items():
+            if key == "timestamp":
+                continue
+            cleaned[key] = strip_receipt_timestamps(value)
+        return cleaned
+    if isinstance(payload, list):
+        return [strip_receipt_timestamps(item) for item in payload]
+    return payload

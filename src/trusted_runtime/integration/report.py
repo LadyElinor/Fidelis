@@ -37,6 +37,11 @@ def render_markdown_report(decision: ExecutionDecision) -> str:
     lines.extend([f"- {item}" for item in decision.unresolved_questions] or ["- none"])
     lines.extend([
         "",
+        "## Adapter provenance",
+        f"- council: `{decision.adapter_provenance.get('council', 'UNAVAILABLE')}`",
+        f"- warrant: `{decision.adapter_provenance.get('warrant', 'UNAVAILABLE')}`",
+        f"- cer bundle: `{decision.adapter_provenance.get('cer_bundle', 'UNAVAILABLE')}`",
+        "",
         "## Receipts",
         f"- council: `{decision.council.receipt.sha256}`",
         f"- warrant: `{decision.warrant.receipt.sha256 if decision.warrant else 'n/a'}`",

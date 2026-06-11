@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .enums import NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition
+from .enums import AdapterProvenance, NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition
 
 
 class ReceiptRef(BaseModel):
@@ -45,6 +45,7 @@ class CouncilAssessment(BaseModel):
     irreversibility_score: float = Field(ge=0.0, le=1.0, default=0.0)
     contested: bool = False
     raw_lens_outputs: dict[str, Any] = Field(default_factory=dict)
+    adapter_provenance: AdapterProvenance = AdapterProvenance.UNAVAILABLE
     receipt: ReceiptRef
 
 
@@ -57,13 +58,14 @@ class WarrantAssay(BaseModel):
 
     decision_id: str
     significance: float = Field(ge=0.0, le=1.0, default=0.0)
-    warrant: float = Field(ge=-1.0, le=1.0, default=0.0)
+    warrant: float | None = Field(default=None, ge=-1.0, le=1.0)
     normative_summary: NormativeSummary = NormativeSummary.UNDETERMINED
     failure_modes: list[str] = Field(default_factory=list)
     pair_contrasts: dict[str, Any] | None = None
     confidence_notes: list[str] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
     contested: bool = False
+    adapter_provenance: AdapterProvenance = AdapterProvenance.UNAVAILABLE
     receipt: ReceiptRef
 
 
@@ -78,8 +80,9 @@ class CERRecordBundle(BaseModel):
     state_vectors: list[dict[str, Any]] = Field(default_factory=list)
     invariants_checked: list[dict[str, Any]] = Field(default_factory=list)
     provenance_hashes: list[str] = Field(default_factory=list)
-    soprhon_validation: dict[str, Any] = Field(default_factory=dict)
+    sophron_validation: dict[str, Any] = Field(default_factory=dict)
     confidence_notes: list[str] = Field(default_factory=list)
+    adapter_provenance: AdapterProvenance = AdapterProvenance.UNAVAILABLE
     receipt: ReceiptRef
 
 
@@ -101,4 +104,5 @@ class ExecutionDecision(BaseModel):
     confidence_notes: list[str] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
     contested: bool = False
+    adapter_provenance: dict[str, AdapterProvenance] = Field(default_factory=dict)
     overall_receipt: ReceiptRef

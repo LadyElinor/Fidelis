@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from trusted_runtime.shared.enums import NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition
+from trusted_runtime.shared.enums import AdapterProvenance, NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition
 from trusted_runtime.shared.models import (
     CERRecordBundle,
     CouncilAssessment,
@@ -13,11 +13,20 @@ from trusted_runtime.shared.models import (
     ReceiptRef,
     WarrantAssay,
 )
-from trusted_runtime.shared.receipts import sha256_hex
+from trusted_runtime.shared.receipts import sha256_hex, strip_receipt_timestamps
 
 
-_MEANING_ASSAY_SRC = Path(r"C:\Users\arren\.openclaw\workspace\27assay\meaning-assay\src")
-if str(_MEANING_ASSAY_SRC) not in sys.path:
+def _candidate_meaning_assay_paths() -> list[Path]:
+    env_path = Path(str(__import__("os").environ.get("MEANING_ASSAY_SRC", ""))).expanduser()
+    candidates = []
+    if str(env_path) and str(env_path) != ".":
+        candidates.append(env_path)
+    candidates.append(Path(__file__).resolve().parents[4] / "27assay" / "meaning-assay" / "src")
+    return candidates
+
+
+_MEANING_ASSAY_SRC = next((path for path in _candidate_meaning_assay_paths() if path.exists()), None)
+if _MEANING_ASSAY_SRC is not None and str(_MEANING_ASSAY_SRC) not in sys.path:
     sys.path.insert(0, str(_MEANING_ASSAY_SRC))
 
 try:
@@ -59,6 +68,7 @@ def run_ethics_council(action: ProposedAction) -> CouncilAssessment:
         irreversibility_score=payload["irreversibility_score"],
         contested=True,
         raw_lens_outputs={"stub": payload},
+        adapter_provenance=AdapterProvenance.STUB,
         receipt=ReceiptRef(
             sha256=sha256_hex(payload),
             schema_version=ReceiptSchemaVersion.V1_0_0,
@@ -108,13 +118,14 @@ def run_warrant_assay(action: ProposedAction) -> WarrantAssay:
         return WarrantAssay(
             decision_id=action.id,
             significance=analysis.significance,
-            warrant=analysis.warrant if analysis.warrant is not None else 0.0,
+            warrant=analysis.warrant,
             normative_summary=NormativeSummary(analysis.quadrant) if analysis.quadrant in {item.value for item in NormativeSummary} else NormativeSummary.UNDETERMINED,
             failure_modes=failure_modes,
             pair_contrasts={"source_case": mapped_case_key},
             confidence_notes=confidence_notes,
             unresolved_questions=unresolved_questions,
             contested=analysis.warrant_band == "contested",
+            adapter_provenance=AdapterProvenance.REAL,
             receipt=ReceiptRef(
                 sha256=rec["receipt_sha256"],
                 schema_version=ReceiptSchemaVersion.V1_0_0,
@@ -135,9 +146,10 @@ def run_warrant_assay(action: ProposedAction) -> WarrantAssay:
         warrant=payload["warrant"],
         normative_summary=NormativeSummary.DANGEROUS,
         failure_modes=["warrant gap in safety-critical modification"],
-        confidence_notes=["Stubbed warrant output, replace with real meaning-assay adapter"],
+        confidence_notes=["meaning-assay unavailable or unmapped, stubbed warrant output used"],
         unresolved_questions=["Does the act preserve human review at the right boundary?"],
         contested=True,
+        adapter_provenance=AdapterProvenance.STUB,
         receipt=ReceiptRef(
             sha256=sha256_hex(payload),
             schema_version=ReceiptSchemaVersion.V1_0_0,
@@ -161,8 +173,9 @@ def run_cer_bundle(action: ProposedAction, disposition: RuntimeDisposition) -> C
         state_vectors=[{"t": 0, "state": "proposal_received"}, {"t": 1, "state": disposition.value}],
         invariants_checked=payload["invariants_checked"],
         provenance_hashes=[sha256_hex({"action_id": action.id, "layer": "proposal"})],
-        soprhon_validation={"passed": False, "details": "drift detected in stubbed scenario"},
+        sophron_validation={"passed": False, "details": "drift detected in stubbed scenario"},
         confidence_notes=["Stubbed CER/SOPHRON output, replace with real adapter"],
+        adapter_provenance=AdapterProvenance.STUB,
         receipt=ReceiptRef(
             sha256=sha256_hex(payload),
             schema_version=ReceiptSchemaVersion.V1_0_0,
@@ -176,15 +189,44 @@ def assemble_execution_decision(action: ProposedAction) -> ExecutionDecision:
     warrant = run_warrant_assay(action)
     cer_bundle = run_cer_bundle(action, runtime_disposition)
 
-    master_payload = {
+    adapter_provenance = {
+        "council": council.adapter_provenance,
+        "warrant": warrant.adapter_provenance,
+        "cer_bundle": cer_bundle.adapter_provenance,
+    }
+
+    if runtime_disposition is RuntimeDisposition.PROCEED and any(
+        provenance is not AdapterProvenance.REAL for provenance in adapter_provenance.values()
+    ):
+        runtime_disposition = RuntimeDisposition.CONFIRM_HUMAN
+        vita_state = {
+            **vita_state,
+            "provenance_guard": "PROCEED forbidden while any layer remains stubbed or unavailable",
+        }
+
+    confidence_notes: list[str] = []
+    unresolved_questions: list[str] = []
+    contested = council.contested or cer_bundle.adapter_provenance is not AdapterProvenance.REAL
+    if warrant is not None:
+        contested = contested or warrant.contested
+        confidence_notes.extend(warrant.confidence_notes)
+        unresolved_questions.extend(warrant.unresolved_questions)
+    confidence_notes.extend(council.confidence_notes)
+    confidence_notes.extend(cer_bundle.confidence_notes)
+    unresolved_questions.extend(council.unresolved_questions)
+    if any(provenance is not AdapterProvenance.REAL for provenance in adapter_provenance.values()):
+        unresolved_questions.append("One or more layers remain stubbed or unavailable; decision should not be treated as fully independent")
+
+    master_payload = strip_receipt_timestamps({
         "action": action.model_dump(mode="json"),
         "council": council.model_dump(mode="json"),
-        "warrant": warrant.model_dump(mode="json"),
+        "warrant": warrant.model_dump(mode="json") if warrant is not None else None,
         "cer_bundle": cer_bundle.model_dump(mode="json"),
         "risk_state": risk_state.value,
         "runtime_disposition": runtime_disposition.value,
         "vita_state": vita_state,
-    }
+        "adapter_provenance": {key: value.value for key, value in adapter_provenance.items()},
+    })
 
     return ExecutionDecision(
         action_id=action.id,
@@ -194,16 +236,11 @@ def assemble_execution_decision(action: ProposedAction) -> ExecutionDecision:
         vita_state=vita_state,
         risk_state=risk_state,
         runtime_disposition=runtime_disposition,
-        normative_summary=warrant.normative_summary,
-        confidence_notes=[
-            "High hazard and negative warrant in the golden scenario",
-            "Warrant is produced by a real meaning-assay adapter path when a case key is supplied",
-            "Overall result remains partial-integration until hazard, enforcement, and telemetry adapters replace stubs",
-        ],
-        unresolved_questions=[
-            "Should invariant modifications always require human confirmation even under apparently safe diffs?",
-        ],
-        contested=True,
+        normative_summary=warrant.normative_summary if warrant is not None else NormativeSummary.UNDETERMINED,
+        confidence_notes=confidence_notes,
+        unresolved_questions=unresolved_questions,
+        contested=contested,
+        adapter_provenance=adapter_provenance,
         overall_receipt=ReceiptRef(
             sha256=sha256_hex(master_payload),
             schema_version=ReceiptSchemaVersion.V1_0_0,

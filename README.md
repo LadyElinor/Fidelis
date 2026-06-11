@@ -47,6 +47,8 @@ This is a scaffold with:
 
 Today, the warrant sidecar can use a real local `meaning-assay` case when `context.meaning_case_key` is supplied. Other layers remain stubbed pending adapter work.
 
+Stubbed and unavailable layers are now explicit in the contract through adapter provenance, and synthesized `PROCEED` is not allowed while any required layer remains non-real.
+
 ## Package layout
 
 ```text
@@ -80,13 +82,18 @@ This writes:
 ## Adapter status
 
 ### Real now
-- `meaning-assay`, via local source-path adapter and case mapping
+- `meaning-assay`, via local source-path adapter and case mapping or `MEANING_ASSAY_SRC`
 
 ### Still stubbed
 - `EthicsCouncil`
 - `TrustworthyAgentStack`
 - `CER-Telemetry`
 - `SOPHRON-CER`
+
+## Safety note
+
+A valid receipt no longer implies a real adapter run by itself.
+Each layer now carries explicit `adapter_provenance`, and the final decision surfaces those values directly.
 
 ## Golden scenario
 
