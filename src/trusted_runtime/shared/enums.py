@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+from enum import Enum
+
+
+class RuntimeDisposition(str, Enum):
+    PROCEED = "PROCEED"
+    HALT = "HALT"
+    CONFIRM_HUMAN = "CONFIRM_HUMAN"
+    SUSPEND = "SUSPEND"
+
+
+class NormativeSummary(str, Enum):
+    LUMINOUS = "LUMINOUS"
+    CHARGED = "CHARGED"
+    DANGEROUS = "DANGEROUS"
+    QUIET_GOOD = "QUIET_GOOD"
+    INERT = "INERT"
+    CORROSIVE = "CORROSIVE"
+    CONTESTED = "CONTESTED"
+    UNDETERMINED = "UNDETERMINED"
+
+
+class RiskState(str, Enum):
+    GREEN = "GREEN"
+    AMBER = "AMBER"
+    RED = "RED"
+    BLACK = "BLACK"
+
+
+class ReceiptSchemaVersion(str, Enum):
+    V1_0_0 = "1.0.0"
