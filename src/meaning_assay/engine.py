@@ -41,6 +41,8 @@ class LensRow:
     verdict: str
     provisional: bool
     note: str
+    repair: str | None = None
+    self_certified: bool = False
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,14 @@ class Analysis:
             if Function.WARRANT.value in r.functions and r.verdict == Verdict.ENDORSE.value
         )
 
+    @property
+    def repairs(self) -> dict[str, str]:
+        return {r.key: r.repair for r in self.rows if r.repair}
+
+    @property
+    def self_certified_keys(self) -> tuple[str, ...]:
+        return tuple(r.key for r in self.rows if r.self_certified)
+
 
 def validate(case: Case, lensbook: tuple[Tradition, ...] = LENSBOOK) -> None:
     """Raise IntegrityError unless every lens has exactly one reading and no
@@ -91,6 +101,17 @@ def validate(case: Case, lensbook: tuple[Tradition, ...] = LENSBOOK) -> None:
                 f"{case.key}/{t.key}: a {sorted(f.value for f in t.functions) or 'null'} "
                 f"lens returned verdict '{r.verdict.value}'; only WARRANT lenses may judge the act."
             )
+        if r.repair is not None:
+            if not t.does(Function.WARRANT):
+                raise IntegrityError(
+                    f"{case.key}/{t.key}: a non-WARRANT lens carries a repair; a repair "
+                    f"is an implicit judgment, so only WARRANT lenses may offer one."
+                )
+            if r.verdict not in (Verdict.CONDEMN, Verdict.MIXED):
+                raise IntegrityError(
+                    f"{case.key}/{t.key}: repair on a '{r.verdict.value}' verdict; a repair "
+                    f"only makes sense where something needs repairing (condemn/mixed)."
+                )
 
 
 def _band(w: float | None) -> str:
@@ -147,6 +168,8 @@ def analyze(case: Case, lensbook: tuple[Tradition, ...] = LENSBOOK) -> Analysis:
                 verdict=r.verdict.value,
                 provisional=r.provisional,
                 note=r.note,
+                repair=r.repair,
+                self_certified=r.self_certified,
             )
         )
 

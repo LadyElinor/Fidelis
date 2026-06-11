@@ -57,12 +57,33 @@ class PairAnalysis:
     verdict_switchers: tuple[str, ...]   # warrant lenses that flipped endorse<->condemn
     polarity_switchers: tuple[str, ...]  # significance lenses whose polarity flipped
     deltas: tuple[LensDelta, ...]
+    trips_a_only: tuple[str, ...] = ()
+    trips_b_only: tuple[str, ...] = ()
+    trips_shared: tuple[str, ...] = ()
+    texture_a: str = ""
+    texture_b: str = ""
 
     @property
     def finding(self) -> str:
         sig = "holds" if self.significance_stable else "moves"
         war = "inverts" if self.warrant_inverts else "holds"
-        return f"significance {sig}, warrant {war}"
+        base = f"significance {sig}, warrant {war}"
+        if war == "holds" and self.texture_a and self.texture_b and self.texture_a != self.texture_b:
+            base += f" ({self.a_key}: {self.texture_a}, {self.b_key}: {self.texture_b})"
+        return base
+
+
+def _texture(a: Analysis) -> str:
+    firm_verdicts = len(a.warrant_lenses_condemning) + len(a.warrant_lenses_endorsing)
+    focal = firm_verdicts >= 3
+    diffuse = a.failure_trip_rate >= 0.4
+    if focal and diffuse:
+        return "mixed"
+    if focal:
+        return "focal"
+    if diffuse:
+        return "diffuse"
+    return "clean"
 
 
 def compare(case_a: Case, case_b: Case,
@@ -99,6 +120,8 @@ def compare(case_a: Case, case_b: Case,
     warrant_inverts = (
         {a.warrant_band, b.warrant_band} == {"positive", "negative"}
     )
+    trips_a = set(a.failure_tripped_keys)
+    trips_b = set(b.failure_tripped_keys)
 
     return PairAnalysis(
         a_key=case_a.key, b_key=case_b.key,
@@ -110,4 +133,9 @@ def compare(case_a: Case, case_b: Case,
         verdict_switchers=tuple(sorted(verdict_switch)),
         polarity_switchers=tuple(sorted(polarity_switch)),
         deltas=tuple(deltas),
+        trips_a_only=tuple(sorted(trips_a - trips_b)),
+        trips_b_only=tuple(sorted(trips_b - trips_a)),
+        trips_shared=tuple(sorted(trips_a & trips_b)),
+        texture_a=_texture(a),
+        texture_b=_texture(b),
     )

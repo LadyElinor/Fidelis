@@ -26,3 +26,10 @@ def test_pair_is_order_sensitive_but_symmetric_in_magnitude():
     p2 = compare(get_case("trinity"), get_case("kor"))
     assert p1.warrant_inverts == p2.warrant_inverts
     assert p1.significance_delta == -p2.significance_delta
+
+
+def test_attest_pair_exposes_structure_difference():
+    p = compare(get_case("trinity"), get_case("attest"))
+    assert p.finding == "significance holds, warrant holds (trinity: mixed, attest: diffuse)"
+    assert isinstance(p.trips_a_only, tuple)
+    assert isinstance(p.trips_b_only, tuple)

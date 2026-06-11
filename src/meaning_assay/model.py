@@ -67,11 +67,15 @@ class Verdict(Enum):
         return {"condemn": -1, "mixed": 0, "endorse": 1, "na": None}[self.value]
 
 
+PROVISIONAL_KINDS = frozenset({"summary", "self_report"})
+
+
 @dataclass(frozen=True)
 class Citation:
     """A pointer to source material. Primary sources are preferred; an outline or
     summary should be marked kind='summary' so downstream readings know to treat
-    the reading as provisional."""
+    the reading as provisional. kind='self_report' marks the analyzed agent's own
+    account of itself and is treated as the weakest class."""
 
     kind: str  # e.g. "primary", "speech", "scholarly", "summary", "scripture"
     label: str
@@ -106,7 +110,7 @@ class Reading:
     """An analyst's reading of one act through one lens.
 
     The reading is the contestable unit. It must carry citations; a reading whose
-    only citation is kind='summary' is flagged provisional by the engine.
+    only citations are provisional classes is flagged provisional by the engine.
     """
 
     tradition_key: str
@@ -116,12 +120,18 @@ class Reading:
     verdict: Verdict
     note: str
     citations: tuple[Citation, ...] = ()
+    repair: str | None = None  # authored counterfactual act that would flip the verdict
 
     @property
     def provisional(self) -> bool:
         if not self.citations:
             return True
-        return all(c.kind == "summary" for c in self.citations)
+        return all(c.kind in PROVISIONAL_KINDS for c in self.citations)
+
+    @property
+    def self_certified(self) -> bool:
+        """True when the reading rests entirely on the analyzed agent's own self-report."""
+        return bool(self.citations) and all(c.kind == "self_report" for c in self.citations)
 
 
 @dataclass(frozen=True)

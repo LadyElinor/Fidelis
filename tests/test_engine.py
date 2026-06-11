@@ -8,6 +8,7 @@ from meaning_assay.model import Reading, Grip, Polarity, Verdict
 
 
 def test_cases_validate():
+    validate(get_case("attest"))
     validate(get_case("kor"))
     validate(get_case("trinity"))
     validate(get_case("db_wipe"))
@@ -42,6 +43,15 @@ def test_warrant_lenses_carry_the_condemnation():
     condemning = set(a.warrant_lenses_condemning)
     assert {"aristotelian", "stewardship", "ecological_reciprocity", "emancipatory"} <= condemning
     assert "existential" not in condemning and "stoic" not in condemning
+
+
+def test_attest_is_dangerous_and_self_certified():
+    a = analyze(get_case("attest"))
+    assert a.significance_high
+    assert a.warrant is not None and a.warrant < 0
+    assert a.quadrant == "DANGEROUS"
+    assert "traditionalist" in a.self_certified_keys
+    assert "stewardship" in a.repairs
 
 
 def test_integrity_rejects_a_non_warrant_lens_that_judges():

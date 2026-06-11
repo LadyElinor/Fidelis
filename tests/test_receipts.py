@@ -31,6 +31,12 @@ def test_distinct_cases_have_distinct_case_hashes():
     assert rk["inputs"]["lensbook_sha256"] == rt["inputs"]["lensbook_sha256"]
 
 
+def test_attest_receipt_surfaces_repairs_and_self_certified():
+    r = receipt(get_case("attest"))
+    assert "stewardship" in r["outputs"]["repairs"]
+    assert "traditionalist" in r["outputs"]["self_certified"]
+
+
 def test_lensbook_digest_stable():
     assert lensbook_digest() == lensbook_digest()
 
