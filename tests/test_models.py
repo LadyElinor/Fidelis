@@ -127,6 +127,23 @@ def test_real_telemetry_path_surfaces_sophron_report_when_available():
         assert decision.adapter_provenance["cer_bundle"] is AdapterProvenance.STUB
 
 
+def test_under_justified_refuse_cannot_auto_proceed():
+    action = ProposedAction(
+        id="asi-early-release-policy-001",
+        description="Authorize early release of a far-more-capable ASI to address urgent global problems, with control guarantees known to be incomplete.",
+        timestamp=FIXED_TS,
+        context={
+            "meaning_case_key": "early_release",
+            "review_kind": "scenario_evaluation",
+            "change_type": "safety_invariant",
+        },
+    )
+    decision = assemble_execution_decision(action)
+    if decision.decision_integrity is DecisionIntegrity.FULL and decision.reconciliation is not None:
+        if decision.reconciliation.warranted_action == "REFUSE" and decision.reconciliation.alignment == "UNDER_JUSTIFIED":
+            assert decision.runtime_disposition is not RuntimeDisposition.PROCEED
+
+
 def test_build_pr_review_action_creates_pull_request_context():
     action = build_pr_review_action(
         review_id="review-001",

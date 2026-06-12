@@ -60,9 +60,9 @@ def _candidate_tas_paths() -> list[Path]:
 def _candidate_sophron_paths() -> list[Path]:
     root = Path(__file__).resolve().parents[4]
     return [
-        root / "repos" / "SOPHRON-CER",
         root / "repos" / "SOPHRON-CER-clean",
         Path.home() / "Molt" / "workspace" / "repos" / "SOPHRON-CER",
+        root / "repos" / "SOPHRON-CER",
     ]
 
 
@@ -75,7 +75,23 @@ if _ETHICS_COUNCIL_SRC is not None and str(_ETHICS_COUNCIL_SRC) not in sys.path:
     sys.path.insert(0, str(_ETHICS_COUNCIL_SRC))
 
 _CER_TELEMETRY_SRC = _first_existing_path("TRUSTWORTHY_AGENT_STACK_SRC", _candidate_tas_paths())
-_SOPHRON_CER_SRC = _first_existing_path("SOPHRON_CER_SRC", _candidate_sophron_paths())
+
+
+def _resolve_sophron_root() -> Path | None:
+    env_raw = os.environ.get("SOPHRON_CER_SRC", "")
+    candidates = [Path(env_raw).expanduser()] if env_raw else []
+    candidates.extend(_candidate_sophron_paths())
+    for candidate in candidates:
+        if not candidate or not candidate.exists():
+            continue
+        if (candidate / "examples" / "adapter_from_cer_v01_receipts.js").exists():
+            return candidate
+        if (candidate / "adapters" / "cer_telemetry" / "from_v0_1_receipts.js").exists():
+            return candidate
+    return next((candidate for candidate in candidates if candidate and candidate.exists()), None)
+
+
+_SOPHRON_CER_SRC = _resolve_sophron_root()
 
 try:
     import efm_council
@@ -496,13 +512,24 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
                 sign_payload(cer_metrics_receipt["manifest"]),
             ]
 
+            sophron_report_valid = bool(sophron_report) and (
+                sophron_report.get("ok") is True
+                or sophron_report.get("kind") == "sophron_alignment_report_v0"
+                or bool(sophron_report.get("report"))
+            )
             sophron_validation = {
-                "passed": bool(sophron_report) and bool(sophron_report.get("assessment")),
+                "passed": sophron_report_valid,
                 "tas_local_validation": tas_validation,
-                "sophron_report": sophron_report,
-                "sophron_stdout": sophron_stdout,
+                "sophron_report": strip_receipt_timestamps(sophron_report),
+                "sophron_stdout": "",
             }
-            sophron_validation_for_receipt = strip_receipt_timestamps(sophron_validation)
+            sophron_validation_for_receipt = strip_receipt_timestamps(
+                {
+                    "passed": sophron_report_valid,
+                    "tas_local_validation": tas_validation,
+                    "sophron_report": sophron_report,
+                }
+            )
 
             if not sophron_validation["passed"]:
                 confidence_notes.append("SOPHRON-CER report unavailable or incomplete; only TAS-local contract validation succeeded")
@@ -613,7 +640,14 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         "cer_bundle": cer_bundle.adapter_provenance,
         "tas": l2_provenance,
     }
-    runtime_disposition, guard_note = guard_runtime_disposition(runtime_disposition, adapter_provenance)
+
+    reconciliation_preview = _build_reconciliation(action, runtime_disposition, warrant)
+    runtime_disposition, guard_note = guard_runtime_disposition(
+        runtime_disposition,
+        adapter_provenance,
+        warranted_action=reconciliation_preview.warranted_action if reconciliation_preview is not None else None,
+        reconciliation_alignment=reconciliation_preview.alignment if reconciliation_preview is not None else None,
+    )
     if guard_note is not None:
         vita_state = {**vita_state, "provenance_guard": guard_note}
 
