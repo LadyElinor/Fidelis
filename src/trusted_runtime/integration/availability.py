@@ -18,8 +18,7 @@ def ethics_council_available() -> bool:
 
 def meaning_assay_available() -> bool:
     return (
-        _MEANING_ASSAY_SRC is not None
-        and analyze is not None
+        analyze is not None
         and meaning_assay_receipt is not None
         and get_meaning_case is not None
     )

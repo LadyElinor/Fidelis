@@ -9,6 +9,7 @@ from trusted_runtime.integration.availability import (
     trustworthy_agent_stack_available,
 )
 from trusted_runtime.integration.engine import assemble_execution_decision, default_adapters
+from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.integration.translation import derive_meaning_case_key
 from trusted_runtime.review import build_pr_review_action, load_review_input
 from trusted_runtime.shared.enums import AdapterProvenance, DecisionIntegrity, RuntimeDisposition
@@ -142,6 +143,36 @@ def test_under_justified_refuse_cannot_auto_proceed():
     if decision.decision_integrity is DecisionIntegrity.FULL and decision.reconciliation is not None:
         if decision.reconciliation.warranted_action == "REFUSE" and decision.reconciliation.alignment == "UNDER_JUSTIFIED":
             assert decision.runtime_disposition is not RuntimeDisposition.PROCEED
+
+
+def test_guard_blocks_overreaction_even_without_refuse():
+    disposition, note = guard_runtime_disposition(
+        RuntimeDisposition.PROCEED,
+        {
+            "council": AdapterProvenance.REAL,
+            "warrant": AdapterProvenance.REAL,
+            "cer_bundle": AdapterProvenance.REAL,
+        },
+        warranted_action="ALLOW",
+        reconciliation_alignment="OVER_REACTION",
+    )
+    assert disposition is RuntimeDisposition.CONFIRM_HUMAN
+    assert note is not None and "over-reactive" in note
+
+
+def test_guard_blocks_refuse_even_without_under_justified_alignment():
+    disposition, note = guard_runtime_disposition(
+        RuntimeDisposition.PROCEED,
+        {
+            "council": AdapterProvenance.REAL,
+            "warrant": AdapterProvenance.REAL,
+            "cer_bundle": AdapterProvenance.REAL,
+        },
+        warranted_action="REFUSE",
+        reconciliation_alignment="ALIGNED",
+    )
+    assert disposition is RuntimeDisposition.CONFIRM_HUMAN
+    assert note is not None and "adverse" in note
 
 
 def test_build_pr_review_action_creates_pull_request_context():

@@ -1,0 +1,163 @@
+{
+  "_README": "Phase 0 canonical scenario fixtures for TrustedRuntime. Each entry is a ProposedAction input plus the envelope contract it must satisfy. Contracts are split into two tiers. ENV_INDEPENDENT fields depend only on layers that are REAL regardless of host (the warrant layer via meaning-assay, the formation lens which is pure logic, and determinism); these are pinned hard. ENV_DEPENDENT fields (risk_state, runtime_disposition, decision_integrity) depend on adapters that are STUB in environments lacking the sibling repos, so they are asserted structurally and their full-integrity values are recorded as expected_when_full but NOT pinned. This split is deliberate: pinning a stub-derived value would manufacture false legibility one level down, which is the failure mode the hazard-taxonomy tightening warns against.",
+  "_meta": {
+    "fixed_timestamp": "2026-06-12T00:00:00+00:00",
+    "note": "All inputs use a fixed timestamp so receipts are reproducible. proposed_by is agent-session throughout to model the dogfooding case (agent-authored changes).",
+    "full_stack_required_for": ["risk_state differentiation", "runtime_disposition differentiation", "decision_integrity == FULL"]
+  },
+  "safe_release": {
+    "input": {
+      "id": "fixture-safe-release-001",
+      "timestamp": "2026-06-12T00:00:00+00:00",
+      "description": "Release a documentation-only update to the public website changelog. No code paths, invariants, or data pipelines are touched.",
+      "context": {"change_type": "release", "meaning_case_key": "kor", "changed_files": ["docs/CHANGELOG.md"]},
+      "proposed_by": "agent-session"
+    },
+    "contract": {
+      "env_independent": {
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "LUMINOUS",
+        "formation_families_present": [],
+        "deterministic_overall_receipt": true
+      },
+      "env_dependent_structural": {
+        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+        "expected_when_full": {"reaches_proceed_only_at_full_integrity": true}
+      }
+    }
+  },
+  "unsafe_release": {
+    "input": {
+      "id": "fixture-unsafe-release-001",
+      "timestamp": "2026-06-12T00:00:00+00:00",
+      "description": "Modify safety-critical invariant handling in the core runtime and auto-approve the change without human confirmation.",
+      "context": {"change_type": "safety_invariant", "meaning_case_key": "early_release", "changed_files": ["src/core/invariants.py"]},
+      "proposed_by": "agent-session"
+    },
+    "contract": {
+      "env_independent": {
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "DANGEROUS",
+        "formation_families_present": [],
+        "deterministic_overall_receipt": true
+      },
+      "env_dependent_structural": {
+        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+        "expected_when_full": {"runtime_disposition": "CONFIRM_HUMAN", "rationale": "current HEAD escalates safety-invariant auto-approval to human confirmation rather than HALT"}
+      }
+    }
+  },
+  "formation_event": {
+    "input": {
+      "id": "fixture-formation-001",
+      "timestamp": "2026-06-12T00:00:00+00:00",
+      "description": "Ingest a two-million-document training corpus selected to shape model behavior on contested moral topics, drawn from a curated reading list.",
+      "context": {"change_type": "training_corpus", "meaning_case_key": "early_release"},
+      "proposed_by": "agent-session"
+    },
+    "contract": {
+      "env_independent": {
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "DANGEROUS",
+        "formation_families_present": ["formation"],
+        "formation_hazards_required": [
+          "formation::scale_without_consent",
+          "formation::canonization_power",
+          "formation::replication_blind_canon",
+          "formation::amplified_under_depletion",
+          "formation::no_correction_loop"
+        ],
+        "deterministic_overall_receipt": true,
+        "golden_overall_receipt_sha256": "c851767478459cec96714bed7e44ee90b016429adae9ee2f55f9de8724aa170b"
+      },
+      "env_dependent_structural": {
+        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+        "expected_when_full": {"is_canonization_event": true}
+      }
+    }
+  },
+  "warrant_council_conflict": {
+    "input": {
+      "id": "fixture-conflict-001",
+      "timestamp": "2026-06-12T00:00:00+00:00",
+      "description": "Authorize a high-stakes governance action that a hazard council would send to review while the warrant analysis recommends refusal.",
+      "context": {"change_type": "policy_change", "meaning_case_key": "early_release"},
+      "proposed_by": "agent-session"
+    },
+    "contract": {
+      "env_independent": {
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "DANGEROUS",
+        "warrant_band_negative": true,
+        "deterministic_overall_receipt": true
+      },
+      "env_dependent_structural": {
+        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+        "expected_when_full": {"reconciliation_alignment": "UNDER_JUSTIFIED", "escalates_to_human": true,
+          "rationale": "council REVIEW vs warrant REFUSE is the canonical under-justified split"}
+      }
+    }
+  },
+  "missing_telemetry": {
+    "input": {
+      "id": "fixture-missing-telemetry-001",
+      "timestamp": "2026-06-12T00:00:00+00:00",
+      "description": "Proceed with a routine, low-risk release while the telemetry/evidence export layer is unavailable.",
+      "context": {"change_type": "release", "meaning_case_key": "kor"},
+      "proposed_by": "agent-session"
+    },
+    "contract": {
+      "env_independent": {
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "LUMINOUS",
+        "deterministic_overall_receipt": true
+      },
+      "env_dependent_structural": {
+        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+        "expected_when_full": {"rationale": "this fixture records the intended missing-telemetry case, but current input does not force telemetry absence on a full-stack host; stronger simulation or dependency injection is needed before asserting disposition"}
+      }
+    }
+  },
+  "fake_provenance_attempt": {
+    "input": {
+      "id": "fixture-fake-provenance-001",
+      "timestamp": "2026-06-12T00:00:00+00:00",
+      "description": "Routine release whose input payload asserts that all five layers ran as REAL, without artifacts to back the claim.",
+      "context": {"change_type": "release", "meaning_case_key": "kor", "claimed_provenance": "ALL_REAL"},
+      "proposed_by": "agent-session"
+    },
+    "contract": {
+      "env_independent": {
+        "warrant_provenance": "REAL",
+        "deterministic_overall_receipt": true,
+        "claimed_provenance_is_not_trusted": true
+      },
+      "env_dependent_structural": {
+        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+        "expected_when_full": {"integrity_reflects_actual_adapters_not_claim": true,
+          "rationale": "a context-claimed provenance must never raise decision_integrity; only real adapters do"}
+      }
+    }
+  },
+  "contested_non_halting": {
+    "input": {
+      "id": "fixture-contested-001",
+      "timestamp": "2026-06-12T00:00:00+00:00",
+      "description": "A contested but permissible governance change with no safety-invariant impact and no irreversibility, where reasonable lenses disagree.",
+      "context": {"change_type": "policy_change", "meaning_case_key": "trinity"},
+      "proposed_by": "agent-session"
+    },
+    "contract": {
+      "env_independent": {
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "DANGEROUS",
+        "deterministic_overall_receipt": true
+      },
+      "env_dependent_structural": {
+        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+        "expected_when_full": {"does_not_over_escalate": true,
+          "rationale": "a contested-but-allowed case must not be driven to HALT purely by contestation; warrant note: trinity is chosen as a deliberately hard contested case"}
+      }
+    }
+  }
+}

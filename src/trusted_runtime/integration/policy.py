@@ -22,13 +22,12 @@ def guard_runtime_disposition(
             RuntimeDisposition.CONFIRM_HUMAN,
             "PROCEED forbidden while required layers remain stubbed or unavailable",
         )
-    if (
-        runtime_disposition is RuntimeDisposition.PROCEED
-        and warranted_action == "REFUSE"
-        and reconciliation_alignment in {"UNDER_JUSTIFIED", "OVER_REACTION"}
+    if runtime_disposition is RuntimeDisposition.PROCEED and (
+        warranted_action == "REFUSE"
+        or reconciliation_alignment in {"UNDER_JUSTIFIED", "OVER_REACTION"}
     ):
         return (
             RuntimeDisposition.CONFIRM_HUMAN,
-            "PROCEED forbidden when warrant reconciliation marks the act as under-justified or over-reactive",
+            "PROCEED forbidden when warrant reconciliation marks the act as adverse or over-reactive",
         )
     return runtime_disposition, None
