@@ -59,11 +59,27 @@ def test_overall_receipt_is_deterministic(name):
     assert d1.overall_receipt.sha256 == d2.overall_receipt.sha256
 
 
-@pytest.mark.parametrize("name", [k for k, v in SCENARIOS.items() if v["contract"]["env_independent"].get("golden_overall_receipt_sha256")])
-def test_pinned_golden_overall_receipt(name):
+def _formation_lens_hash(description: str, context: dict) -> str:
+    """Canonical hash of the formation LENS output, pure logic and environment-independent.
+    The full decision receipt is not pinned here because formation_event routes through
+    the council layer, which may be STUB without sibling repos."""
+    import hashlib
+
+    r = assess_formation_hazard(description, context)
+    payload = {
+        "is_formation_event": r.is_formation_event,
+        "is_canonization_event": r.is_canonization_event,
+        "hazards": sorted(r.hazards),
+        "matched_kind": r.matched_kind,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+@pytest.mark.parametrize("name", [k for k, v in SCENARIOS.items() if v["contract"]["env_independent"].get("formation_lens_golden_sha256")])
+def test_pinned_formation_lens_golden(name):
     scenario = SCENARIOS[name]
-    _, decision = _decide(scenario)
-    assert decision.overall_receipt.sha256 == scenario["contract"]["env_independent"]["golden_overall_receipt_sha256"]
+    actual = _formation_lens_hash(scenario["input"]["description"], scenario["input"]["context"])
+    assert actual == scenario["contract"]["env_independent"]["formation_lens_golden_sha256"]
 
 
 FORMATION_GOLDEN_INPUT = {

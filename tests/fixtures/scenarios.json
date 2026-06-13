@@ -68,12 +68,13 @@
           "formation::no_correction_loop"
         ],
         "deterministic_overall_receipt": true,
-        "golden_overall_receipt_sha256": "c851767478459cec96714bed7e44ee90b016429adae9ee2f55f9de8724aa170b"
+        "formation_lens_golden_sha256": "3fba9ea3edf699209e6e427faaf883b6ae5749b46d9415d9c70f4ea59639ad61"
       },
       "env_dependent_structural": {
         "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
         "expected_when_full": {"is_canonization_event": true}
-      }
+      },
+      "_pin_note": "overall_receipt NOT pinned: formation_event routes through the council layer, STUB without sibling repos, so its hash is host-specific. Pin the pure-logic formation LENS output instead; assert overall-receipt determinism separately."
     }
   },
   "warrant_council_conflict": {
