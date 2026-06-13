@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from trusted_runtime.integration.adapters import AdapterSet, HazardAdapter, TelemetryAdapter, WarrantAdapter
+from trusted_runtime.integration.formation import assess_formation_hazard
 from trusted_runtime.integration.integrity import classify_decision_integrity
 from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.integration.provenance import process_provenance_record
@@ -625,10 +626,27 @@ def _build_reconciliation(
     )
 
 
+def _merge_formation_hazards(council: CouncilAssessment, action: ProposedAction) -> CouncilAssessment:
+    report = assess_formation_hazard(action.description, action.context)
+    if not report.is_formation_event:
+        return council
+    merged_hazards = list(council.hazards) + [h for h in report.hazards if h not in council.hazards]
+    merged_faults = list(council.fault_lines) + [f for f in report.fault_lines if f not in council.fault_lines]
+    notes = list(council.confidence_notes) + [f"formation lens: {report.rationale}"]
+    return council.model_copy(
+        update={
+            "hazards": merged_hazards,
+            "fault_lines": merged_faults,
+            "confidence_notes": notes,
+        }
+    )
+
+
 def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | None = None) -> ExecutionDecision:
     adapters = adapters or default_adapters()
 
     council = adapters.hazard.assess(action)
+    council = _merge_formation_hazards(council, action)
     tas_adapter = TrustworthyAgentStackAdapter()
     risk_state, runtime_disposition, vita_state, l2_provenance = tas_adapter.assess(action, council)
     warrant = adapters.warrant.assess(action)
