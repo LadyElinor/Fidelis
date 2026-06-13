@@ -117,4 +117,5 @@ class ExecutionDecision(BaseModel):
     adapter_provenance: dict[str, AdapterProvenance] = Field(default_factory=dict)
     process_provenance: dict[str, dict[str, Any]] = Field(default_factory=dict)
     reconciliation: ReconciliationRecord | None = None
+    hazard_profile: dict[str, Any] = Field(default_factory=dict)
     overall_receipt: ReceiptRef

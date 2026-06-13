@@ -11,6 +11,7 @@ from typing import Any
 
 from trusted_runtime.integration.adapters import AdapterSet, HazardAdapter, TelemetryAdapter, WarrantAdapter
 from trusted_runtime.integration.formation import assess_formation_hazard
+from trusted_runtime.integration.hazard_taxonomy import build_hazard_profile
 from trusted_runtime.integration.integrity import classify_decision_integrity
 from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.integration.provenance import process_provenance_record
@@ -718,6 +719,23 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         ),
     }
 
+    hazard_profile_obj = build_hazard_profile(tuple(council.hazards))
+    hazard_profile = {
+        "families_present": list(hazard_profile_obj.families_present),
+        "max_initial_level": hazard_profile_obj.max_initial_level.name,
+        "max_residual_level": hazard_profile_obj.max_residual_level.name,
+        "unclassified_count": hazard_profile_obj.unclassified_count,
+        "hazards": [
+            {
+                "family": hazard.family.value,
+                "raw_label": hazard.raw_label,
+                "initial_level": hazard.initial_level.name,
+                "residual_level": hazard.residual_level.name,
+            }
+            for hazard in hazard_profile_obj.hazards
+        ],
+    }
+
     master_payload = strip_receipt_timestamps(
         {
             "action": action.model_dump(mode="json"),
@@ -731,6 +749,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "decision_integrity": decision_integrity.value,
             "process_provenance": process_provenance,
             "reconciliation": reconciliation.model_dump(mode="json") if reconciliation is not None else None,
+            "hazard_profile": hazard_profile,
         }
     )
 
@@ -750,5 +769,6 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         adapter_provenance=adapter_provenance,
         process_provenance=process_provenance,
         reconciliation=reconciliation,
+        hazard_profile=hazard_profile,
         overall_receipt=ReceiptRef(sha256=sha256_hex(master_payload), schema_version=ReceiptSchemaVersion.V1_0_0),
     )
