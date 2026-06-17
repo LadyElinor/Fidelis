@@ -779,18 +779,8 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     local_fact_records: list[EvidenceRecord] = []
     changed_files = action.context.get("changed_files") or []
     if changed_files:
-        local_fact_records.append(
-            EvidenceRecord(
-                kind="changed_files_manifest_verified_local_shape",
-                source="trusted_runtime.local_validation.changed_files",
-                independence_class="verified-local",
-                self_attested=False,
-                reviewable=True,
-                notes=["Local runtime verified the changed_files manifest has explicit structured entries; this confirms shape only, not semantic truth of file contents"],
-            )
-        )
         repo_name = str(action.context.get("repo") or "")
-        if repo_name in {"LadyElinor/TrustedRuntime", "TrustedRuntime", "."}:
+        if repo_name in {"LadyElinor/TrustedRuntime", "TrustedRuntime", "."} and isinstance(changed_files, list):
             repo_root = Path(__file__).resolve().parents[3]
             resolved = [repo_root / str(item) for item in changed_files]
             existing = [str(path.relative_to(repo_root)) for path in resolved if path.exists()]
@@ -811,10 +801,10 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
                     EvidenceRecord(
                         kind="changed_files_manifest_missing_local_paths",
                         source="trusted_runtime.local_validation.changed_files.repo_state",
-                        independence_class="verified-local",
+                        independence_class="same-operator",
                         self_attested=False,
                         reviewable=True,
-                        notes=[f"Local runtime could not verify listed repo paths exist: {missing}"],
+                        notes=[f"Actor-supplied changed_files entries did not resolve in local repo state: {missing}"],
                     )
                 )
 

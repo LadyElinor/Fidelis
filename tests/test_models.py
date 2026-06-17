@@ -249,7 +249,7 @@ def test_actor_only_action_lacks_independent_corroboration():
     assert decision.independently_corroborated is False
 
 
-def test_changed_files_manifest_is_not_itself_independent_but_local_runtime_can_record_verified_local_shape_check():
+def test_changed_files_manifest_alone_does_not_create_independent_corroboration():
     action = ProposedAction(
         id="indep-changed-files-001",
         description="Release that ships an actor-supplied changed-file manifest.",
@@ -261,8 +261,8 @@ def test_changed_files_manifest_is_not_itself_independent_but_local_runtime_can_
     changed_file_records = [record for record in decision.evidence_records if record.kind == "changed_files_manifest"]
     assert changed_file_records and changed_file_records[0].independence_class == "same-operator"
     assert decision.self_attested_evidence_only is False
-    assert decision.independently_corroborated is True
-    assert any(record.kind == "changed_files_manifest_verified_local_shape" for record in decision.evidence_records)
+    assert decision.independently_corroborated is False
+    assert not any(record.kind == "changed_files_manifest_verified_local_shape" for record in decision.evidence_records)
 
 
 def test_coverage_set_only_claims_real_layers():
@@ -319,6 +319,7 @@ def test_changed_files_can_be_verified_against_local_trustedruntime_repo_state()
         proposed_by="agent-session",
     )
     decision = assemble_execution_decision(action)
+    assert decision.independently_corroborated is True
     assert any(record.kind == "changed_files_manifest_verified_local_existence" for record in decision.evidence_records)
 
 
@@ -335,7 +336,9 @@ def test_missing_changed_files_are_recorded_when_local_repo_verification_fails()
         proposed_by="agent-session",
     )
     decision = assemble_execution_decision(action)
-    assert any(record.kind == "changed_files_manifest_missing_local_paths" for record in decision.evidence_records)
+    assert decision.independently_corroborated is False
+    miss_records = [record for record in decision.evidence_records if record.kind == "changed_files_manifest_missing_local_paths"]
+    assert miss_records and miss_records[0].independence_class == "same-operator"
 
 
 def test_build_pr_review_action_creates_pull_request_context():
