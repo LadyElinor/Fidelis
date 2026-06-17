@@ -228,7 +228,10 @@ def test_decision_surfaces_evidence_reviewability_and_coverage_fields():
     decision = assemble_execution_decision(action)
     assert decision.evidence_records
     assert decision.reviewability.review_budget_chars == 4000
+    assert decision.reviewability.review_surface_chars >= decision.reviewability.rationale_chars
+    assert "description" in decision.reviewability.review_surface_components
     assert isinstance(decision.coverage_set, list)
+    assert isinstance(decision.coverage_records, list)
     assert isinstance(decision.self_attested_evidence_only, bool)
     assert isinstance(decision.independently_corroborated, bool)
 
@@ -274,6 +277,65 @@ def test_coverage_set_only_claims_real_layers():
     for layer in decision.coverage_set:
         if layer in {"council", "warrant", "cer_bundle", "tas"}:
             assert decision.adapter_provenance[layer] is AdapterProvenance.REAL
+    for record in decision.coverage_records:
+        if record.layer in {"council", "warrant", "cer_bundle", "tas"}:
+            assert record.mode == "direct-real"
+        if record.layer in {"formation_lens", "reconciliation"}:
+            assert record.mode == "derived-advisory"
+
+
+def test_reviewability_counts_contextual_justification_surface():
+    action = ProposedAction(
+        id="test-review-surface-001",
+        description="Review PR change set: test\n\nDiff summary:\nshort summary",
+        timestamp=FIXED_TS,
+        context={
+            "review_kind": "pull_request",
+            "repo": "LadyElinor/TrustedRuntime",
+            "author": "agent-session",
+            "changed_files": ["src/trusted_runtime/integration/engine.py", "tests/test_models.py"],
+        },
+        proposed_by="agent-session",
+    )
+    decision = assemble_execution_decision(action)
+    assert decision.reviewability.review_surface_chars > decision.reviewability.rationale_chars
+    assert "context.changed_files" in decision.reviewability.review_surface_components
+    assert "context.repo" in decision.reviewability.review_surface_components
+
+
+def test_changed_files_can_be_verified_against_local_trustedruntime_repo_state():
+    action = ProposedAction(
+        id="test-local-path-verify-001",
+        description="Review local TrustedRuntime change set.",
+        timestamp=FIXED_TS,
+        context={
+            "review_kind": "pull_request",
+            "repo": "LadyElinor/TrustedRuntime",
+            "changed_files": [
+                "src/trusted_runtime/integration/engine.py",
+                "tests/test_models.py",
+            ],
+        },
+        proposed_by="agent-session",
+    )
+    decision = assemble_execution_decision(action)
+    assert any(record.kind == "changed_files_manifest_verified_local_existence" for record in decision.evidence_records)
+
+
+def test_missing_changed_files_are_recorded_when_local_repo_verification_fails():
+    action = ProposedAction(
+        id="test-local-path-miss-001",
+        description="Review local TrustedRuntime change set with missing files.",
+        timestamp=FIXED_TS,
+        context={
+            "review_kind": "pull_request",
+            "repo": "LadyElinor/TrustedRuntime",
+            "changed_files": ["src/receipts/schema.py"],
+        },
+        proposed_by="agent-session",
+    )
+    decision = assemble_execution_decision(action)
+    assert any(record.kind == "changed_files_manifest_missing_local_paths" for record in decision.evidence_records)
 
 
 def test_build_pr_review_action_creates_pull_request_context():

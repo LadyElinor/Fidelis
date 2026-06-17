@@ -27,6 +27,7 @@ from trusted_runtime.shared.enums import (
 from trusted_runtime.shared.models import (
     CERRecordBundle,
     CouncilAssessment,
+    CoverageRecord,
     EvidenceRecord,
     ExecutionDecision,
     ProposedAction,
@@ -691,15 +692,39 @@ def _build_evidence_records(action: ProposedAction) -> list[EvidenceRecord]:
 
 def _build_reviewability_profile(action: ProposedAction) -> ReviewabilityProfile:
     rationale_chars = len(action.description or "")
+    components = ["description"]
+    review_surface_chars = rationale_chars
+
+    context = action.context or {}
+    if context.get("review_kind"):
+        review_surface_chars += len(str(context.get("review_kind")))
+        components.append("context.review_kind")
+    if context.get("repo"):
+        review_surface_chars += len(str(context.get("repo")))
+        components.append("context.repo")
+    if context.get("author"):
+        review_surface_chars += len(str(context.get("author")))
+        components.append("context.author")
+    changed_files = context.get("changed_files") or []
+    if changed_files:
+        review_surface_chars += sum(len(str(item)) for item in changed_files)
+        components.append("context.changed_files")
+    claimed_provenance = context.get("claimed_provenance")
+    if claimed_provenance is not None:
+        review_surface_chars += len(str(claimed_provenance))
+        components.append("context.claimed_provenance")
+
     review_budget_chars = 4000
-    exceeded = rationale_chars > review_budget_chars
+    exceeded = review_surface_chars > review_budget_chars
     notes = []
     if exceeded:
-        notes.append("Action rationale exceeds reviewability budget; long justifications are treated as a hazard signal")
+        notes.append("Review surface exceeds reviewability budget; long justifications are treated as a hazard signal")
     else:
-        notes.append("Action rationale fits within reviewability budget")
+        notes.append("Review surface fits within reviewability budget")
     return ReviewabilityProfile(
         rationale_chars=rationale_chars,
+        review_surface_chars=review_surface_chars,
+        review_surface_components=components,
         review_budget_chars=review_budget_chars,
         within_budget=not exceeded,
         exceeded=exceeded,
@@ -707,26 +732,26 @@ def _build_reviewability_profile(action: ProposedAction) -> ReviewabilityProfile
     )
 
 
-def _coverage_set(
+def _coverage_records(
     council: CouncilAssessment,
     warrant: WarrantAssay | None,
     cer_bundle: CERRecordBundle,
     reconciliation: ReconciliationRecord | None,
     adapter_provenance: dict[str, AdapterProvenance],
-) -> list[str]:
-    coverage: list[str] = []
+) -> list[CoverageRecord]:
+    coverage: list[CoverageRecord] = []
     if adapter_provenance.get("council") is AdapterProvenance.REAL:
-        coverage.append("council")
+        coverage.append(CoverageRecord(layer="council", mode="direct-real"))
     if adapter_provenance.get("tas") is AdapterProvenance.REAL:
-        coverage.append("tas")
+        coverage.append(CoverageRecord(layer="tas", mode="direct-real"))
     if adapter_provenance.get("cer_bundle") is AdapterProvenance.REAL:
-        coverage.append("cer_bundle")
+        coverage.append(CoverageRecord(layer="cer_bundle", mode="direct-real"))
     if warrant is not None and adapter_provenance.get("warrant") is AdapterProvenance.REAL:
-        coverage.append("warrant")
+        coverage.append(CoverageRecord(layer="warrant", mode="direct-real"))
     if reconciliation is not None and adapter_provenance.get("warrant") is AdapterProvenance.REAL:
-        coverage.append("reconciliation")
+        coverage.append(CoverageRecord(layer="reconciliation", mode="derived-advisory", notes=["Derived from the real warrant layer plus council/runtime mapping"]))
     if any(h.startswith("formation::") for h in council.hazards):
-        coverage.append("formation_lens")
+        coverage.append(CoverageRecord(layer="formation_lens", mode="derived-advisory", notes=["Derived additive lens layered onto council hazards"]))
     return coverage
 
 
@@ -752,7 +777,8 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     }
 
     local_fact_records: list[EvidenceRecord] = []
-    if action.context.get("changed_files"):
+    changed_files = action.context.get("changed_files") or []
+    if changed_files:
         local_fact_records.append(
             EvidenceRecord(
                 kind="changed_files_manifest_verified_local_shape",
@@ -763,6 +789,34 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
                 notes=["Local runtime verified the changed_files manifest has explicit structured entries; this confirms shape only, not semantic truth of file contents"],
             )
         )
+        repo_name = str(action.context.get("repo") or "")
+        if repo_name in {"LadyElinor/TrustedRuntime", "TrustedRuntime", "."}:
+            repo_root = Path(__file__).resolve().parents[3]
+            resolved = [repo_root / str(item) for item in changed_files]
+            existing = [str(path.relative_to(repo_root)) for path in resolved if path.exists()]
+            missing = [str(path.relative_to(repo_root)) for path in resolved if not path.exists()]
+            if existing:
+                local_fact_records.append(
+                    EvidenceRecord(
+                        kind="changed_files_manifest_verified_local_existence",
+                        source="trusted_runtime.local_validation.changed_files.repo_state",
+                        independence_class="verified-local",
+                        self_attested=False,
+                        reviewable=True,
+                        notes=[f"Local runtime verified listed files exist in repo state: {existing}"] + ([f"Missing listed files: {missing}"] if missing else []),
+                    )
+                )
+            elif missing:
+                local_fact_records.append(
+                    EvidenceRecord(
+                        kind="changed_files_manifest_missing_local_paths",
+                        source="trusted_runtime.local_validation.changed_files.repo_state",
+                        independence_class="verified-local",
+                        self_attested=False,
+                        reviewable=True,
+                        notes=[f"Local runtime could not verify listed repo paths exist: {missing}"],
+                    )
+                )
 
     evidence_records = evidence_records + local_fact_records
     council = council.model_copy(update={"evidence_records": evidence_records, "reviewability": reviewability})
@@ -854,7 +908,8 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         ],
     }
 
-    coverage_set = _coverage_set(council, warrant, cer_bundle, reconciliation, adapter_provenance)
+    coverage_records = _coverage_records(council, warrant, cer_bundle, reconciliation, adapter_provenance)
+    coverage_set = [record.layer for record in coverage_records]
 
     master_payload = strip_receipt_timestamps(
         {
@@ -873,6 +928,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "evidence_records": [record.model_dump(mode="json") for record in evidence_records],
             "reviewability": reviewability.model_dump(mode="json"),
             "coverage_set": coverage_set,
+            "coverage_records": [record.model_dump(mode="json") for record in coverage_records],
             "self_attested_evidence_only": self_attested_evidence_only,
             "independently_corroborated": independently_corroborated,
         }
@@ -898,6 +954,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         evidence_records=evidence_records,
         reviewability=reviewability,
         coverage_set=coverage_set,
+        coverage_records=coverage_records,
         self_attested_evidence_only=self_attested_evidence_only,
         independently_corroborated=independently_corroborated,
         overall_receipt=ReceiptRef(sha256=sha256_hex(master_payload), schema_version=ReceiptSchemaVersion.V1_0_0),

@@ -42,9 +42,19 @@ class ReviewabilityProfile(BaseModel):
     """Declares whether the attached justification is small enough to be meaningfully reviewed."""
 
     rationale_chars: int = 0
+    review_surface_chars: int = 0
+    review_surface_components: list[str] = Field(default_factory=list)
     review_budget_chars: int = 4000
     within_budget: bool = True
     exceeded: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
+class CoverageRecord(BaseModel):
+    """Declares which layers actually covered the decision and whether coverage was direct or derived."""
+
+    layer: str
+    mode: Literal["direct-real", "derived-advisory"]
     notes: list[str] = Field(default_factory=list)
 
 
@@ -144,6 +154,7 @@ class ExecutionDecision(BaseModel):
     evidence_records: list[EvidenceRecord] = Field(default_factory=list)
     reviewability: ReviewabilityProfile = Field(default_factory=ReviewabilityProfile)
     coverage_set: list[str] = Field(default_factory=list)
+    coverage_records: list[CoverageRecord] = Field(default_factory=list)
     self_attested_evidence_only: bool = False
     independently_corroborated: bool = False
     overall_receipt: ReceiptRef
