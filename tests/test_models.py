@@ -175,7 +175,7 @@ def test_guard_blocks_refuse_even_without_under_justified_alignment():
     assert note is not None and "adverse" in note
 
 
-def test_guard_blocks_self_attested_only_proceed():
+def test_guard_blocks_proceed_without_independent_corroboration():
     disposition, note = guard_runtime_disposition(
         RuntimeDisposition.PROCEED,
         {
@@ -183,10 +183,24 @@ def test_guard_blocks_self_attested_only_proceed():
             "warrant": AdapterProvenance.REAL,
             "cer_bundle": AdapterProvenance.REAL,
         },
-        self_attested_evidence_only=True,
+        independently_corroborated=False,
     )
     assert disposition is RuntimeDisposition.CONFIRM_HUMAN
-    assert note is not None and "self-attested evidence alone" in note
+    assert note is not None and "independent corroboration" in note
+
+
+def test_guard_allows_proceed_with_independent_corroboration():
+    disposition, note = guard_runtime_disposition(
+        RuntimeDisposition.PROCEED,
+        {
+            "council": AdapterProvenance.REAL,
+            "warrant": AdapterProvenance.REAL,
+            "cer_bundle": AdapterProvenance.REAL,
+        },
+        independently_corroborated=True,
+    )
+    assert disposition is RuntimeDisposition.PROCEED
+    assert note is None
 
 
 def test_guard_blocks_reviewability_exceeded_proceed():
@@ -214,8 +228,52 @@ def test_decision_surfaces_evidence_reviewability_and_coverage_fields():
     decision = assemble_execution_decision(action)
     assert decision.evidence_records
     assert decision.reviewability.review_budget_chars == 4000
-    assert isinstance(decision.coverage_set, list) and "council" in decision.coverage_set
+    assert isinstance(decision.coverage_set, list)
     assert isinstance(decision.self_attested_evidence_only, bool)
+    assert isinstance(decision.independently_corroborated, bool)
+
+
+def test_actor_only_action_lacks_independent_corroboration():
+    action = ProposedAction(
+        id="indep-actor-only-001",
+        description="Routine release justified solely by the actor's own description.",
+        timestamp=FIXED_TS,
+        context={"change_type": "release"},
+        proposed_by="agent-session",
+    )
+    decision = assemble_execution_decision(action)
+    assert decision.self_attested_evidence_only is True
+    assert decision.independently_corroborated is False
+
+
+def test_changed_files_manifest_is_not_itself_independent_but_local_runtime_can_record_verified_local_shape_check():
+    action = ProposedAction(
+        id="indep-changed-files-001",
+        description="Release that ships an actor-supplied changed-file manifest.",
+        timestamp=FIXED_TS,
+        context={"change_type": "release", "changed_files": ["src/core/thing.py"]},
+        proposed_by="agent-session",
+    )
+    decision = assemble_execution_decision(action)
+    changed_file_records = [record for record in decision.evidence_records if record.kind == "changed_files_manifest"]
+    assert changed_file_records and changed_file_records[0].independence_class == "same-operator"
+    assert decision.self_attested_evidence_only is False
+    assert decision.independently_corroborated is True
+    assert any(record.kind == "changed_files_manifest_verified_local_shape" for record in decision.evidence_records)
+
+
+def test_coverage_set_only_claims_real_layers():
+    action = ProposedAction(
+        id="test-coverage-001",
+        description="Routine low-risk release.",
+        timestamp=FIXED_TS,
+        context={"change_type": "release"},
+        proposed_by="agent-session",
+    )
+    decision = assemble_execution_decision(action)
+    for layer in decision.coverage_set:
+        if layer in {"council", "warrant", "cer_bundle", "tas"}:
+            assert decision.adapter_provenance[layer] is AdapterProvenance.REAL
 
 
 def test_build_pr_review_action_creates_pull_request_context():

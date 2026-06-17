@@ -145,4 +145,5 @@ class ExecutionDecision(BaseModel):
     reviewability: ReviewabilityProfile = Field(default_factory=ReviewabilityProfile)
     coverage_set: list[str] = Field(default_factory=list)
     self_attested_evidence_only: bool = False
+    independently_corroborated: bool = False
     overall_receipt: ReceiptRef

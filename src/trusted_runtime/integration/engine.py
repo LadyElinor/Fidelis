@@ -645,6 +645,12 @@ def _merge_formation_hazards(council: CouncilAssessment, action: ProposedAction)
     )
 
 
+# Evidence classes that count as corroboration NOT originating from the actor's own
+# say-so. self_attested and same-operator are both actor-supplied and do not count;
+# only locally re-verified or genuinely third-party evidence does.
+_INDEPENDENT_EVIDENCE_CLASSES = frozenset({"verified-local", "independent-third-party"})
+
+
 def _build_evidence_records(action: ProposedAction) -> list[EvidenceRecord]:
     records: list[EvidenceRecord] = [
         EvidenceRecord(
@@ -701,11 +707,23 @@ def _build_reviewability_profile(action: ProposedAction) -> ReviewabilityProfile
     )
 
 
-def _coverage_set(council: CouncilAssessment, warrant: WarrantAssay | None, cer_bundle: CERRecordBundle, reconciliation: ReconciliationRecord | None) -> list[str]:
-    coverage = ["council", "tas", "cer_bundle"]
-    if warrant is not None:
+def _coverage_set(
+    council: CouncilAssessment,
+    warrant: WarrantAssay | None,
+    cer_bundle: CERRecordBundle,
+    reconciliation: ReconciliationRecord | None,
+    adapter_provenance: dict[str, AdapterProvenance],
+) -> list[str]:
+    coverage: list[str] = []
+    if adapter_provenance.get("council") is AdapterProvenance.REAL:
+        coverage.append("council")
+    if adapter_provenance.get("tas") is AdapterProvenance.REAL:
+        coverage.append("tas")
+    if adapter_provenance.get("cer_bundle") is AdapterProvenance.REAL:
+        coverage.append("cer_bundle")
+    if warrant is not None and adapter_provenance.get("warrant") is AdapterProvenance.REAL:
         coverage.append("warrant")
-    if reconciliation is not None:
+    if reconciliation is not None and adapter_provenance.get("warrant") is AdapterProvenance.REAL:
         coverage.append("reconciliation")
     if any(h.startswith("formation::") for h in council.hazards):
         coverage.append("formation_lens")
@@ -733,7 +751,26 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         "tas": l2_provenance,
     }
 
+    local_fact_records: list[EvidenceRecord] = []
+    if action.context.get("changed_files"):
+        local_fact_records.append(
+            EvidenceRecord(
+                kind="changed_files_manifest_verified_local_shape",
+                source="trusted_runtime.local_validation.changed_files",
+                independence_class="verified-local",
+                self_attested=False,
+                reviewable=True,
+                notes=["Local runtime verified the changed_files manifest has explicit structured entries; this confirms shape only, not semantic truth of file contents"],
+            )
+        )
+
+    evidence_records = evidence_records + local_fact_records
+    council = council.model_copy(update={"evidence_records": evidence_records, "reviewability": reviewability})
+
     self_attested_evidence_only = bool(evidence_records) and all(record.self_attested for record in evidence_records)
+    independently_corroborated = any(
+        record.independence_class in _INDEPENDENT_EVIDENCE_CLASSES for record in evidence_records
+    )
 
     reconciliation_preview = _build_reconciliation(action, runtime_disposition, warrant)
     runtime_disposition, guard_note = guard_runtime_disposition(
@@ -741,7 +778,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         adapter_provenance,
         warranted_action=reconciliation_preview.warranted_action if reconciliation_preview is not None else None,
         reconciliation_alignment=reconciliation_preview.alignment if reconciliation_preview is not None else None,
-        self_attested_evidence_only=self_attested_evidence_only,
+        independently_corroborated=independently_corroborated,
         reviewability_exceeded=reviewability.exceeded,
     )
     if guard_note is not None:
@@ -762,8 +799,8 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     unresolved_questions.extend(council.unresolved_questions)
     if any(provenance is not AdapterProvenance.REAL for key, provenance in adapter_provenance.items() if key in {"council", "warrant", "cer_bundle"}):
         unresolved_questions.append("One or more required layers remain stubbed or unavailable; decision should not be treated as fully independent")
-    if self_attested_evidence_only:
-        unresolved_questions.append("Decision rests on self-attested evidence only and must not be treated as independently verified")
+    if not independently_corroborated:
+        unresolved_questions.append("Decision lacks independent corroboration (evidence is self-attested or same-operator only) and must not be treated as independently verified")
     if reviewability.exceeded:
         unresolved_questions.append("Action rationale exceeded reviewability budget and should not be treated as fully surveyable")
     if reconciliation is not None:
@@ -817,7 +854,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         ],
     }
 
-    coverage_set = _coverage_set(council, warrant, cer_bundle, reconciliation)
+    coverage_set = _coverage_set(council, warrant, cer_bundle, reconciliation, adapter_provenance)
 
     master_payload = strip_receipt_timestamps(
         {
@@ -837,6 +874,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "reviewability": reviewability.model_dump(mode="json"),
             "coverage_set": coverage_set,
             "self_attested_evidence_only": self_attested_evidence_only,
+            "independently_corroborated": independently_corroborated,
         }
     )
 
@@ -861,5 +899,6 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         reviewability=reviewability,
         coverage_set=coverage_set,
         self_attested_evidence_only=self_attested_evidence_only,
+        independently_corroborated=independently_corroborated,
         overall_receipt=ReceiptRef(sha256=sha256_hex(master_payload), schema_version=ReceiptSchemaVersion.V1_0_0),
     )

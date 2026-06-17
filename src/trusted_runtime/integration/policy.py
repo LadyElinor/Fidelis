@@ -16,7 +16,7 @@ def guard_runtime_disposition(
     *,
     warranted_action: str | None = None,
     reconciliation_alignment: str | None = None,
-    self_attested_evidence_only: bool = False,
+    independently_corroborated: bool = True,
     reviewability_exceeded: bool = False,
 ) -> tuple[RuntimeDisposition, str | None]:
     if runtime_disposition is RuntimeDisposition.PROCEED and not proceed_allowed(adapter_provenance):
@@ -32,10 +32,10 @@ def guard_runtime_disposition(
             RuntimeDisposition.CONFIRM_HUMAN,
             "PROCEED forbidden when warrant reconciliation marks the act as adverse or over-reactive",
         )
-    if runtime_disposition is RuntimeDisposition.PROCEED and self_attested_evidence_only:
+    if runtime_disposition is RuntimeDisposition.PROCEED and not independently_corroborated:
         return (
             RuntimeDisposition.CONFIRM_HUMAN,
-            "PROCEED forbidden on self-attested evidence alone",
+            "PROCEED forbidden without independent corroboration; self-attested and same-operator evidence do not count",
         )
     if runtime_disposition is RuntimeDisposition.PROCEED and reviewability_exceeded:
         return (
