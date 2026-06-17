@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -27,6 +27,27 @@ class ProposedAction(BaseModel):
     proposed_by: str = "agent"
 
 
+class EvidenceRecord(BaseModel):
+    """Evidence item used in the decision, with explicit independence and self-attestation state."""
+
+    kind: str
+    source: str
+    independence_class: Literal["self_attested", "same-operator", "independent-third-party", "verified-local", "unknown"] = "unknown"
+    self_attested: bool = False
+    reviewable: bool = True
+    notes: list[str] = Field(default_factory=list)
+
+
+class ReviewabilityProfile(BaseModel):
+    """Declares whether the attached justification is small enough to be meaningfully reviewed."""
+
+    rationale_chars: int = 0
+    review_budget_chars: int = 4000
+    within_budget: bool = True
+    exceeded: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
 class CouncilAssessment(BaseModel):
     """Prospective hazard review.
 
@@ -46,6 +67,8 @@ class CouncilAssessment(BaseModel):
     contested: bool = False
     raw_lens_outputs: dict[str, Any] = Field(default_factory=dict)
     adapter_provenance: AdapterProvenance = AdapterProvenance.UNAVAILABLE
+    evidence_records: list[EvidenceRecord] = Field(default_factory=list)
+    reviewability: ReviewabilityProfile = Field(default_factory=ReviewabilityProfile)
     receipt: ReceiptRef
 
 
@@ -118,4 +141,8 @@ class ExecutionDecision(BaseModel):
     process_provenance: dict[str, dict[str, Any]] = Field(default_factory=dict)
     reconciliation: ReconciliationRecord | None = None
     hazard_profile: dict[str, Any] = Field(default_factory=dict)
+    evidence_records: list[EvidenceRecord] = Field(default_factory=list)
+    reviewability: ReviewabilityProfile = Field(default_factory=ReviewabilityProfile)
+    coverage_set: list[str] = Field(default_factory=list)
+    self_attested_evidence_only: bool = False
     overall_receipt: ReceiptRef

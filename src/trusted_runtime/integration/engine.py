@@ -27,10 +27,12 @@ from trusted_runtime.shared.enums import (
 from trusted_runtime.shared.models import (
     CERRecordBundle,
     CouncilAssessment,
+    EvidenceRecord,
     ExecutionDecision,
     ProposedAction,
     ReceiptRef,
     ReconciliationRecord,
+    ReviewabilityProfile,
     WarrantAssay,
 )
 from trusted_runtime.shared.receipts import sha256_hex, strip_receipt_timestamps
@@ -643,11 +645,82 @@ def _merge_formation_hazards(council: CouncilAssessment, action: ProposedAction)
     )
 
 
+def _build_evidence_records(action: ProposedAction) -> list[EvidenceRecord]:
+    records: list[EvidenceRecord] = [
+        EvidenceRecord(
+            kind="proposed_action",
+            source="proposed_action.description",
+            independence_class="self_attested",
+            self_attested=True,
+            reviewable=True,
+            notes=["Actor-supplied proposal text is evidence-of-claim, not evidence-of-fact"],
+        )
+    ]
+    claimed = action.context.get("claimed_provenance")
+    if claimed is not None:
+        records.append(
+            EvidenceRecord(
+                kind="claimed_provenance",
+                source="proposed_action.context.claimed_provenance",
+                independence_class="self_attested",
+                self_attested=True,
+                reviewable=True,
+                notes=[f"Unverified actor claim: {claimed}"],
+            )
+        )
+    changed_files = action.context.get("changed_files")
+    if changed_files:
+        records.append(
+            EvidenceRecord(
+                kind="changed_files_manifest",
+                source="proposed_action.context.changed_files",
+                independence_class="same-operator",
+                self_attested=False,
+                reviewable=True,
+                notes=["Changed-file manifest supplied in action context; requires independent verification for fact claims"],
+            )
+        )
+    return records
+
+
+def _build_reviewability_profile(action: ProposedAction) -> ReviewabilityProfile:
+    rationale_chars = len(action.description or "")
+    review_budget_chars = 4000
+    exceeded = rationale_chars > review_budget_chars
+    notes = []
+    if exceeded:
+        notes.append("Action rationale exceeds reviewability budget; long justifications are treated as a hazard signal")
+    else:
+        notes.append("Action rationale fits within reviewability budget")
+    return ReviewabilityProfile(
+        rationale_chars=rationale_chars,
+        review_budget_chars=review_budget_chars,
+        within_budget=not exceeded,
+        exceeded=exceeded,
+        notes=notes,
+    )
+
+
+def _coverage_set(council: CouncilAssessment, warrant: WarrantAssay | None, cer_bundle: CERRecordBundle, reconciliation: ReconciliationRecord | None) -> list[str]:
+    coverage = ["council", "tas", "cer_bundle"]
+    if warrant is not None:
+        coverage.append("warrant")
+    if reconciliation is not None:
+        coverage.append("reconciliation")
+    if any(h.startswith("formation::") for h in council.hazards):
+        coverage.append("formation_lens")
+    return coverage
+
+
 def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | None = None) -> ExecutionDecision:
     adapters = adapters or default_adapters()
 
+    evidence_records = _build_evidence_records(action)
+    reviewability = _build_reviewability_profile(action)
+
     council = adapters.hazard.assess(action)
     council = _merge_formation_hazards(council, action)
+    council = council.model_copy(update={"evidence_records": evidence_records, "reviewability": reviewability})
     tas_adapter = TrustworthyAgentStackAdapter()
     risk_state, runtime_disposition, vita_state, l2_provenance = tas_adapter.assess(action, council)
     warrant = adapters.warrant.assess(action)
@@ -660,12 +733,16 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         "tas": l2_provenance,
     }
 
+    self_attested_evidence_only = bool(evidence_records) and all(record.self_attested for record in evidence_records)
+
     reconciliation_preview = _build_reconciliation(action, runtime_disposition, warrant)
     runtime_disposition, guard_note = guard_runtime_disposition(
         runtime_disposition,
         adapter_provenance,
         warranted_action=reconciliation_preview.warranted_action if reconciliation_preview is not None else None,
         reconciliation_alignment=reconciliation_preview.alignment if reconciliation_preview is not None else None,
+        self_attested_evidence_only=self_attested_evidence_only,
+        reviewability_exceeded=reviewability.exceeded,
     )
     if guard_note is not None:
         vita_state = {**vita_state, "provenance_guard": guard_note}
@@ -685,6 +762,10 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     unresolved_questions.extend(council.unresolved_questions)
     if any(provenance is not AdapterProvenance.REAL for key, provenance in adapter_provenance.items() if key in {"council", "warrant", "cer_bundle"}):
         unresolved_questions.append("One or more required layers remain stubbed or unavailable; decision should not be treated as fully independent")
+    if self_attested_evidence_only:
+        unresolved_questions.append("Decision rests on self-attested evidence only and must not be treated as independently verified")
+    if reviewability.exceeded:
+        unresolved_questions.append("Action rationale exceeded reviewability budget and should not be treated as fully surveyable")
     if reconciliation is not None:
         confidence_notes.append(f"Reconciliation alignment: {reconciliation.alignment}")
 
@@ -736,6 +817,8 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         ],
     }
 
+    coverage_set = _coverage_set(council, warrant, cer_bundle, reconciliation)
+
     master_payload = strip_receipt_timestamps(
         {
             "action": action.model_dump(mode="json"),
@@ -750,6 +833,10 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "process_provenance": process_provenance,
             "reconciliation": reconciliation.model_dump(mode="json") if reconciliation is not None else None,
             "hazard_profile": hazard_profile,
+            "evidence_records": [record.model_dump(mode="json") for record in evidence_records],
+            "reviewability": reviewability.model_dump(mode="json"),
+            "coverage_set": coverage_set,
+            "self_attested_evidence_only": self_attested_evidence_only,
         }
     )
 
@@ -770,5 +857,9 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         process_provenance=process_provenance,
         reconciliation=reconciliation,
         hazard_profile=hazard_profile,
+        evidence_records=evidence_records,
+        reviewability=reviewability,
+        coverage_set=coverage_set,
+        self_attested_evidence_only=self_attested_evidence_only,
         overall_receipt=ReceiptRef(sha256=sha256_hex(master_payload), schema_version=ReceiptSchemaVersion.V1_0_0),
     )

@@ -175,6 +175,49 @@ def test_guard_blocks_refuse_even_without_under_justified_alignment():
     assert note is not None and "adverse" in note
 
 
+def test_guard_blocks_self_attested_only_proceed():
+    disposition, note = guard_runtime_disposition(
+        RuntimeDisposition.PROCEED,
+        {
+            "council": AdapterProvenance.REAL,
+            "warrant": AdapterProvenance.REAL,
+            "cer_bundle": AdapterProvenance.REAL,
+        },
+        self_attested_evidence_only=True,
+    )
+    assert disposition is RuntimeDisposition.CONFIRM_HUMAN
+    assert note is not None and "self-attested evidence alone" in note
+
+
+def test_guard_blocks_reviewability_exceeded_proceed():
+    disposition, note = guard_runtime_disposition(
+        RuntimeDisposition.PROCEED,
+        {
+            "council": AdapterProvenance.REAL,
+            "warrant": AdapterProvenance.REAL,
+            "cer_bundle": AdapterProvenance.REAL,
+        },
+        reviewability_exceeded=True,
+    )
+    assert disposition is RuntimeDisposition.CONFIRM_HUMAN
+    assert note is not None and "reviewability budget" in note
+
+
+def test_decision_surfaces_evidence_reviewability_and_coverage_fields():
+    action = ProposedAction(
+        id="test-schema-001",
+        description="Routine low-risk release with actor-supplied justification only.",
+        timestamp=FIXED_TS,
+        context={"change_type": "release"},
+        proposed_by="agent-session",
+    )
+    decision = assemble_execution_decision(action)
+    assert decision.evidence_records
+    assert decision.reviewability.review_budget_chars == 4000
+    assert isinstance(decision.coverage_set, list) and "council" in decision.coverage_set
+    assert isinstance(decision.self_attested_evidence_only, bool)
+
+
 def test_build_pr_review_action_creates_pull_request_context():
     action = build_pr_review_action(
         review_id="review-001",
