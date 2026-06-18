@@ -17,6 +17,7 @@ TESTS_DIR = Path("tests")
 EXPECTED_FILE = TESTS_DIR / "BENCHMARK_EXPECTED.json"
 EXPECTATIONS_FILE = CASES_DIR / "expectations.yaml"
 OUTPUT_DIR = Path("outputs") / "regression"
+BENCHMARK_LEDGER_FILE = TESTS_DIR / "BENCHMARK_LEDGER.yaml"
 
 KEY_SIGNALS = [
     "detector_overlap_flag",
@@ -47,6 +48,14 @@ def load_expectations() -> Dict[str, Dict[str, Any]]:
     payload = yaml.safe_load(EXPECTATIONS_FILE.read_text(encoding="utf-8")) or {}
     expectations = payload.get("expectations", {})
     return expectations if isinstance(expectations, dict) else {}
+
+
+def load_benchmark_ledger() -> Dict[str, Dict[str, Any]]:
+    if not BENCHMARK_LEDGER_FILE.exists():
+        return {}
+    payload = yaml.safe_load(BENCHMARK_LEDGER_FILE.read_text(encoding="utf-8")) or {}
+    benchmarks = payload.get("benchmarks", {})
+    return benchmarks if isinstance(benchmarks, dict) else {}
 
 
 def discover_cases() -> List[Dict[str, Any]]:
@@ -137,6 +146,16 @@ def compare_expectations(actual: Dict[str, Any], expected: Dict[str, Any]) -> Di
     return {"case_id": actual["case_id"], "status": status, "notes": notes}
 
 
+def compare_benchmark_ledger(actual: Dict[str, Any], benchmark: Dict[str, Any]) -> Dict[str, Any]:
+    notes = []
+    status = "PASS"
+    for key, expected_value in benchmark.get("expected_signals", {}).items():
+        if actual.get(key) != expected_value:
+            status = "MISMATCH"
+            notes.append(f"{key}: expected {expected_value} got {actual.get(key)}")
+    return {"case_id": actual["case_id"], "status": status, "notes": notes}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="EthicsCouncil regression harness")
     parser.add_argument("--cases", nargs="*", help="specific case ids")
@@ -145,6 +164,7 @@ def main() -> None:
 
     expected = load_expected()
     expectations = load_expectations()
+    benchmark_ledger = load_benchmark_ledger()
     cases = discover_cases()
     if args.cases:
         wanted = {c.upper() for c in args.cases}
@@ -173,6 +193,8 @@ def main() -> None:
             comparisons.append(compare_results(result, expected[result["case_id"]]))
         if result["case_id"] in expectations:
             comparisons.append(compare_expectations(result, expectations[result["case_id"]]))
+        if result["case_id"] in benchmark_ledger:
+            comparisons.append(compare_benchmark_ledger(result, benchmark_ledger[result["case_id"]]))
 
     if args.update:
         EXPECTED_FILE.parent.mkdir(parents=True, exist_ok=True)
