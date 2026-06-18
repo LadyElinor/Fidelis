@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .enums import AdapterProvenance, DecisionIntegrity, NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition
+from .enums import AdapterProvenance, DecisionIntegrity, NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition, TripValidationStatus
 
 
 class ReceiptRef(BaseModel):
@@ -55,6 +55,19 @@ class CoverageRecord(BaseModel):
 
     layer: str
     mode: Literal["direct-real", "derived-advisory"]
+    notes: list[str] = Field(default_factory=list)
+
+
+class TripwireRecord(BaseModel):
+    """Declares tripwire maturity and whether downstream policy may consume it as validated."""
+
+    tripwire_id: str
+    status: TripValidationStatus = TripValidationStatus.UNVALIDATED
+    source_layer: str
+    rationale: str = ""
+    allowed_for_blocking: bool = False
+    allowed_for_advisory: bool = True
+    evidence_refs: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -155,6 +168,7 @@ class ExecutionDecision(BaseModel):
     reviewability: ReviewabilityProfile = Field(default_factory=ReviewabilityProfile)
     coverage_set: list[str] = Field(default_factory=list)
     coverage_records: list[CoverageRecord] = Field(default_factory=list)
+    tripwire_records: list[TripwireRecord] = Field(default_factory=list)
     self_attested_evidence_only: bool = False
     independently_corroborated: bool = False
     overall_receipt: ReceiptRef

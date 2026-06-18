@@ -12,7 +12,7 @@ from trusted_runtime.integration.engine import assemble_execution_decision, defa
 from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.integration.translation import derive_meaning_case_key
 from trusted_runtime.review import build_pr_review_action, load_review_input
-from trusted_runtime.shared.enums import AdapterProvenance, DecisionIntegrity, RuntimeDisposition
+from trusted_runtime.shared.enums import AdapterProvenance, DecisionIntegrity, RuntimeDisposition, TripValidationStatus
 from trusted_runtime.shared.models import ProposedAction
 
 
@@ -217,6 +217,26 @@ def test_guard_blocks_reviewability_exceeded_proceed():
     assert note is not None and "reviewability budget" in note
 
 
+def test_guard_blocks_proceed_when_blocking_tripwire_is_not_validated():
+    disposition, note = guard_runtime_disposition(
+        RuntimeDisposition.PROCEED,
+        {
+            "council": AdapterProvenance.REAL,
+            "warrant": AdapterProvenance.REAL,
+            "cer_bundle": AdapterProvenance.REAL,
+        },
+        tripwire_records=[
+            {
+                "tripwire_id": "tripwire.demo",
+                "status": TripValidationStatus.CALIBRATING,
+                "allowed_for_blocking": True,
+            }
+        ],
+    )
+    assert disposition is RuntimeDisposition.CONFIRM_HUMAN
+    assert note is not None and "blocking tripwires" in note
+
+
 def test_decision_surfaces_evidence_reviewability_and_coverage_fields():
     action = ProposedAction(
         id="test-schema-001",
@@ -232,6 +252,8 @@ def test_decision_surfaces_evidence_reviewability_and_coverage_fields():
     assert "description" in decision.reviewability.review_surface_components
     assert isinstance(decision.coverage_set, list)
     assert isinstance(decision.coverage_records, list)
+    assert isinstance(decision.tripwire_records, list)
+    assert any(record.tripwire_id == "tripwire.independent_corroboration" for record in decision.tripwire_records)
     assert isinstance(decision.self_attested_evidence_only, bool)
     assert isinstance(decision.independently_corroborated, bool)
 

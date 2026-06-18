@@ -42,3 +42,10 @@ class DecisionIntegrity(str, Enum):
     FULL = "FULL"
     PARTIAL = "PARTIAL"
     DEMO_ONLY = "DEMO_ONLY"
+
+
+class TripValidationStatus(str, Enum):
+    UNVALIDATED = "UNVALIDATED"
+    CALIBRATING = "CALIBRATING"
+    VALIDATED = "VALIDATED"
+    RETIRED = "RETIRED"

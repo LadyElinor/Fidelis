@@ -23,6 +23,7 @@ from trusted_runtime.shared.enums import (
     ReceiptSchemaVersion,
     RiskState,
     RuntimeDisposition,
+    TripValidationStatus,
 )
 from trusted_runtime.shared.models import (
     CERRecordBundle,
@@ -34,6 +35,7 @@ from trusted_runtime.shared.models import (
     ReceiptRef,
     ReconciliationRecord,
     ReviewabilityProfile,
+    TripwireRecord,
     WarrantAssay,
 )
 from trusted_runtime.shared.receipts import sha256_hex, strip_receipt_timestamps
@@ -732,6 +734,73 @@ def _build_reviewability_profile(action: ProposedAction) -> ReviewabilityProfile
     )
 
 
+def _tripwire_records(
+    council: CouncilAssessment,
+    warrant: WarrantAssay | None,
+    cer_bundle: CERRecordBundle,
+    reconciliation: ReconciliationRecord | None,
+) -> list[TripwireRecord]:
+    records = [
+        TripwireRecord(
+            tripwire_id="tripwire.independent_corroboration",
+            status=TripValidationStatus.VALIDATED,
+            source_layer="trusted_runtime.policy",
+            rationale="Independent corroboration guard is a live runtime policy invariant, not a heuristic detector.",
+            allowed_for_blocking=True,
+            allowed_for_advisory=True,
+            notes=["Self-attested and same-operator evidence do not satisfy this gate."],
+        ),
+        TripwireRecord(
+            tripwire_id="tripwire.reviewability_budget",
+            status=TripValidationStatus.VALIDATED,
+            source_layer="trusted_runtime.policy",
+            rationale="Reviewability budget is a live runtime policy invariant over justification surface size.",
+            allowed_for_blocking=True,
+            allowed_for_advisory=True,
+        ),
+        TripwireRecord(
+            tripwire_id="tripwire.ethics_council_hazard",
+            status=TripValidationStatus.CALIBRATING,
+            source_layer="council",
+            rationale="EthicsCouncil outputs are real and structurally integrated, but the repo still describes itself as heuristic/calibrating.",
+            allowed_for_blocking=False,
+            allowed_for_advisory=True,
+            evidence_refs=[council.receipt.sha256],
+        ),
+        TripwireRecord(
+            tripwire_id="tripwire.meaning_assay_warrant",
+            status=TripValidationStatus.CALIBRATING if warrant is not None else TripValidationStatus.UNVALIDATED,
+            source_layer="warrant",
+            rationale="meaning-assay is real when available, but its downstream runtime gate role remains advisory rather than independently validated as a blocking detector.",
+            allowed_for_blocking=False,
+            allowed_for_advisory=True,
+            evidence_refs=[warrant.receipt.sha256] if warrant is not None else [],
+        ),
+        TripwireRecord(
+            tripwire_id="tripwire.cer_safety_invariants",
+            status=TripValidationStatus.CALIBRATING,
+            source_layer="cer_bundle",
+            rationale="CER safety invariants are still explicitly tuning-mode/warn-mode in the telemetry repo.",
+            allowed_for_blocking=False,
+            allowed_for_advisory=True,
+            evidence_refs=[cer_bundle.receipt.sha256],
+        ),
+    ]
+    if reconciliation is not None:
+        records.append(
+            TripwireRecord(
+                tripwire_id="tripwire.reconciliation_alignment",
+                status=TripValidationStatus.VALIDATED,
+                source_layer="trusted_runtime.reconciliation",
+                rationale="Runtime policy explicitly blocks PROCEED on under-justified or over-reactive reconciliation results.",
+                allowed_for_blocking=True,
+                allowed_for_advisory=True,
+                evidence_refs=[reconciliation.receipt.sha256] if reconciliation.receipt is not None else [],
+            )
+        )
+    return records
+
+
 def _coverage_records(
     council: CouncilAssessment,
     warrant: WarrantAssay | None,
@@ -817,6 +886,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     )
 
     reconciliation_preview = _build_reconciliation(action, runtime_disposition, warrant)
+    tripwire_records = _tripwire_records(council, warrant, cer_bundle, reconciliation_preview)
     runtime_disposition, guard_note = guard_runtime_disposition(
         runtime_disposition,
         adapter_provenance,
@@ -824,6 +894,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         reconciliation_alignment=reconciliation_preview.alignment if reconciliation_preview is not None else None,
         independently_corroborated=independently_corroborated,
         reviewability_exceeded=reviewability.exceeded,
+        tripwire_records=tripwire_records,
     )
     if guard_note is not None:
         vita_state = {**vita_state, "provenance_guard": guard_note}
@@ -847,6 +918,8 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         unresolved_questions.append("Decision lacks independent corroboration (evidence is self-attested or same-operator only) and must not be treated as independently verified")
     if reviewability.exceeded:
         unresolved_questions.append("Action rationale exceeded reviewability budget and should not be treated as fully surveyable")
+    if any(record.allowed_for_blocking and record.status is not TripValidationStatus.VALIDATED for record in tripwire_records):
+        unresolved_questions.append("One or more blocking tripwires are not yet validated and must not be treated as fully trustworthy blockers")
     if reconciliation is not None:
         confidence_notes.append(f"Reconciliation alignment: {reconciliation.alignment}")
 
@@ -919,6 +992,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "reviewability": reviewability.model_dump(mode="json"),
             "coverage_set": coverage_set,
             "coverage_records": [record.model_dump(mode="json") for record in coverage_records],
+            "tripwire_records": [record.model_dump(mode="json") for record in tripwire_records],
             "self_attested_evidence_only": self_attested_evidence_only,
             "independently_corroborated": independently_corroborated,
         }
@@ -945,6 +1019,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         reviewability=reviewability,
         coverage_set=coverage_set,
         coverage_records=coverage_records,
+        tripwire_records=tripwire_records,
         self_attested_evidence_only=self_attested_evidence_only,
         independently_corroborated=independently_corroborated,
         overall_receipt=ReceiptRef(sha256=sha256_hex(master_payload), schema_version=ReceiptSchemaVersion.V1_0_0),
