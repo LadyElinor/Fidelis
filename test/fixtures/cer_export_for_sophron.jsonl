@@ -1,0 +1,25 @@
+{"record_type":"run","run_id":"run_0001","contract_version":"0.1","schema_version":"cer.v0.1","payload":{"agent":"sophron-fixture","note":"synthetic CER export for cer-export-ingest test"}}
+{"record_type":"step","run_id":"run_0001","payload":{"index":1,"action":"plan"}}
+{"record_type":"step","run_id":"run_0001","payload":{"index":2,"action":"read"}}
+{"record_type":"step","run_id":"run_0001","payload":{"index":3,"action":"act"}}
+{"record_type":"step","run_id":"run_0001","payload":{"index":4,"action":"verify"}}
+{"record_type":"gate_check","run_id":"run_0001","payload":{"gate":"separation","passed":true}}
+{"record_type":"gate_check","run_id":"run_0001","payload":{"gate":"gated_promotion","passed":true}}
+{"record_type":"gate_check","run_id":"run_0001","payload":{"gate":"independence","passed":true}}
+{"record_type":"gate_check","run_id":"run_0001","payload":{"gate":"currency","passed":false}}
+{"record_type":"tool_call","run_id":"run_0001","payload":{"tool":"read_file","ok":true}}
+{"record_type":"tool_call","run_id":"run_0001","payload":{"tool":"write_file","ok":true}}
+{"record_type":"tool_call","run_id":"run_0001","payload":{"tool":"search","ok":true}}
+{"record_type":"tool_call","run_id":"run_0001","payload":{"tool":"shell","ok":true}}
+{"record_type":"receipt","run_id":"run_0001","payload":{"hash":"sha256:aaaa","step":1}}
+{"record_type":"receipt","run_id":"run_0001","payload":{"hash":"sha256:bbbb","step":2}}
+{"record_type":"receipt","run_id":"run_0001","payload":{"hash":"sha256:cccc","step":3}}
+{"record_type":"receipt","run_id":"run_0001","payload":{"hash":"sha256:dddd","step":4}}
+{"record_type":"data_issue","run_id":"run_0001","payload":{"details":"scope-escalation","severity":"high"}}
+{"record_type":"data_issue","run_id":"run_0001","payload":{"details":"missing-evidence-ref","severity":"medium"}}
+{"record_type":"data_issue","run_id":"run_0001","payload":{"details":"late-receipt","severity":"low"}}
+{"record_type":"data_issue","run_id":"run_0001","payload":{"details":"unverified-tool-call","severity":"medium"}}
+{"record_type":"data_issue","run_id":"run_0001","payload":{"details":"stale-baseline","severity":"medium"}}
+{"record_type":"data_issue","run_id":"run_0001","payload":{"details":"schema-drift","severity":"low"}}
+{"record_type":"data_issue","run_id":"run_0001","payload":{"details":"orphan-step","severity":"low"}}
+{"record_type":"data_issue","run_id":"run_0001","payload":{"details":"duplicate-receipt","severity":"low"}}

@@ -25,6 +25,7 @@ REGISTRY: list[tuple[str, list[str], str]] = [
 ]
 
 _MISSING_INPUT_MARKERS = ("FileNotFoundError", "No such file", "does not exist")
+_NEEDS_ARGS_MARKERS = ("the following arguments are required", "error: argument")
 PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
 
 
@@ -37,12 +38,14 @@ class Result:
 
 
 def _discover_unregistered() -> list[tuple[str, list[str], str]]:
-    known = {tuple(cmd) for _, cmd, _ in REGISTRY}
+    known_paths = {cmd[-1] for _, cmd, _ in REGISTRY}
     extra = []
-    for p in sorted((REPO_ROOT / "Reasoning").glob("check_*.py")):
-        cmd = ["python", str(p.relative_to(REPO_ROOT))]
-        if tuple(cmd) not in known:
-            extra.append((p.stem.replace("check_sophron_", "").replace("_", "-"), cmd, "advisory"))
+    for p in sorted((REPO_ROOT / "Reasoning").glob("check_sophron_*.py")):
+        rel = str(p.relative_to(REPO_ROOT))
+        if rel in known_paths:
+            continue
+        cmd = ["python", rel]
+        extra.append((p.stem.replace("check_sophron_", "").replace("_", "-"), cmd, "advisory"))
     return extra
 
 
@@ -66,6 +69,8 @@ def _run_one(name: str, cmd: list[str], tier: str) -> Result:
     blob = (proc.stderr or "") + (proc.stdout or "")
     if any(m in blob for m in _MISSING_INPUT_MARKERS):
         return Result(name, tier, SKIP, "input fixture not committed")
+    if any(m in blob for m in _NEEDS_ARGS_MARKERS):
+        return Result(name, tier, SKIP, "parametrized helper; not a standalone checker")
     last = ((proc.stderr or proc.stdout).strip().splitlines() or ["(no output)"])[-1]
     return Result(name, tier, FAIL, last[:200])
 

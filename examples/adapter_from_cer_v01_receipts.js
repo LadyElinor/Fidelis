@@ -18,6 +18,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import { createAlignmentPack } from '../lib/alignment/index.js';
+import { buildSignalValidation, buildSignalValidationMap, signalValidationTierPolicy } from '../lib/alignment/signal-validation-tiers.js';
 import { loadConfig } from '../config/schema.js';
 import { createLogger } from '../lib/utils/logger.js';
 
@@ -38,36 +39,6 @@ function parseArgs(argv) {
 async function readJson(filePath) {
   const raw = await fs.readFile(filePath, 'utf8');
   return JSON.parse(raw);
-}
-
-function deriveSignalTier(signalPayload) {
-  if (!signalPayload || typeof signalPayload !== 'object') return 'unvalidated';
-
-  const evidence = Array.isArray(signalPayload.evidence) ? signalPayload.evidence : [];
-  const hasEvidence = evidence.length > 0;
-  if (!hasEvidence) return 'unvalidated';
-
-  return 'validated-sim';
-}
-
-function buildSignalValidationMap(signals) {
-  if (!signals || typeof signals !== 'object') return {};
-
-  const out = {};
-  for (const signalName of ['shift', 'game', 'decept', 'corrig', 'human']) {
-    const signalPayload = signals[signalName];
-    if (!signalPayload || typeof signalPayload !== 'object') continue;
-    out[`sophron.${signalName}`] = {
-      signal_id: `sophron.${signalName}`,
-      tier: deriveSignalTier(signalPayload),
-      tier_source: 'sophron-emitted',
-      source_layer: 'sophron-cer',
-      rationale: 'Emitted by SOPHRON-CER from alignment report evidence shape. Current adapter receipts provide simulation-backed calibration only; field validation must be emitted explicitly by upstream evidence pipelines.',
-      evidence_refs: [],
-      signal_payload: signalPayload,
-    };
-  }
-  return out;
 }
 
 async function main() {
@@ -122,6 +93,7 @@ async function main() {
   const report = pack.generateReport(analysis);
 
   const signalValidation = buildSignalValidationMap(report?.signals);
+  const signalValidationBlock = buildSignalValidation(report?.signals);
 
   const outObj = {
     kind: 'sophron_alignment_report_v0',
@@ -134,12 +106,9 @@ async function main() {
     analysis: analysis.toJSON(),
     signal_validation: {
       signals: signalValidation,
-      tier_policy: {
-        validated_sim: 'signal has evidence in current simulation-backed adapter flow',
-        field_validated: 'reserved for explicit upstream real-log/field evidence emission',
-        unvalidated: 'signal absent or lacks evidence',
-      },
+      tier_policy: signalValidationTierPolicy,
     },
+    signal_validation_block: signalValidationBlock,
   };
 
   await fs.mkdir(path.dirname(outPath), { recursive: true });
