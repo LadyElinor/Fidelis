@@ -16,6 +16,7 @@ from trusted_runtime.integration.integrity import classify_decision_integrity
 from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.integration.provenance import process_provenance_record
 from trusted_runtime.integration.translation import derive_meaning_case_key
+from trusted_runtime.integration.sophron_tripwire_bridge import tripwires_from_sophron_validation
 from trusted_runtime.shared.enums import (
     AdapterProvenance,
     DecisionIntegrity,
@@ -331,6 +332,35 @@ class TrustworthyAgentStackAdapter:
 
 
 class CerSophronTelemetryAdapter(TelemetryAdapter):
+    def _extract_sophron_signal_tiers(self, sophron_report: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(sophron_report, dict):
+            return {}
+
+        signal_validation = sophron_report.get("signal_validation")
+        native_signals = signal_validation.get("signals") if isinstance(signal_validation, dict) else None
+        if isinstance(native_signals, dict):
+            return strip_receipt_timestamps(native_signals)
+
+        report = sophron_report.get("report") if isinstance(sophron_report, dict) else None
+        signals = report.get("signals") if isinstance(report, dict) else None
+        if not isinstance(signals, dict):
+            return {}
+
+        extracted: dict[str, Any] = {}
+        for signal_name in ("shift", "game", "decept", "corrig", "human"):
+            signal_payload = signals.get(signal_name)
+            if not isinstance(signal_payload, dict):
+                continue
+            extracted[f"sophron.{signal_name}"] = {
+                "tier": "validated-sim",
+                "tier_source": "tr-derived",
+                "source_layer": "sophron-cer",
+                "rationale": "Derived by TrustedRuntime from the returned SOPHRON-CER alignment report shape; current calibration evidence is treated as simulation-backed unless upstream field validation is explicitly emitted.",
+                "evidence_refs": [],
+                "signal_payload": strip_receipt_timestamps(signal_payload),
+            }
+        return extracted
+
     def _render_cer_metrics_receipt(self, action: ProposedAction, runtime_disposition: str) -> dict[str, Any]:
         metrics = [
             {
@@ -524,8 +554,10 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
                 or sophron_report.get("kind") == "sophron_alignment_report_v0"
                 or bool(sophron_report.get("report"))
             )
+            sophron_signals = self._extract_sophron_signal_tiers(sophron_report)
             sophron_validation = {
                 "passed": sophron_report_valid,
+                "signals": sophron_signals,
                 "tas_local_validation": tas_validation,
                 "sophron_report": strip_receipt_timestamps(sophron_report),
                 "sophron_stdout": "",
@@ -533,6 +565,7 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
             sophron_validation_for_receipt = strip_receipt_timestamps(
                 {
                     "passed": sophron_report_valid,
+                    "signals": sophron_signals,
                     "tas_local_validation": tas_validation,
                     "sophron_report": sophron_report,
                 }
@@ -776,16 +809,8 @@ def _tripwire_records(
             allowed_for_advisory=True,
             evidence_refs=[warrant.receipt.sha256] if warrant is not None else [],
         ),
-        TripwireRecord(
-            tripwire_id="tripwire.cer_safety_invariants",
-            status=TripValidationStatus.CALIBRATING,
-            source_layer="cer_bundle",
-            rationale="CER safety invariants are still explicitly tuning-mode/warn-mode in the telemetry repo.",
-            allowed_for_blocking=False,
-            allowed_for_advisory=True,
-            evidence_refs=[cer_bundle.receipt.sha256],
-        ),
     ]
+    records.extend(tripwires_from_sophron_validation(cer_bundle.sophron_validation))
     if reconciliation is not None:
         records.append(
             TripwireRecord(
