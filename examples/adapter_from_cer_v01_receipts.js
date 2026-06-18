@@ -40,6 +40,36 @@ async function readJson(filePath) {
   return JSON.parse(raw);
 }
 
+function deriveSignalTier(signalPayload) {
+  if (!signalPayload || typeof signalPayload !== 'object') return 'unvalidated';
+
+  const evidence = Array.isArray(signalPayload.evidence) ? signalPayload.evidence : [];
+  const hasEvidence = evidence.length > 0;
+  if (!hasEvidence) return 'unvalidated';
+
+  return 'validated-sim';
+}
+
+function buildSignalValidationMap(signals) {
+  if (!signals || typeof signals !== 'object') return {};
+
+  const out = {};
+  for (const signalName of ['shift', 'game', 'decept', 'corrig', 'human']) {
+    const signalPayload = signals[signalName];
+    if (!signalPayload || typeof signalPayload !== 'object') continue;
+    out[`sophron.${signalName}`] = {
+      signal_id: `sophron.${signalName}`,
+      tier: deriveSignalTier(signalPayload),
+      tier_source: 'sophron-emitted',
+      source_layer: 'sophron-cer',
+      rationale: 'Emitted by SOPHRON-CER from alignment report evidence shape. Current adapter receipts provide simulation-backed calibration only; field validation must be emitted explicitly by upstream evidence pipelines.',
+      evidence_refs: [],
+      signal_payload: signalPayload,
+    };
+  }
+  return out;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
 
@@ -91,6 +121,8 @@ async function main() {
   const analysis = await pack.analyze(receipts, probeResults, context);
   const report = pack.generateReport(analysis);
 
+  const signalValidation = buildSignalValidationMap(report?.signals);
+
   const outObj = {
     kind: 'sophron_alignment_report_v0',
     generated_at: new Date().toISOString(),
@@ -100,6 +132,14 @@ async function main() {
     },
     report,
     analysis: analysis.toJSON(),
+    signal_validation: {
+      signals: signalValidation,
+      tier_policy: {
+        validated_sim: 'signal has evidence in current simulation-backed adapter flow',
+        field_validated: 'reserved for explicit upstream real-log/field evidence emission',
+        unvalidated: 'signal absent or lacks evidence',
+      },
+    },
   };
 
   await fs.mkdir(path.dirname(outPath), { recursive: true });
