@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from .credal import CredalInterval
 from .enums import AdapterProvenance, DecisionIntegrity, NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition, TripValidationStatus
 
 
@@ -69,6 +70,7 @@ class TripwireRecord(BaseModel):
     allowed_for_advisory: bool = True
     evidence_refs: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+    credal: CredalInterval | None = None
 
 
 class CouncilAssessment(BaseModel):

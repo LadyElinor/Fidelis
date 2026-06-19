@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from trusted_runtime.shared.credal import CredalInterval, clamp_to_status, lower_bound_clears
 from trusted_runtime.shared.enums import AdapterProvenance, RuntimeDisposition, TripValidationStatus
 
 
 REQUIRED_REAL_FOR_PROCEED = ("council", "warrant", "cer_bundle")
+BLOCKING_LOWER_BOUND_THRESHOLD = 0.5
 
 
 def proceed_allowed(adapter_provenance: dict[str, AdapterProvenance]) -> bool:
@@ -25,6 +27,34 @@ def validated_tripwire_blocking_allowed(tripwire_records: list[dict] | list[obje
     return True
 
 
+def credal_blocking_allowed(
+    tripwire_records: list[dict] | list[object] | None,
+    *,
+    blocking_threshold: float = BLOCKING_LOWER_BOUND_THRESHOLD,
+) -> bool:
+    if not tripwire_records:
+        return True
+    for record in tripwire_records:
+        allowed = getattr(record, "allowed_for_blocking", None)
+        if allowed is None and isinstance(record, dict):
+            allowed = record.get("allowed_for_blocking")
+        if not allowed:
+            continue
+        credal = getattr(record, "credal", None)
+        if credal is None and isinstance(record, dict):
+            credal = record.get("credal")
+        if credal is None:
+            continue
+        if isinstance(credal, dict):
+            credal = CredalInterval(**credal)
+        status = getattr(record, "status", None)
+        if status is None and isinstance(record, dict):
+            status = record.get("status")
+        if not lower_bound_clears(clamp_to_status(credal, status), blocking_threshold):
+            return False
+    return True
+
+
 def guard_runtime_disposition(
     runtime_disposition: RuntimeDisposition,
     adapter_provenance: dict[str, AdapterProvenance],
@@ -34,6 +64,7 @@ def guard_runtime_disposition(
     independently_corroborated: bool = True,
     reviewability_exceeded: bool = False,
     tripwire_records: list[dict] | list[object] | None = None,
+    blocking_threshold: float = BLOCKING_LOWER_BOUND_THRESHOLD,
 ) -> tuple[RuntimeDisposition, str | None]:
     if runtime_disposition is RuntimeDisposition.PROCEED and not proceed_allowed(adapter_provenance):
         return (
@@ -62,5 +93,12 @@ def guard_runtime_disposition(
         return (
             RuntimeDisposition.CONFIRM_HUMAN,
             "PROCEED forbidden when blocking tripwires are unvalidated, calibrating, or retired",
+        )
+    if runtime_disposition is RuntimeDisposition.PROCEED and not credal_blocking_allowed(
+        tripwire_records, blocking_threshold=blocking_threshold
+    ):
+        return (
+            RuntimeDisposition.CONFIRM_HUMAN,
+            "PROCEED forbidden when a blocking tripwire's credal lower bound is below the blocking threshold",
         )
     return runtime_disposition, None
