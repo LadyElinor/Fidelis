@@ -14,6 +14,8 @@ from trusted_runtime.integration.formation import assess_formation_hazard
 from trusted_runtime.integration.hazard_taxonomy import build_hazard_profile
 from trusted_runtime.integration.integrity import classify_decision_integrity
 from trusted_runtime.integration.policy import guard_runtime_disposition
+from trusted_runtime.shared.credal import clamp_to_status
+from trusted_runtime.shared.lineage import LineageDescriptor, correlation_report, weakest_independence_for_credal
 from trusted_runtime.integration.provenance import process_provenance_record
 from trusted_runtime.integration.translation import derive_meaning_case_key
 from trusted_runtime.integration.sophron_tripwire_bridge import tripwires_from_sophron_validation
@@ -40,6 +42,24 @@ from trusted_runtime.shared.models import (
     WarrantAssay,
 )
 from trusted_runtime.shared.receipts import sha256_hex, strip_receipt_timestamps
+
+
+DEFAULT_ADAPTER_LINEAGES = {
+    "council": LineageDescriptor(
+        author_id="ladyelinor",
+        org_id="local",
+        framework_lineage="trustedruntime-l1",
+        source_lineage="ethics-council-local",
+        operator_id="ladyelinor",
+    ),
+    "warrant": LineageDescriptor(
+        author_id="ladyelinor",
+        org_id="local",
+        framework_lineage="trustedruntime-l3",
+        source_lineage="meaning-assay-local",
+        operator_id="ladyelinor",
+    ),
+}
 
 
 def _first_existing_path(env_var: str, candidates: list[Path]) -> Path | None:
@@ -772,6 +792,8 @@ def _tripwire_records(
     warrant: WarrantAssay | None,
     cer_bundle: CERRecordBundle,
     reconciliation: ReconciliationRecord | None,
+    *,
+    weakest_detector_independence: str | None = None,
 ) -> list[TripwireRecord]:
     records = [
         TripwireRecord(
@@ -799,6 +821,11 @@ def _tripwire_records(
             allowed_for_blocking=False,
             allowed_for_advisory=True,
             evidence_refs=[council.receipt.sha256],
+            credal=clamp_to_status(
+                None,
+                TripValidationStatus.CALIBRATING,
+                weakest_independence=weakest_detector_independence,
+            ),
         ),
         TripwireRecord(
             tripwire_id="tripwire.meaning_assay_warrant",
@@ -808,6 +835,11 @@ def _tripwire_records(
             allowed_for_blocking=False,
             allowed_for_advisory=True,
             evidence_refs=[warrant.receipt.sha256] if warrant is not None else [],
+            credal=clamp_to_status(
+                None,
+                TripValidationStatus.CALIBRATING if warrant is not None else TripValidationStatus.UNVALIDATED,
+                weakest_independence=weakest_detector_independence,
+            ),
         ),
     ]
     records.extend(tripwires_from_sophron_validation(cer_bundle.sophron_validation))
@@ -911,7 +943,14 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     )
 
     reconciliation_preview = _build_reconciliation(action, runtime_disposition, warrant)
-    tripwire_records = _tripwire_records(council, warrant, cer_bundle, reconciliation_preview)
+    adapter_correlation = correlation_report(DEFAULT_ADAPTER_LINEAGES)
+    tripwire_records = _tripwire_records(
+        council,
+        warrant,
+        cer_bundle,
+        reconciliation_preview,
+        weakest_detector_independence=weakest_independence_for_credal(adapter_correlation),
+    )
     runtime_disposition, guard_note = guard_runtime_disposition(
         runtime_disposition,
         adapter_provenance,
@@ -941,6 +980,8 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         unresolved_questions.append("One or more required layers remain stubbed or unavailable; decision should not be treated as fully independent")
     if not independently_corroborated:
         unresolved_questions.append("Decision lacks independent corroboration (evidence is self-attested or same-operator only) and must not be treated as independently verified")
+    if not adapter_correlation.get("certification_grade_corroboration", False):
+        unresolved_questions.append("Assessors do not provide independent corroboration across distinct lineage classes and must not be treated as certification-grade confirmation")
     if reviewability.exceeded:
         unresolved_questions.append("Action rationale exceeded reviewability budget and should not be treated as fully surveyable")
     if any(record.allowed_for_blocking and record.status is not TripValidationStatus.VALIDATED for record in tripwire_records):
@@ -1018,6 +1059,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "coverage_set": coverage_set,
             "coverage_records": [record.model_dump(mode="json") for record in coverage_records],
             "tripwire_records": [record.model_dump(mode="json") for record in tripwire_records],
+            "correlation_report": adapter_correlation,
             "self_attested_evidence_only": self_attested_evidence_only,
             "independently_corroborated": independently_corroborated,
         }
@@ -1045,6 +1087,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         coverage_set=coverage_set,
         coverage_records=coverage_records,
         tripwire_records=tripwire_records,
+        correlation_report=adapter_correlation,
         self_attested_evidence_only=self_attested_evidence_only,
         independently_corroborated=independently_corroborated,
         overall_receipt=ReceiptRef(sha256=sha256_hex(master_payload), schema_version=ReceiptSchemaVersion.V1_0_0),

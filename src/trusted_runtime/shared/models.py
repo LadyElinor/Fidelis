@@ -171,6 +171,7 @@ class ExecutionDecision(BaseModel):
     coverage_set: list[str] = Field(default_factory=list)
     coverage_records: list[CoverageRecord] = Field(default_factory=list)
     tripwire_records: list[TripwireRecord] = Field(default_factory=list)
+    correlation_report: dict[str, Any] = Field(default_factory=dict)
     self_attested_evidence_only: bool = False
     independently_corroborated: bool = False
     overall_receipt: ReceiptRef
