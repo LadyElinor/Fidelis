@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 from trusted_runtime.examples_runtime import run_golden_scenario
+from trusted_runtime.integration.status import adapter_status
 from trusted_runtime.review import run_review_input
 
 
-USAGE = "Usage: trusted-runtime golden | trusted-runtime review-pr --input <path> [--output <dir>]"
+USAGE = "Usage: trusted-runtime golden | trusted-runtime review-pr --input <path> [--output <dir>] | trusted-runtime health"
 
 
 def _value_after(flag: str, argv: list[str]) -> str | None:
@@ -40,6 +42,10 @@ def main() -> None:
         output_dir = Path(output_arg) if output_arg is not None else Path.cwd()
         run_review_input(Path(input_arg), output_dir)
         print("Artifacts written: decision_output.json and decision_report.md")
+        return
+
+    if argv[0] == "health":
+        print(json.dumps(adapter_status(), indent=2))
         return
 
     print(USAGE)

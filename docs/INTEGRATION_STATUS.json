@@ -1,0 +1,31 @@
+{
+  "status_version": "0.1",
+  "status_contract": "machine-readable adapter maturity snapshot",
+  "adapters": {
+    "ethics_council": {
+      "layer": "L1",
+      "maturity": "real | unavailable",
+      "meaning": "Real when the local EthicsCouncil source is importable through configured paths."
+    },
+    "trustworthy_agent_stack": {
+      "layer": "L2",
+      "maturity": "partially_wired | stubbed",
+      "meaning": "Bridge surfaces exist and may use local TrustworthyAgentStack demo/helpers, but full runtime enforcement closure is not yet guaranteed."
+    },
+    "meaning_assay": {
+      "layer": "L3",
+      "maturity": "real | unavailable",
+      "meaning": "Real when meaning-assay is importable, with heuristic case translation still limiting generality."
+    },
+    "sophron_cer": {
+      "layer": "L4",
+      "maturity": "partially_wired | stubbed",
+      "meaning": "Validation bridge exists and can run when local SOPHRON assets are present, but evidence closure remains uneven."
+    },
+    "cer_telemetry_stack": {
+      "layer": "L4",
+      "maturity": "realish | partially_wired | stubbed",
+      "meaning": "Telemetry is only fully available when both TrustworthyAgentStack-side export helpers and SOPHRON validation surfaces are present."
+    }
+  }
+}

@@ -26,10 +26,17 @@ When the adapter is unavailable or unmapped, the runtime falls back explicitly t
 
 The runtime also performs reconcile-based synthesis through `meaning_assay.bridge.reconcile` and stores a reconciliation record in the final decision.
 
-## Still stubbed
-- TrustworthyAgentStack gating adapter
-- CER-Telemetry evidence adapter
-- SOPHRON-CER validation adapter
+## Machine-readable status
+A machine-readable adapter maturity contract now lives in:
+
+`docs/INTEGRATION_STATUS.json`
+
+This should be treated as the more precise runtime truth surface for adapter maturity and availability.
+
+## Current maturity snapshot
+- TrustworthyAgentStack gating adapter: partially wired, not yet full enforcement closure
+- CER-Telemetry evidence adapter: partially wired / unevenly real
+- SOPHRON-CER validation adapter: partially wired / unevenly real
 
 ## Current limitation
 The runtime still maps arbitrary `ProposedAction` inputs into a known local meaning-assay case set heuristically, rather than generating a fresh first-class meaning-assay `Case` for every action.
@@ -41,8 +48,11 @@ The overall receipt hash is deterministic because synthesis strips receipt times
 - reconciliation record
 
 ## Next recommended step
-Implement the real TrustworthyAgentStack adapter, then the CER/SOPHRON adapter.
-That would close the two remaining stubbed runtime layers.
+1. remove remaining workspace fragility through config-driven paths everywhere
+2. close real TrustworthyAgentStack enforcement wiring
+3. complete CER/SOPHRON evidence closure and validation reporting
+
+That is the path from partial bridge reality to a genuinely closed-loop governed runtime.
 
 The repo now also exposes a first CI-oriented PR review surface through:
 - `trusted-runtime review-pr --input <json> --output <dir>`

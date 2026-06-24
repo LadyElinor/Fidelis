@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -9,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from trusted_runtime.config import load_integration_paths
 from trusted_runtime.integration.adapters import AdapterSet, HazardAdapter, TelemetryAdapter, WarrantAdapter
 from trusted_runtime.integration.formation import assess_formation_hazard
 from trusted_runtime.integration.hazard_taxonomy import build_hazard_profile
@@ -62,64 +62,18 @@ DEFAULT_ADAPTER_LINEAGES = {
 }
 
 
-def _first_existing_path(env_var: str, candidates: list[Path]) -> Path | None:
-    env_raw = os.environ.get(env_var, "")
-    if env_raw:
-        candidates = [Path(env_raw).expanduser(), *candidates]
-    return next((path for path in candidates if path.exists()), None)
+_INTEGRATION_PATHS = load_integration_paths()
 
-
-def _candidate_meaning_assay_paths() -> list[Path]:
-    return [Path(__file__).resolve().parents[4] / "27assay" / "meaning-assay" / "src"]
-
-
-def _candidate_ethics_council_paths() -> list[Path]:
-    return [Path(__file__).resolve().parents[4] / "EthicsCouncil"]
-
-
-def _candidate_tas_paths() -> list[Path]:
-    root = Path(__file__).resolve().parents[4]
-    return [
-        root / "repos" / "TrustworthyAgentStack-clean",
-        root / "repos" / "TrustworthyAgentStack",
-    ]
-
-
-def _candidate_sophron_paths() -> list[Path]:
-    root = Path(__file__).resolve().parents[4]
-    return [
-        root / "repos" / "SOPHRON-CER-clean",
-        Path.home() / "Molt" / "workspace" / "repos" / "SOPHRON-CER",
-        root / "repos" / "SOPHRON-CER",
-    ]
-
-
-_MEANING_ASSAY_SRC = _first_existing_path("MEANING_ASSAY_SRC", _candidate_meaning_assay_paths())
+_MEANING_ASSAY_SRC = _INTEGRATION_PATHS.meaning_assay_src
 if _MEANING_ASSAY_SRC is not None and str(_MEANING_ASSAY_SRC) not in sys.path:
     sys.path.insert(0, str(_MEANING_ASSAY_SRC))
 
-_ETHICS_COUNCIL_SRC = _first_existing_path("ETHICS_COUNCIL_SRC", _candidate_ethics_council_paths())
+_ETHICS_COUNCIL_SRC = _INTEGRATION_PATHS.ethics_council_src
 if _ETHICS_COUNCIL_SRC is not None and str(_ETHICS_COUNCIL_SRC) not in sys.path:
     sys.path.insert(0, str(_ETHICS_COUNCIL_SRC))
 
-_CER_TELEMETRY_SRC = _first_existing_path("TRUSTWORTHY_AGENT_STACK_SRC", _candidate_tas_paths())
-
-
-def _resolve_sophron_root() -> Path | None:
-    env_raw = os.environ.get("SOPHRON_CER_SRC", "")
-    candidates = [Path(env_raw).expanduser()] if env_raw else []
-    candidates.extend(_candidate_sophron_paths())
-    for candidate in candidates:
-        if not candidate or not candidate.exists():
-            continue
-        if (candidate / "examples" / "adapter_from_cer_v01_receipts.js").exists():
-            return candidate
-        if (candidate / "adapters" / "cer_telemetry" / "from_v0_1_receipts.js").exists():
-            return candidate
-    return next((candidate for candidate in candidates if candidate and candidate.exists()), None)
-
-
-_SOPHRON_CER_SRC = _resolve_sophron_root()
+_CER_TELEMETRY_SRC = _INTEGRATION_PATHS.trustworthy_agent_stack_src
+_SOPHRON_CER_SRC = _INTEGRATION_PATHS.sophron_cer_src
 
 try:
     import efm_council
@@ -142,18 +96,18 @@ except Exception:
 try:
     if _CER_TELEMETRY_SRC is not None and str(_CER_TELEMETRY_SRC) not in sys.path:
         sys.path.insert(0, str(_CER_TELEMETRY_SRC))
-    from examples.minimal_mcp_agent.demo import run_demo as tas_run_demo
     from examples.minimal_mcp_agent.hash_utils import CANONICAL_JSON_VERSION, deterministic_hash, sign_payload
     from examples.minimal_mcp_agent.mock_ethics_council import MockEthicsCouncil, hazard_to_required_gates
     from examples.minimal_mcp_agent.sophron_ingest import validate_cer_export
+    from scripts.route_task import classify_task as tas_classify_task
 except Exception:
-    tas_run_demo = None
     CANONICAL_JSON_VERSION = "canonical-json-v1"
     deterministic_hash = None
     sign_payload = None
     MockEthicsCouncil = None
     hazard_to_required_gates = None
     validate_cer_export = None
+    tas_classify_task = None
 
 
 class EthicsCouncilAdapter(HazardAdapter):
@@ -280,8 +234,8 @@ class MeaningAssayAdapter(WarrantAdapter):
 
 class TrustworthyAgentStackAdapter:
     def assess(self, action: ProposedAction, council: CouncilAssessment) -> tuple[RiskState, RuntimeDisposition, dict[str, Any], AdapterProvenance]:
+        severe_hazard_count = len(council.hazards)
         if MockEthicsCouncil is None or hazard_to_required_gates is None:
-            severe_hazard_count = len(council.hazards)
             if council.irreversibility_score > 0.7 or council.suspension_triggers:
                 return (
                     RiskState.RED,
@@ -303,9 +257,21 @@ class TrustworthyAgentStackAdapter:
                 AdapterProvenance.STUB,
             )
 
+        routing = tas_classify_task(action.description) if tas_classify_task is not None else None
         risk_level = "high" if council.irreversibility_score >= 0.7 or council.suspension_triggers else "medium"
         hazard_map = MockEthicsCouncil().evaluate_action(action.description, risk_level=risk_level)
         gates = hazard_to_required_gates(hazard_map)
+        route_name = getattr(routing, "route", None)
+        route_confidence = getattr(routing, "confidence", None)
+        route_reasons = list(getattr(routing, "reasons", []) or [])
+
+        if route_name == "never_auto_route":
+            gates["task_route"] = "block"
+        elif route_name == "openclaw":
+            gates.setdefault("task_route", "pass")
+        elif route_name == "picobot":
+            gates.setdefault("task_route", "escalate")
+
         gate_records = [
             {
                 "gate": gate,
@@ -314,14 +280,28 @@ class TrustworthyAgentStackAdapter:
             }
             for gate, decision in gates.items()
         ]
+        if route_name is not None:
+            for record in gate_records:
+                if record["gate"] == "task_route":
+                    record["justification"] = f"Derived from TrustworthyAgentStack routing rubric: {route_name} ({route_confidence})"
+                    record["reasons"] = route_reasons
+
+        base_state = {
+            "tas_hazard_map": hazard_map.to_payload(),
+            "gate_decisions": gate_records,
+            "task_routing": {
+                "route": route_name,
+                "confidence": route_confidence,
+                "reasons": route_reasons,
+            } if route_name is not None else None,
+        }
         if any(decision == "block" for decision in gates.values()):
             return (
                 RiskState.RED,
                 RuntimeDisposition.HALT,
                 {
                     "risk": "RED",
-                    "tas_hazard_map": hazard_map.to_payload(),
-                    "gate_decisions": gate_records,
+                    **base_state,
                     "evidence_chain": ["tas_gate_block"],
                 },
                 AdapterProvenance.REAL,
@@ -332,8 +312,7 @@ class TrustworthyAgentStackAdapter:
                 RuntimeDisposition.CONFIRM_HUMAN,
                 {
                     "risk": "AMBER",
-                    "tas_hazard_map": hazard_map.to_payload(),
-                    "gate_decisions": gate_records,
+                    **base_state,
                     "evidence_chain": ["tas_gate_escalation"],
                 },
                 AdapterProvenance.REAL,
@@ -343,8 +322,7 @@ class TrustworthyAgentStackAdapter:
             RuntimeDisposition.PROCEED,
             {
                 "risk": "GREEN",
-                "tas_hazard_map": hazard_map.to_payload(),
-                "gate_decisions": gate_records,
+                **base_state,
                 "evidence_chain": ["tas_gate_pass"],
             },
             AdapterProvenance.REAL,
@@ -442,25 +420,27 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
             "agent_name": action.proposed_by,
             "channel": action.context.get("review_kind", "trusted_runtime"),
         }
-        gate_payload = {
-            "gate_check_id": f"gc_{action.id}",
+        metric_payload = {
+            "metric_name": "runtime_disposition_confirm_human",
+            "value": 1.0 if runtime_disposition == RuntimeDisposition.CONFIRM_HUMAN.value else 0.0,
             "step_id": action.id,
+            "created_at": action.timestamp.isoformat(),
+        }
+        gate_payload = {
             "gate": "consent_traceability",
             "decision": "escalate" if runtime_disposition == RuntimeDisposition.CONFIRM_HUMAN.value else "pass",
-            "justification": f"Runtime disposition derived by TrustedRuntime L2 bridge: {runtime_disposition}",
             "confidence": 0.9,
-            "evidence_ref": "trusted_runtime:l2",
-            "created_at": action.timestamp.isoformat(),
-        }
-        external_action_payload = {
-            "external_action_id": f"act_{action.id}",
             "step_id": action.id,
-            "action": "pr_review",
-            "target": action.context.get("repo", "local_repo"),
-            "status": "blocked" if runtime_disposition in {RuntimeDisposition.CONFIRM_HUMAN.value, RuntimeDisposition.HALT.value} else "simulated",
             "created_at": action.timestamp.isoformat(),
         }
-        for record_type, payload in (("run", run_payload), ("gate_check", gate_payload), ("external_action", external_action_payload)):
+        cohort_payload = {
+            "cohort_name": "runtime_blocked_actions" if runtime_disposition in {RuntimeDisposition.CONFIRM_HUMAN.value, RuntimeDisposition.HALT.value} else "runtime_simulated_actions",
+            "included_run_ids": [action.id],
+            "excluded_run_ids": [],
+            "overlap_count": 0,
+            "created_at": action.timestamp.isoformat(),
+        }
+        for record_type, payload in (("metric_observation", metric_payload), ("gate_outcome", gate_payload), ("cohort_partition", cohort_payload)):
             envelope = {
                 "contract_version": "0.1",
                 "schema_version": "0.1",
@@ -469,9 +449,6 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
                 "record_type": record_type,
                 "run_id": action.id,
                 "provenance_hash": deterministic_hash(payload),
-                "signature": sign_payload(payload),
-                "signature_algorithm": "hmac-sha256",
-                "signing_key_id": "demo-hmac-key-v1",
                 "payload": payload,
             }
             records.append(json.dumps(envelope, sort_keys=True, ensure_ascii=False))
@@ -554,9 +531,9 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
             ]
             invariants_checked = [
                 {
-                    "invariant": violation.get("invariant", "tas_local_contract"),
+                    "invariant": violation.get("invariant", "tas_local_contract") if isinstance(violation, dict) else "tas_local_contract",
                     "status": "FAILED",
-                    "message": violation.get("message", violation),
+                    "message": violation.get("message", violation) if isinstance(violation, dict) else str(violation),
                 }
                 for violation in tas_validation.get("violations", [])
             ]
