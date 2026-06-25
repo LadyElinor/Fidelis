@@ -4,12 +4,13 @@ import json
 import sys
 from pathlib import Path
 
+from trusted_runtime.benchmark import evaluate_benchmark_file
 from trusted_runtime.examples_runtime import run_golden_scenario
 from trusted_runtime.integration.status import adapter_status
 from trusted_runtime.review import run_review_input
 
 
-USAGE = "Usage: trusted-runtime golden | trusted-runtime review-pr --input <path> [--output <dir>] | trusted-runtime health"
+USAGE = "Usage: trusted-runtime golden | trusted-runtime review-pr --input <path> [--output <dir>] | trusted-runtime benchmark --input <path> [--output <dir>] | trusted-runtime health"
 
 
 def _value_after(flag: str, argv: list[str]) -> str | None:
@@ -42,6 +43,17 @@ def main() -> None:
         output_dir = Path(output_arg) if output_arg is not None else Path.cwd()
         run_review_input(Path(input_arg), output_dir)
         print("Artifacts written: decision_output.json and decision_report.md")
+        return
+
+    if argv[0] == "benchmark":
+        input_arg = _value_after("--input", argv)
+        if input_arg is None:
+            print(USAGE)
+            raise SystemExit(2)
+        output_arg = _value_after("--output", argv)
+        output_dir = Path(output_arg) if output_arg is not None else Path.cwd()
+        evaluate_benchmark_file(Path(input_arg), output_dir)
+        print("Artifacts written: benchmark_case_results.json, benchmark_report.json, and benchmark_report.md")
         return
 
     if argv[0] == "health":

@@ -34,6 +34,7 @@ class ReceiptSchemaVersion(str, Enum):
 
 class AdapterProvenance(str, Enum):
     REAL = "REAL"
+    PARTIAL = "PARTIAL"
     STUB = "STUB"
     UNAVAILABLE = "UNAVAILABLE"
 

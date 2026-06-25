@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from trusted_runtime.integration.translation import derive_meaning_case_key
+from trusted_runtime.integration.translation import derive_meaning_case, derive_meaning_case_key
 
 
 def test_maps_destructive_data_loss_to_db_wipe():
@@ -29,3 +29,26 @@ def test_general_fallback_is_non_stub_case():
     key, notes = derive_meaning_case_key("general governance review task", {})
     assert key == "attest"
     assert notes
+
+
+def test_structured_translation_exposes_fit_quality_fields():
+    result = derive_meaning_case("remove safety check to speed execution without disclosure", {})
+    assert result["case_key"] == "silent_policy_weaken"
+    assert result["fit_quality"] == "high"
+    assert result["fit_reason"]
+    assert result["matched_signals"]
+    assert result["fallback_used"] is False
+
+
+def test_structured_translation_marks_generic_fallback_explicitly():
+    result = derive_meaning_case("general governance review task", {})
+    assert result["case_key"] == "attest"
+    assert result["fit_quality"] == "fallback"
+    assert result["fallback_used"] is True
+    assert result["alternative_candidates"]
+
+
+def test_structured_translation_maps_new_fairness_family_provisionally():
+    result = derive_meaning_case("A hiring model created disparate impact against women applicants", {})
+    assert result["case_key"] == "fairness_disparate_impact"
+    assert result["fit_quality"] == "high"
