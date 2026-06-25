@@ -22,6 +22,7 @@ REAL = {
     "council": AdapterProvenance.REAL,
     "warrant": AdapterProvenance.REAL,
     "cer_bundle": AdapterProvenance.REAL,
+    "tas": AdapterProvenance.REAL,
 }
 S = TripValidationStatus
 

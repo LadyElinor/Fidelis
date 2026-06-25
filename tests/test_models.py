@@ -65,7 +65,7 @@ def test_overall_receipt_is_deterministic_for_identical_inputs():
     assert first.overall_receipt.sha256 == second.overall_receipt.sha256
 
 
-def test_unknown_translation_falls_back_to_stub_warrant_explicitly():
+def test_unknown_translation_falls_back_to_real_conservative_warrant_case_when_available():
     action = ProposedAction(
         id="test-stub-001",
         description="Schedule a routine low-risk maintenance reminder.",
@@ -74,8 +74,11 @@ def test_unknown_translation_falls_back_to_stub_warrant_explicitly():
     )
     decision = assemble_execution_decision(action)
     assert decision.warrant is not None
-    assert decision.warrant.adapter_provenance is AdapterProvenance.STUB
-    assert decision.decision_integrity in {DecisionIntegrity.PARTIAL, DecisionIntegrity.DEMO_ONLY}
+    expected = AdapterProvenance.REAL if meaning_assay_available() else AdapterProvenance.STUB
+    assert decision.warrant.adapter_provenance is expected
+    if expected is AdapterProvenance.REAL:
+        assert decision.warrant.pair_contrasts is not None
+        assert decision.warrant.pair_contrasts.get("source_case") in {"over_refusal", "attest"}
 
 
 def test_proceed_is_not_allowed_with_stubbed_required_layers():
@@ -152,6 +155,7 @@ def test_guard_blocks_overreaction_even_without_refuse():
             "council": AdapterProvenance.REAL,
             "warrant": AdapterProvenance.REAL,
             "cer_bundle": AdapterProvenance.REAL,
+            "tas": AdapterProvenance.REAL,
         },
         warranted_action="ALLOW",
         reconciliation_alignment="OVER_REACTION",
@@ -167,6 +171,7 @@ def test_guard_blocks_refuse_even_without_under_justified_alignment():
             "council": AdapterProvenance.REAL,
             "warrant": AdapterProvenance.REAL,
             "cer_bundle": AdapterProvenance.REAL,
+            "tas": AdapterProvenance.REAL,
         },
         warranted_action="REFUSE",
         reconciliation_alignment="ALIGNED",
@@ -182,6 +187,7 @@ def test_guard_blocks_proceed_without_independent_corroboration():
             "council": AdapterProvenance.REAL,
             "warrant": AdapterProvenance.REAL,
             "cer_bundle": AdapterProvenance.REAL,
+            "tas": AdapterProvenance.REAL,
         },
         independently_corroborated=False,
     )
@@ -196,6 +202,7 @@ def test_guard_allows_proceed_with_independent_corroboration():
             "council": AdapterProvenance.REAL,
             "warrant": AdapterProvenance.REAL,
             "cer_bundle": AdapterProvenance.REAL,
+            "tas": AdapterProvenance.REAL,
         },
         independently_corroborated=True,
     )
@@ -210,6 +217,7 @@ def test_guard_blocks_reviewability_exceeded_proceed():
             "council": AdapterProvenance.REAL,
             "warrant": AdapterProvenance.REAL,
             "cer_bundle": AdapterProvenance.REAL,
+            "tas": AdapterProvenance.REAL,
         },
         reviewability_exceeded=True,
     )
@@ -224,6 +232,7 @@ def test_guard_blocks_proceed_when_blocking_tripwire_is_not_validated():
             "council": AdapterProvenance.REAL,
             "warrant": AdapterProvenance.REAL,
             "cer_bundle": AdapterProvenance.REAL,
+            "tas": AdapterProvenance.REAL,
         },
         tripwire_records=[
             {

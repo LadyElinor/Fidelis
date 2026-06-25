@@ -4,7 +4,7 @@ from trusted_runtime.shared.credal import CredalInterval, clamp_to_status, lower
 from trusted_runtime.shared.enums import AdapterProvenance, RuntimeDisposition, TripValidationStatus
 
 
-REQUIRED_REAL_FOR_PROCEED = ("council", "warrant", "cer_bundle")
+REQUIRED_REAL_FOR_PROCEED = ("council", "warrant", "cer_bundle", "tas")
 BLOCKING_LOWER_BOUND_THRESHOLD = 0.5
 
 

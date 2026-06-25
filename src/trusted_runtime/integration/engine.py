@@ -17,7 +17,7 @@ from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.shared.credal import clamp_to_status
 from trusted_runtime.shared.lineage import LineageDescriptor, correlation_report, weakest_independence_for_credal
 from trusted_runtime.integration.provenance import process_provenance_record
-from trusted_runtime.integration.translation import derive_meaning_case_key
+from trusted_runtime.integration.translation import derive_meaning_case
 from trusted_runtime.integration.sophron_tripwire_bridge import tripwires_from_sophron_validation
 from trusted_runtime.shared.enums import (
     AdapterProvenance,
@@ -175,14 +175,48 @@ class EthicsCouncilAdapter(HazardAdapter):
 
 class MeaningAssayAdapter(WarrantAdapter):
     def assess(self, action: ProposedAction) -> WarrantAssay:
-        case_key, translation_notes = derive_meaning_case_key(action.description, action.context)
+        translation = derive_meaning_case(action.description, action.context)
+        case_key = translation["case_key"]
+        translation_notes = list(translation.get("notes", []))
+        pair_contrasts = {
+            "source_case": case_key,
+            "translation_notes": translation_notes,
+            "translation_fit_quality": translation.get("fit_quality"),
+            "translation_fit_reason": translation.get("fit_reason"),
+            "translation_matched_signals": list(translation.get("matched_signals", [])),
+            "translation_alternative_candidates": list(translation.get("alternative_candidates", [])),
+            "fallback_used": bool(translation.get("fallback_used", False)),
+        }
         if (
             analyze is not None
             and meaning_assay_receipt is not None
             and get_meaning_case is not None
             and case_key
         ):
-            case = get_meaning_case(case_key)
+            try:
+                case = get_meaning_case(case_key)
+            except KeyError:
+                pair_contrasts["translation_resolution"] = "provisional_unbacked_case_family"
+                payload = {
+                    "layer": "meaning_assay_provisional",
+                    "decision_id": action.id,
+                    "case_key": case_key,
+                    "translation": translation,
+                    "normative_summary": NormativeSummary.UNDETERMINED.value,
+                }
+                return WarrantAssay(
+                    decision_id=action.id,
+                    significance=0.5,
+                    warrant=0.0,
+                    normative_summary=NormativeSummary.UNDETERMINED,
+                    failure_modes=["provisional case family is not yet backed by a local meaning-assay worked case"],
+                    pair_contrasts=pair_contrasts,
+                    confidence_notes=[f"Translation mapped to provisional case family '{case_key}', but no local meaning-assay case exists yet"],
+                    unresolved_questions=[f"Author a local meaning-assay case for '{case_key}' before treating this as a real warrant analysis"],
+                    contested=True,
+                    adapter_provenance=AdapterProvenance.PARTIAL,
+                    receipt=ReceiptRef(sha256=sha256_hex(payload), schema_version=ReceiptSchemaVersion.V1_0_0),
+                )
             analysis = analyze(case)
             rec = meaning_assay_receipt(case)
             return WarrantAssay(
@@ -193,7 +227,7 @@ class MeaningAssayAdapter(WarrantAdapter):
                 if analysis.quadrant in {item.value for item in NormativeSummary}
                 else NormativeSummary.UNDETERMINED,
                 failure_modes=list(analysis.failure_tripped_keys),
-                pair_contrasts={"source_case": case_key, "translation_notes": translation_notes},
+                pair_contrasts=pair_contrasts,
                 confidence_notes=[f"Real meaning-assay adapter used local case '{case_key}'"],
                 unresolved_questions=[
                     "Warrant band is contested and may require human interpretive review"
@@ -215,7 +249,7 @@ class MeaningAssayAdapter(WarrantAdapter):
             "significance": 0.95,
             "warrant": -0.6,
             "normative_summary": NormativeSummary.DANGEROUS.value,
-            "translation_notes": translation_notes,
+            "translation": translation,
         }
         return WarrantAssay(
             decision_id=action.id,
@@ -223,7 +257,7 @@ class MeaningAssayAdapter(WarrantAdapter):
             warrant=payload["warrant"],
             normative_summary=NormativeSummary.DANGEROUS,
             failure_modes=["warrant gap in safety-critical modification"],
-            pair_contrasts={"translation_notes": translation_notes},
+            pair_contrasts=pair_contrasts,
             confidence_notes=["meaning-assay unavailable or unmapped, stubbed warrant output used"],
             unresolved_questions=["Does the act preserve human review at the right boundary?"],
             contested=True,
@@ -388,7 +422,7 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
         ]
         manifest = {
             "run_id": action.id,
-            "git_sha": sha256_hex(action.description)[:40],
+            "action_description_digest": sha256_hex(action.description),
             "package_version": "0.1.0",
             "config_hash": sha256_hex({"adapter": "trusted-runtime-telemetry", "schema": "cer_telemetry_receipt_v0.1"}),
             "dependency_lock_hash": sha256_hex({"python": sys.version.split()[0]}),
@@ -638,7 +672,10 @@ def _build_reconciliation(
     if not source_case:
         return None
 
-    analysis_case = get_meaning_case(source_case)
+    try:
+        analysis_case = get_meaning_case(source_case)
+    except KeyError:
+        return None
     council_output = CouncilOutput(case_key=source_case, verdict=_map_council_verdict(runtime_disposition))
     reconciliation = reconcile(council_output, analyze(analysis_case))
     assay_record = warrant_assay_record(
