@@ -14,6 +14,14 @@ def test_cases_validate():
     validate(get_case("db_wipe"))
     validate(get_case("over_refusal"))
     validate(get_case("silent_policy_weaken"))
+    validate(get_case("fairness_disparate_impact"))
+    validate(get_case("opacity_unverifiable_performance"))
+    validate(get_case("incentive_gaming_metric_corruption"))
+    validate(get_case("public_interest_disclosure_whistleblowing"))
+    validate(get_case("concealment_loss_escalation"))
+    validate(get_case("adversarial_exposure_without_hardening"))
+    validate(get_case("record_correction_retraction_under_uncertainty"))
+    validate(get_case("distributed_accountability_system_harm"))
 
 
 def test_kor_is_luminous():
