@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from trusted_runtime.benchmark import evaluate_benchmark_file
+from trusted_runtime.integration.availability import meaning_assay_available
+
+
+pytestmark = pytest.mark.skipif(not meaning_assay_available(), reason="meaning-assay dependency unavailable in this environment")
 
 
 def test_benchmark_evaluator_writes_expected_reports(tmp_path: Path):

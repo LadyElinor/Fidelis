@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
+from trusted_runtime.integration.availability import meaning_assay_available
 from trusted_runtime.integration.engine import assemble_execution_decision
 from trusted_runtime.shared.enums import AdapterProvenance
 from trusted_runtime.shared.models import ProposedAction
+
+
+pytestmark = pytest.mark.skipif(not meaning_assay_available(), reason="meaning-assay dependency unavailable in this environment")
 
 
 def test_general_pull_request_action_uses_real_warrant_adapter():
