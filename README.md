@@ -37,7 +37,7 @@ It should **not**:
 
 ## Current status
 
-This is a scaffold with:
+This is a governed-runtime prototype with:
 - cleaned package layout
 - typed shared models
 - explicit enums for runtime, normative, provenance, and integrity states
@@ -45,9 +45,11 @@ This is a scaffold with:
 - formal adapter interfaces
 - a golden-scenario runner
 - a real EthicsCouncil hazard adapter
-- a real meaning-assay adapter with translation and reconciliation
+- a real meaning-assay adapter with translation, fit-quality surfacing, and reconciliation
+- a benchmark harness for external case corpora
+- health/status surfaces for truthful adapter maturity reporting
 
-Today, the runtime can produce real council hazard review and real warrant-sidecar output from local sources. Enforcement and evidence layers remain stubbed pending adapter work.
+Today, the runtime can produce real council hazard review and real warrant-sidecar output from local sources. L2 enforcement is partially wired through a real TrustworthyAgentStack bridge when local sources are available, and L4 telemetry remains unevenly real (`partially_wired` / `realish`) rather than universally reproducible.
 
 Stubbed and unavailable layers are explicit in the contract through adapter provenance, decision integrity is classified as `FULL | PARTIAL | DEMO_ONLY`, and synthesized `PROCEED` is not allowed while required layers remain non-real.
 
@@ -95,23 +97,50 @@ You can feed a machine-readable PR review input into the runtime:
 trusted-runtime review-pr --input examples/sample_pr_review.json --output reports/
 ```
 
-This is the first CI-friendly entrypoint for using TrustedRuntime as a governed pre-merge review artifact generator.
+You can also evaluate an external benchmark corpus:
+
+```bash
+trusted-runtime benchmark --input examples/ethics_unwrapped_benchmark_template.json --output reports/
+```
+
+This repo now distinguishes three integration modes:
+- `stub`
+- `partial`
+- `all-real`
+
+See:
+- `docs/CI_INTEGRATION_MATRIX.md`
+- `docs/ALL_REAL_PROFILE.md`
 
 ## Adapter status
 
-### Real now
-- `EthicsCouncil`, via local source-path adapter or `ETHICS_COUNCIL_SRC`
-- `meaning-assay`, via local source-path adapter or `MEANING_ASSAY_SRC`
+Current adapter maturity is surfaced by `trusted-runtime health` and in `docs/INTEGRATION_STATUS.*`.
 
-### Still stubbed
-- `TrustworthyAgentStack`
-- `CER-Telemetry`
-- `SOPHRON-CER`
+Truthful status language used by the runtime includes:
+- `real`
+- `partially_wired`
+- `realish`
+- `stubbed`
+- `unavailable`
+
+Typical current posture:
+- `EthicsCouncil`: real when local sources are importable
+- `meaning-assay`: real when local sources are importable
+- `TrustworthyAgentStack`: partially wired
+- `SOPHRON-CER`: partially wired
+- `CER telemetry stack`: realish only when both export and validation surfaces are present
 
 ## Safety note
 
 A valid receipt no longer implies a real adapter run by itself.
 Each layer now carries explicit `adapter_provenance`, and the final decision surfaces those values directly.
+
+Also, `REAL` adapter provenance does not imply independent corroboration.
+Adapter execution and independence are separate axes, and reports should surface both.
+
+## Release / packaging note
+
+The package is versioned in `pyproject.toml`, but the repo does not yet provide a fully reproducible published all-real release artifact. Until that is added, treat local workspace integration state as part of the runtime truth surface.
 
 ## Golden scenario
 

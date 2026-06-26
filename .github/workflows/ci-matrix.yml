@@ -1,0 +1,42 @@
+name: trusted-runtime-ci-matrix
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  stub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install TrustedRuntime
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Health snapshot
+        run: trusted-runtime health
+      - name: Test suite (stub profile)
+        run: pytest -q
+
+  # Placeholder documentation job for future richer profiles.
+  # These remain explicit so CI truth surfaces distinguish intent from implementation.
+  partial-doc-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Declare partial profile intent
+        run: |
+          echo "Partial integration profile is documented in docs/CI_INTEGRATION_MATRIX.md"
+          echo "This job is a placeholder until sibling integration mounting is automated."
+
+  all-real-doc-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Declare all-real profile intent
+        run: |
+          echo "All-real integration profile is documented in docs/ALL_REAL_PROFILE.md"
+          echo "This job is a placeholder until sibling integration mounting is automated."

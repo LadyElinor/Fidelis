@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from trusted_runtime.integration.availability import meaning_assay_available
 from trusted_runtime.integration.engine import assemble_execution_decision
 from trusted_runtime.integration.report import render_markdown_report
+from trusted_runtime.integration.status import adapter_status
 from trusted_runtime.shared.enums import RuntimeDisposition
 from trusted_runtime.shared.models import ProposedAction
 
@@ -71,6 +73,7 @@ def evaluate_case(case: dict[str, Any]) -> dict[str, Any]:
         "source": case["source"],
         "runtime_disposition": decision.runtime_disposition.value,
         "decision_integrity": decision.decision_integrity.value,
+        "integration_mode": adapter_status().get("integration_mode", "unknown"),
         "adapter_provenance": {k: v.value for k, v in decision.adapter_provenance.items()},
         "warrant_case_key": source_case,
         "translation_fit_quality": pair_contrasts.get("translation_fit_quality"),
@@ -137,8 +140,10 @@ def evaluate_benchmark_file(input_path: Path, output_dir: Path) -> dict[str, Any
     cases = list(payload.get("cases", []))
     results = [evaluate_case(case) for case in cases]
     total = len(results) or 1
+    meaning_available = meaning_assay_available()
     summary = {
         "benchmark_id": payload.get("benchmark_id", input_path.stem),
+        "integration_mode": adapter_status().get("integration_mode", "unknown"),
         "cases_total": len(results),
         "fallback_rate": sum(1 for item in results if item["fallback_used"]) / total,
         "wrong_template_hit_rate": sum(1 for item in results if item["wrong_template_hit"]) / total,
@@ -147,9 +152,14 @@ def evaluate_benchmark_file(input_path: Path, output_dir: Path) -> dict[str, Any
         "unsafe_proceed_rate": sum(1 for item in results if item["unsafe_proceed"]) / total,
         "disposition_stability_rate": 1.0,
         "coverage_by_moral_structure_tag": _coverage_by_tag(cases, results),
+        "integration_exercised": {
+            "meaning_assay": meaning_available,
+            "dependency_bound_tests_should_skip_when_unavailable": not meaning_available,
+        },
         "notes": [
             "External corpus validates intake/routing/gating behavior, not independent judgment correctness.",
             "If a translated family lacks a local meaning-assay worked case, warrant provenance should remain PARTIAL rather than being overstated as REAL.",
+            "Skipped or non-exercised integration paths should be reported separately from passing coverage metrics.",
         ],
     }
     summary["grade_interpretation"] = _grade(summary)
@@ -160,6 +170,7 @@ def evaluate_benchmark_file(input_path: Path, output_dir: Path) -> dict[str, Any
     md_lines = [
         f"# Benchmark Report: {summary['benchmark_id']}",
         "",
+        f"- integration_mode: `{summary['integration_mode']}`",
         f"- cases_total: `{summary['cases_total']}`",
         f"- fallback_rate: `{summary['fallback_rate']}`",
         f"- wrong_template_hit_rate: `{summary['wrong_template_hit_rate']}`",
@@ -168,6 +179,8 @@ def evaluate_benchmark_file(input_path: Path, output_dir: Path) -> dict[str, Any
         f"- unsafe_proceed_rate: `{summary['unsafe_proceed_rate']}`",
         f"- disposition_stability_rate: `{summary['disposition_stability_rate']}`",
         f"- grade_interpretation: `{summary['grade_interpretation']}`",
+        f"- meaning_assay_exercised: `{summary['integration_exercised']['meaning_assay']}`",
+        f"- dependency_bound_tests_should_skip_when_unavailable: `{summary['integration_exercised']['dependency_bound_tests_should_skip_when_unavailable']}`",
         "",
         "## Notes",
     ]
