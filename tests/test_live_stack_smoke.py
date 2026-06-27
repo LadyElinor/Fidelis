@@ -18,7 +18,11 @@ def test_live_stack_smoke_writes_machine_readable_artifact(tmp_path: Path):
     assert (tmp_path / "smoke_decision_report.md").exists()
 
     payload = json.loads((tmp_path / "live_stack_smoke.json").read_text(encoding="utf-8"))
-    assert payload["smoke_test"]["runtime_disposition"] in {"HALT", "CONFIRM_HUMAN", "PROCEED", "SUSPEND"}
+    assert payload["smoke_test"]["runtime_disposition"] != "PROCEED"
+    assert payload["smoke_test"]["runtime_disposition"] == "HALT"
+    assert payload["smoke_test"]["risk_state"] in {"RED", "AMBER"}
+    assert payload["smoke_test"]["independently_corroborated"] is False
+    assert payload["smoke_test"]["certification_grade_corroboration"] is False
     assert "integration_mode" in payload["smoke_test"]
     assert "adapter_provenance" in payload["smoke_test"]
 
