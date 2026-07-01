@@ -13,6 +13,7 @@ class IntegrationPaths:
     ethics_council_src: Path | None
     trustworthy_agent_stack_src: Path | None
     sophron_cer_src: Path | None
+    attest_agent_conlang_src: Path | None
 
 
 def _workspace_root() -> Path:
@@ -78,10 +79,15 @@ def load_integration_paths() -> IntegrationPaths:
             root / "repos" / "SOPHRON-CER",
         ],
     )
+    attest_agent_conlang_src = _first_existing_path(
+        "ATTEST_AGENT_CONLANG_SRC",
+        [root / "AttestAgentConlang"],
+    )
     return IntegrationPaths(
         workspace_root=root,
         meaning_assay_src=meaning_assay_src,
         ethics_council_src=ethics_council_src,
         trustworthy_agent_stack_src=trustworthy_agent_stack_src,
         sophron_cer_src=sophron_cer_src,
+        attest_agent_conlang_src=attest_agent_conlang_src,
     )

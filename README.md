@@ -28,6 +28,7 @@ It should:
 - orchestrate independent layers
 - canonicalize receipts
 - synthesize operator-facing reports
+- optionally wrap inter-layer traffic in an Attest-shaped message seam without collapsing Attest semantics into this repo
 
 It should **not**:
 - collapse the independent repos into one codebase
@@ -64,6 +65,7 @@ src/trusted_runtime/
     receipts.py
   integration/
     adapters.py
+    attest_bridge.py
     engine.py
     integrity.py
     policy.py
@@ -137,6 +139,28 @@ Each layer now carries explicit `adapter_provenance`, and the final decision sur
 
 Also, `REAL` adapter provenance does not imply independent corroboration.
 Adapter execution and independence are separate axes, and reports should surface both.
+
+The Attest bridge seam should be read the same way: an Attest-shaped message or verification artifact does not, by itself, upgrade council/warrant/telemetry provenance to `REAL`, and does not, by itself, establish independent corroboration.
+
+## Attest bridge seam
+
+TrustedRuntime can optionally wrap ingress and inter-layer traffic with an Attest-shaped bridge at the integration layer.
+
+Current design stance:
+- TrustedRuntime remains the runtime/orchestration layer
+- Attest remains the typed inter-layer message envelope and verifier
+- CER/SOPHRON remain the durable receipt/evidence spine
+
+Current first-pass implementation status:
+- ingress is wrapped as an Attest-shaped `REQUEST`
+- profile-relative Attest verification state is surfaced into `vita_state`
+- Attest bridge process provenance is emitted explicitly
+- a real `AttestAgentConlang` import/wiring path now exists behind an availability gate
+- when the external repo is unavailable, the bridge falls back truthfully to stub / `UNVERIFIABLE` mode
+
+See also:
+- `src/trusted_runtime/integration/attest_bridge.py`
+- `docs/attest_bridge_test_plan.md`
 
 ## Release / packaging note
 

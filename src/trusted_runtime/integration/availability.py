@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from trusted_runtime.integration.engine import (
+    _ATTEST_BRIDGE,
     _CER_TELEMETRY_SRC,
     _ETHICS_COUNCIL_SRC,
     _MEANING_ASSAY_SRC,
@@ -34,3 +35,7 @@ def sophron_cer_available() -> bool:
 
 def real_telemetry_stack_available() -> bool:
     return trustworthy_agent_stack_available() and sophron_cer_available()
+
+
+def attest_agent_conlang_available() -> bool:
+    return _ATTEST_BRIDGE.real_available

@@ -10,6 +10,7 @@ from typing import Any
 
 from trusted_runtime.config import load_integration_paths
 from trusted_runtime.integration.adapters import AdapterSet, HazardAdapter, TelemetryAdapter, WarrantAdapter
+from trusted_runtime.integration.attest_bridge import AttestBridge
 from trusted_runtime.integration.formation import assess_formation_hazard
 from trusted_runtime.integration.hazard_taxonomy import build_hazard_profile
 from trusted_runtime.integration.integrity import classify_decision_integrity
@@ -74,6 +75,9 @@ if _ETHICS_COUNCIL_SRC is not None and str(_ETHICS_COUNCIL_SRC) not in sys.path:
 
 _CER_TELEMETRY_SRC = _INTEGRATION_PATHS.trustworthy_agent_stack_src
 _SOPHRON_CER_SRC = _INTEGRATION_PATHS.sophron_cer_src
+_ATTEST_AGENT_CONLANG_SRC = _INTEGRATION_PATHS.attest_agent_conlang_src
+
+_ATTEST_BRIDGE = AttestBridge(attest_root=_ATTEST_AGENT_CONLANG_SRC)
 
 try:
     import efm_council
@@ -898,6 +902,10 @@ def _coverage_records(
 def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | None = None) -> ExecutionDecision:
     adapters = adapters or default_adapters()
 
+    attest_ingress_message = _ATTEST_BRIDGE.wrap_ingress_request(action)
+    attest_ingress_verification = _ATTEST_BRIDGE.verify_for_runtime(attest_ingress_message, [], evaluated_at=action.timestamp)
+    attest_receipt_fragment = _ATTEST_BRIDGE.cer_receipt_fragment(verification=attest_ingress_verification)
+
     evidence_records = _build_evidence_records(action)
     reviewability = _build_reviewability_profile(action)
 
@@ -906,6 +914,15 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     council = council.model_copy(update={"evidence_records": evidence_records, "reviewability": reviewability})
     tas_adapter = TrustworthyAgentStackAdapter()
     risk_state, runtime_disposition, vita_state, l2_provenance = tas_adapter.assess(action, council)
+    vita_state = {
+        **vita_state,
+        "attest_bridge": {
+            "enabled": True,
+            "real_available": _ATTEST_BRIDGE.real_available,
+            "ingress_frame": attest_ingress_message.get("frame"),
+            "verification": attest_receipt_fragment,
+        },
+    }
     warrant = adapters.warrant.assess(action)
     cer_bundle = adapters.telemetry.collect(action, runtime_disposition.value)
 
@@ -1025,6 +1042,18 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             adapter_path=str(_CER_TELEMETRY_SRC) if _CER_TELEMETRY_SRC else None,
             source_payload=strip_receipt_timestamps(vita_state),
         ),
+        "attest_bridge": process_provenance_record(
+            adapter_name="AttestBridge",
+            adapter_provenance=AdapterProvenance.REAL if _ATTEST_BRIDGE.real_available else AdapterProvenance.STUB,
+            adapter_version="attest_ref_impl" if _ATTEST_BRIDGE.real_available else "draft-0",
+            adapter_path=str(_ATTEST_AGENT_CONLANG_SRC) if _ATTEST_AGENT_CONLANG_SRC is not None else str(Path(__file__).resolve().parent / "attest_bridge.py"),
+            source_payload=strip_receipt_timestamps(
+                {
+                    "message": attest_ingress_message,
+                    "verification": attest_receipt_fragment,
+                }
+            ),
+        ),
         "cer_bundle": process_provenance_record(
             adapter_name="CerSophronTelemetryAdapter",
             adapter_provenance=cer_bundle.adapter_provenance,
@@ -1066,6 +1095,10 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "adapter_provenance": {key: value.value for key, value in adapter_provenance.items()},
             "decision_integrity": decision_integrity.value,
             "process_provenance": process_provenance,
+            "attest_bridge": {
+                "message": attest_ingress_message,
+                "verification": attest_receipt_fragment,
+            },
             "reconciliation": reconciliation.model_dump(mode="json") if reconciliation is not None else None,
             "hazard_profile": hazard_profile,
             "evidence_records": [record.model_dump(mode="json") for record in evidence_records],

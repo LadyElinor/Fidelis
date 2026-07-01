@@ -100,8 +100,9 @@ def test_process_provenance_is_present_for_each_layer():
         context={"change_type": "safety_invariant"},
     )
     decision = assemble_execution_decision(action)
-    assert set(decision.process_provenance.keys()) == {"council", "warrant", "tas", "cer_bundle"}
+    assert set(decision.process_provenance.keys()) == {"council", "warrant", "tas", "cer_bundle", "attest_bridge"}
     assert all("record_sha256" in item for item in decision.process_provenance.values())
+    assert decision.vita_state.get("attest_bridge", {}).get("enabled") is True
 
 
 def test_default_adapters_construct_cleanly():
