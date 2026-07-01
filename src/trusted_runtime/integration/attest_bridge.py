@@ -130,7 +130,20 @@ class AttestBridge:
             if spec is None or spec.loader is None:
                 return None
             module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            # The module must be registered in sys.modules BEFORE exec_module:
+            # attest_ref_impl uses `from __future__ import annotations`, so all
+            # pydantic models resolve their field types lazily via
+            # sys.modules[cls.__module__]. Without this line, any model whose
+            # validator builds after import (e.g. GroundsResolution) raises
+            # PydanticUserError at first use, the bridge's bare except swallows
+            # it, and verification silently degrades to the design stub. This
+            # exact failure shipped as a green test suite once already.
+            sys.modules[module_name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(module_name, None)
+                raise
         except Exception:
             return None
         return {

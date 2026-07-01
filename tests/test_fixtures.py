@@ -5,13 +5,18 @@ from pathlib import Path
 
 import pytest
 
-from trusted_runtime.integration.availability import real_telemetry_stack_available
+from trusted_runtime.integration.availability import (
+    meaning_assay_available,
+    real_telemetry_stack_available,
+)
 from trusted_runtime.integration.engine import assemble_execution_decision
 from trusted_runtime.integration.formation import assess_formation_hazard
 from trusted_runtime.shared.models import ProposedAction
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures" / "scenarios.json").read_text())
 SCENARIOS = {k: v for k, v in FIXTURES.items() if not k.startswith("_")}
+
+_ADAPTER_GATES = {"meaning_assay": meaning_assay_available}
 
 
 def _decide(scenario):
@@ -25,16 +30,13 @@ def _families(decision):
 
 @pytest.mark.parametrize("name", SCENARIOS.keys())
 def test_env_independent_contract_holds(name):
+    """Assertions in this tier must hold on a fresh clone with no sibling
+    repos present. Anything requiring a REAL adapter belongs in the
+    adapter_dependent tier, not here."""
     scenario = SCENARIOS[name]
     ei = scenario["contract"]["env_independent"]
     _, d = _decide(scenario)
 
-    if "warrant_provenance" in ei:
-        assert d.warrant.adapter_provenance.value == ei["warrant_provenance"]
-    if "warrant_quadrant" in ei:
-        assert d.warrant.normative_summary.value == ei["warrant_quadrant"]
-    if ei.get("warrant_band_negative"):
-        assert d.warrant.warrant is not None and d.warrant.warrant < 0
     if "formation_families_present" in ei:
         present = [f for f in _families(d) if f == "formation"]
         assert present == ei["formation_families_present"]
@@ -42,7 +44,34 @@ def test_env_independent_contract_holds(name):
         haz = set(d.council.hazards)
         for required in ei["formation_hazards_required"]:
             assert required in haz
-    if ei.get("claimed_provenance_is_not_trusted"):
+    if ei.get("claimed_provenance_is_ignored"):
+        # An input claiming ALL_REAL provenance must never have that claim
+        # echoed into process provenance, on any adapter tier.
+        claimed = scenario["input"]["context"].get("claimed_provenance")
+        assert claimed == "ALL_REAL"
+        assert "claimed_provenance" not in d.process_provenance.get("warrant", {})
+
+
+@pytest.mark.parametrize("name", [k for k, v in SCENARIOS.items() if "adapter_dependent" in v["contract"]])
+def test_adapter_dependent_contract_holds(name):
+    """REAL-provenance and real-adapter output assertions. Skips, with the
+    missing dependency named, when the required sibling repo is absent —
+    a skip is an honest receipt; a pass against a stub is not."""
+    scenario = SCENARIOS[name]
+    ad = scenario["contract"]["adapter_dependent"]
+    required = ad["requires"]
+    gate = _ADAPTER_GATES[required]
+    if not gate():
+        pytest.skip(f"{name}: sibling dependency '{required}' absent; REAL-adapter contract recorded but not asserted")
+
+    _, d = _decide(scenario)
+    if "warrant_provenance" in ad:
+        assert d.warrant.adapter_provenance.value == ad["warrant_provenance"]
+    if "warrant_quadrant" in ad:
+        assert d.warrant.normative_summary.value == ad["warrant_quadrant"]
+    if ad.get("warrant_band_negative"):
+        assert d.warrant.warrant is not None and d.warrant.warrant < 0
+    if ad.get("claimed_provenance_is_not_trusted"):
         claimed = scenario["input"]["context"].get("claimed_provenance")
         assert claimed == "ALL_REAL"
         assert d.adapter_provenance["warrant"].value == "REAL"

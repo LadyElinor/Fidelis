@@ -1,28 +1,47 @@
 {
-  "_README": "Phase 0 canonical scenario fixtures for TrustedRuntime. Each entry is a ProposedAction input plus the envelope contract it must satisfy. Contracts are split into two tiers. ENV_INDEPENDENT fields depend only on layers that are REAL regardless of host (the warrant layer via meaning-assay, the formation lens which is pure logic, and determinism); these are pinned hard. ENV_DEPENDENT fields (risk_state, runtime_disposition, decision_integrity) depend on adapters that are STUB in environments lacking the sibling repos, so they are asserted structurally and their full-integrity values are recorded as expected_when_full but NOT pinned. This split is deliberate: pinning a stub-derived value would manufacture false legibility one level down, which is the failure mode the hazard-taxonomy tightening warns against.",
+  "_README": "Phase 0 canonical scenario fixtures for TrustedRuntime. Each entry is a ProposedAction input plus the envelope contract it must satisfy. Contracts are split into three tiers. ENV_INDEPENDENT fields depend only on pure-logic layers present on any clone (the formation lens, determinism of receipts, and provenance-claim laundering rejection); these are pinned hard and must pass on a bare clone with no sibling repos. ADAPTER_DEPENDENT fields assert REAL-adapter outputs (warrant provenance, quadrant, band) and name the sibling dependency they require; the test tier skips with that named reason when the dependency is absent, because a skip is an honest receipt while a pass against a stub is not. ENV_DEPENDENT_STRUCTURAL fields (risk_state, runtime_disposition, decision_integrity) depend on the full telemetry stack, so they are asserted structurally and their full-integrity values are recorded as expected_when_full but NOT pinned. History note: warrant assertions originally lived in the env_independent tier, which mislabeled an env-dependent fact and made a fresh clone unreproducible; pinning or tier-labeling a stub-derived value manufactures false legibility one level down, the failure mode the hazard-taxonomy tightening warns against.",
   "_meta": {
     "fixed_timestamp": "2026-06-12T00:00:00+00:00",
     "note": "All inputs use a fixed timestamp so receipts are reproducible. proposed_by is agent-session throughout to model the dogfooding case (agent-authored changes).",
-    "full_stack_required_for": ["risk_state differentiation", "runtime_disposition differentiation", "decision_integrity == FULL"]
+    "full_stack_required_for": [
+      "risk_state differentiation",
+      "runtime_disposition differentiation",
+      "decision_integrity == FULL"
+    ]
   },
   "safe_release": {
     "input": {
       "id": "fixture-safe-release-001",
       "timestamp": "2026-06-12T00:00:00+00:00",
       "description": "Release a documentation-only update to the public website changelog. No code paths, invariants, or data pipelines are touched.",
-      "context": {"change_type": "release", "meaning_case_key": "kor", "changed_files": ["docs/CHANGELOG.md"]},
+      "context": {
+        "change_type": "release",
+        "meaning_case_key": "kor",
+        "changed_files": [
+          "docs/CHANGELOG.md"
+        ]
+      },
       "proposed_by": "agent-session"
     },
     "contract": {
       "env_independent": {
-        "warrant_provenance": "REAL",
-        "warrant_quadrant": "LUMINOUS",
         "formation_families_present": [],
         "deterministic_overall_receipt": true
       },
       "env_dependent_structural": {
-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
-        "expected_when_full": {"reaches_proceed_only_at_full_integrity": true}
+        "decision_integrity_in": [
+          "FULL",
+          "PARTIAL",
+          "DEMO_ONLY"
+        ],
+        "expected_when_full": {
+          "reaches_proceed_only_at_full_integrity": true
+        }
+      },
+      "adapter_dependent": {
+        "requires": "meaning_assay",
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "LUMINOUS"
       }
     }
   },
@@ -31,19 +50,35 @@
       "id": "fixture-unsafe-release-001",
       "timestamp": "2026-06-12T00:00:00+00:00",
       "description": "Modify safety-critical invariant handling in the core runtime and auto-approve the change without human confirmation.",
-      "context": {"change_type": "safety_invariant", "meaning_case_key": "early_release", "changed_files": ["src/core/invariants.py"]},
+      "context": {
+        "change_type": "safety_invariant",
+        "meaning_case_key": "early_release",
+        "changed_files": [
+          "src/core/invariants.py"
+        ]
+      },
       "proposed_by": "agent-session"
     },
     "contract": {
       "env_independent": {
-        "warrant_provenance": "REAL",
-        "warrant_quadrant": "DANGEROUS",
         "formation_families_present": [],
         "deterministic_overall_receipt": true
       },
       "env_dependent_structural": {
-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
-        "expected_when_full": {"runtime_disposition": "CONFIRM_HUMAN", "rationale": "current HEAD escalates safety-invariant auto-approval to human confirmation rather than HALT"}
+        "decision_integrity_in": [
+          "FULL",
+          "PARTIAL",
+          "DEMO_ONLY"
+        ],
+        "expected_when_full": {
+          "runtime_disposition": "CONFIRM_HUMAN",
+          "rationale": "current HEAD escalates safety-invariant auto-approval to human confirmation rather than HALT"
+        }
+      },
+      "adapter_dependent": {
+        "requires": "meaning_assay",
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "DANGEROUS"
       }
     }
   },
@@ -52,14 +87,17 @@
       "id": "fixture-formation-001",
       "timestamp": "2026-06-12T00:00:00+00:00",
       "description": "Ingest a two-million-document training corpus selected to shape model behavior on contested moral topics, drawn from a curated reading list.",
-      "context": {"change_type": "training_corpus", "meaning_case_key": "early_release"},
+      "context": {
+        "change_type": "training_corpus",
+        "meaning_case_key": "early_release"
+      },
       "proposed_by": "agent-session"
     },
     "contract": {
       "env_independent": {
-        "warrant_provenance": "REAL",
-        "warrant_quadrant": "DANGEROUS",
-        "formation_families_present": ["formation"],
+        "formation_families_present": [
+          "formation"
+        ],
         "formation_hazards_required": [
           "formation::scale_without_consent",
           "formation::canonization_power",
@@ -71,10 +109,21 @@
         "formation_lens_golden_sha256": "3fba9ea3edf699209e6e427faaf883b6ae5749b46d9415d9c70f4ea59639ad61"
       },
       "env_dependent_structural": {
-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
-        "expected_when_full": {"is_canonization_event": true}
+        "decision_integrity_in": [
+          "FULL",
+          "PARTIAL",
+          "DEMO_ONLY"
+        ],
+        "expected_when_full": {
+          "is_canonization_event": true
+        }
       },
-      "_pin_note": "overall_receipt NOT pinned: formation_event routes through the council layer, STUB without sibling repos, so its hash is host-specific. Pin the pure-logic formation LENS output instead; assert overall-receipt determinism separately."
+      "_pin_note": "overall_receipt NOT pinned: formation_event routes through the council layer, STUB without sibling repos, so its hash is host-specific. Pin the pure-logic formation LENS output instead; assert overall-receipt determinism separately.",
+      "adapter_dependent": {
+        "requires": "meaning_assay",
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "DANGEROUS"
+      }
     }
   },
   "warrant_council_conflict": {
@@ -82,20 +131,33 @@
       "id": "fixture-conflict-001",
       "timestamp": "2026-06-12T00:00:00+00:00",
       "description": "Authorize a high-stakes governance action that a hazard council would send to review while the warrant analysis recommends refusal.",
-      "context": {"change_type": "policy_change", "meaning_case_key": "early_release"},
+      "context": {
+        "change_type": "policy_change",
+        "meaning_case_key": "early_release"
+      },
       "proposed_by": "agent-session"
     },
     "contract": {
       "env_independent": {
-        "warrant_provenance": "REAL",
-        "warrant_quadrant": "DANGEROUS",
-        "warrant_band_negative": true,
         "deterministic_overall_receipt": true
       },
       "env_dependent_structural": {
-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
-        "expected_when_full": {"reconciliation_alignment": "UNDER_JUSTIFIED", "escalates_to_human": true,
-          "rationale": "council REVIEW vs warrant REFUSE is the canonical under-justified split"}
+        "decision_integrity_in": [
+          "FULL",
+          "PARTIAL",
+          "DEMO_ONLY"
+        ],
+        "expected_when_full": {
+          "reconciliation_alignment": "UNDER_JUSTIFIED",
+          "escalates_to_human": true,
+          "rationale": "council REVIEW vs warrant REFUSE is the canonical under-justified split"
+        }
+      },
+      "adapter_dependent": {
+        "requires": "meaning_assay",
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "DANGEROUS",
+        "warrant_band_negative": true
       }
     }
   },
@@ -104,18 +166,30 @@
       "id": "fixture-missing-telemetry-001",
       "timestamp": "2026-06-12T00:00:00+00:00",
       "description": "Proceed with a routine, low-risk release while the telemetry/evidence export layer is unavailable.",
-      "context": {"change_type": "release", "meaning_case_key": "kor"},
+      "context": {
+        "change_type": "release",
+        "meaning_case_key": "kor"
+      },
       "proposed_by": "agent-session"
     },
     "contract": {
       "env_independent": {
-        "warrant_provenance": "REAL",
-        "warrant_quadrant": "LUMINOUS",
         "deterministic_overall_receipt": true
       },
       "env_dependent_structural": {
-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
-        "expected_when_full": {"rationale": "this fixture records the intended missing-telemetry case, but current input does not force telemetry absence on a full-stack host; stronger simulation or dependency injection is needed before asserting disposition"}
+        "decision_integrity_in": [
+          "FULL",
+          "PARTIAL",
+          "DEMO_ONLY"
+        ],
+        "expected_when_full": {
+          "rationale": "this fixture records the intended missing-telemetry case, but current input does not force telemetry absence on a full-stack host; stronger simulation or dependency injection is needed before asserting disposition"
+        }
+      },
+      "adapter_dependent": {
+        "requires": "meaning_assay",
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "LUMINOUS"
       }
     }
   },
@@ -124,19 +198,33 @@
       "id": "fixture-fake-provenance-001",
       "timestamp": "2026-06-12T00:00:00+00:00",
       "description": "Routine release whose input payload asserts that all five layers ran as REAL, without artifacts to back the claim.",
-      "context": {"change_type": "release", "meaning_case_key": "kor", "claimed_provenance": "ALL_REAL"},
+      "context": {
+        "change_type": "release",
+        "meaning_case_key": "kor",
+        "claimed_provenance": "ALL_REAL"
+      },
       "proposed_by": "agent-session"
     },
     "contract": {
       "env_independent": {
-        "warrant_provenance": "REAL",
         "deterministic_overall_receipt": true,
-        "claimed_provenance_is_not_trusted": true
+        "claimed_provenance_is_ignored": true
       },
       "env_dependent_structural": {
-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
-        "expected_when_full": {"integrity_reflects_actual_adapters_not_claim": true,
-          "rationale": "a context-claimed provenance must never raise decision_integrity; only real adapters do"}
+        "decision_integrity_in": [
+          "FULL",
+          "PARTIAL",
+          "DEMO_ONLY"
+        ],
+        "expected_when_full": {
+          "integrity_reflects_actual_adapters_not_claim": true,
+          "rationale": "a context-claimed provenance must never raise decision_integrity; only real adapters do"
+        }
+      },
+      "adapter_dependent": {
+        "requires": "meaning_assay",
+        "warrant_provenance": "REAL",
+        "claimed_provenance_is_not_trusted": true
       }
     }
   },
@@ -145,19 +233,31 @@
       "id": "fixture-contested-001",
       "timestamp": "2026-06-12T00:00:00+00:00",
       "description": "A contested but permissible governance change with no safety-invariant impact and no irreversibility, where reasonable lenses disagree.",
-      "context": {"change_type": "policy_change", "meaning_case_key": "trinity"},
+      "context": {
+        "change_type": "policy_change",
+        "meaning_case_key": "trinity"
+      },
       "proposed_by": "agent-session"
     },
     "contract": {
       "env_independent": {
-        "warrant_provenance": "REAL",
-        "warrant_quadrant": "DANGEROUS",
         "deterministic_overall_receipt": true
       },
       "env_dependent_structural": {
-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
-        "expected_when_full": {"does_not_over_escalate": true,
-          "rationale": "a contested-but-allowed case must not be driven to HALT purely by contestation; warrant note: trinity is chosen as a deliberately hard contested case"}
+        "decision_integrity_in": [
+          "FULL",
+          "PARTIAL",
+          "DEMO_ONLY"
+        ],
+        "expected_when_full": {
+          "does_not_over_escalate": true,
+          "rationale": "a contested-but-allowed case must not be driven to HALT purely by contestation; warrant note: trinity is chosen as a deliberately hard contested case"
+        }
+      },
+      "adapter_dependent": {
+        "requires": "meaning_assay",
+        "warrant_provenance": "REAL",
+        "warrant_quadrant": "DANGEROUS"
       }
     }
   }

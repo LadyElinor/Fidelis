@@ -99,7 +99,11 @@ def test_real_attest_bridge_availability_matches_import_gate():
     assert isinstance(attest_agent_conlang_available(), bool)
 
 
-def test_real_attest_verification_path_passes_simple_request_when_available(tmp_path):
+def test_bridge_plumbing_maps_verifier_output_using_shadow_mock(tmp_path):
+    """Unit test of bridge plumbing against a hand-written SHADOW MOCK of
+    attest_ref_impl. This proves the bridge maps verifier output into
+    AttestVerificationState correctly. It proves NOTHING about the real
+    Attest implementation; that is the integration test's job below."""
     repo_root = tmp_path
     shadow = repo_root / "attest_ref_impl.py"
     shadow.write_text(
@@ -162,7 +166,9 @@ def load_profile(path=None):
     assert result.soft_flag == []
 
 
-def test_real_attest_verification_falls_back_truthfully_when_real_path_throws(tmp_path):
+def test_bridge_falls_back_truthfully_when_loaded_module_throws_shadow_mock(tmp_path):
+    """Unit test against a SHADOW MOCK whose profile loader raises: the
+    bridge must degrade to the stub with a named real-path-failed flag."""
     repo_root = tmp_path
     shadow = repo_root / "attest_ref_impl.py"
     shadow.write_text(
@@ -300,3 +306,65 @@ def test_soft_flag_maps_to_review_when_no_hard_fail():
     verification = _verification(decision_effect="PASS", soft_flag=["CONFIDENCE_DOWNGRADED_TO_ASSUMED"])
 
     assert bridge.decision_effect(verification) == "REVIEW"
+
+
+# ---------------------------------------------------------------------------
+# Real integration seam: runs against the actual AttestAgentConlang sibling
+# repo when present (resolved via config paths / ATTEST_AGENT_CONLANG_SRC),
+# and SKIPS with a named reason when absent. A skip is an honest receipt;
+# a green result produced by a self-authored shadow is not, and one such
+# green result previously certified a broken seam (missing sys.modules
+# registration in the isolated loader).
+# ---------------------------------------------------------------------------
+
+from trusted_runtime.config import load_integration_paths
+
+
+def _real_attest_root():
+    return load_integration_paths().attest_agent_conlang_src
+
+
+def test_integration_real_attest_verifier_executes_real_semantics():
+    root = _real_attest_root()
+    if root is None:
+        pytest.skip("AttestAgentConlang sibling repo absent; set ATTEST_AGENT_CONLANG_SRC to run the real seam")
+
+    bridge = AttestBridge(attest_root=root)
+    assert bridge.real_available is True
+
+    msg = bridge.wrap_adapter_assert(
+        layer_name="council",
+        content={"finding": "integration probe"},
+        grounds=["msg:nonexistent-ground"],
+        parents=["msg:root"],
+        confidence_interval=(0.7, 0.9),
+    )
+    result = bridge.verify_for_runtime(msg, [], evaluated_at=FIXED_TS)
+
+    # The real path must have executed: no stub flag, real verifier identity.
+    assert "ATTEST_BRIDGE_DESIGN_STUB_ONLY" not in result.soft_flag
+    assert not any(f.startswith("ATTEST_REAL_PATH_FAILED:") for f in result.soft_flag)
+    assert result.verifier_version == "attest_ref_impl"
+    assert result.decision_effect != "UNVERIFIABLE"
+
+    # And it must exhibit REAL semantics the shadow mock cannot: an
+    # unresolvable ground against the empty resolver is a hard failure.
+    assert any("GROUNDS_UNRESOLVED" in f or "GROUND" in f for f in result.hard_fail + result.soft_flag)
+    assert result.decision_effect == "BLOCK"
+
+
+def test_integration_real_attest_message_id_is_real_digest():
+    root = _real_attest_root()
+    if root is None:
+        pytest.skip("AttestAgentConlang sibling repo absent; set ATTEST_AGENT_CONLANG_SRC to run the real seam")
+
+    bridge = AttestBridge(attest_root=root)
+    msg = bridge.wrap_ingress_request(_action())
+    result = bridge.verify_for_runtime(msg, [], evaluated_at=FIXED_TS)
+
+    assert "ATTEST_BRIDGE_DESIGN_STUB_ONLY" not in result.soft_flag
+    # Real compute_id() is a sha256 hex digest of canonical bytes, and it is
+    # NOT the bridge-side stable-json hash (different canonicalization), so
+    # equality here would indicate the stub path ran.
+    assert len(result.message_id) == 64 and all(c in "0123456789abcdef" for c in result.message_id)
+    assert result.message_id != result.canonical_hash

@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import pytest
+
+from trusted_runtime.integration.availability import (
+    real_telemetry_stack_available,
+    trustworthy_agent_stack_available,
+)
 from trusted_runtime.integration.engine import CerSophronTelemetryAdapter, TrustworthyAgentStackAdapter
 from trusted_runtime.shared.enums import AdapterProvenance, RuntimeDisposition
 from trusted_runtime.shared.models import CouncilAssessment, ProposedAction, ReceiptRef
@@ -26,6 +32,8 @@ def _council() -> CouncilAssessment:
 
 
 def test_tas_adapter_uses_real_routing_surface_when_available():
+    if not trustworthy_agent_stack_available():
+        pytest.skip("TrustworthyAgentStack sibling repo absent; REAL routing surface not testable on this clone")
     risk, disposition, vita_state, provenance = TrustworthyAgentStackAdapter().assess(_action(), _council())
     assert provenance is AdapterProvenance.REAL
     assert vita_state.get("task_routing") is not None
@@ -34,6 +42,8 @@ def test_tas_adapter_uses_real_routing_surface_when_available():
 
 
 def test_tas_export_lines_match_validator_contract():
+    if not trustworthy_agent_stack_available():
+        pytest.skip("TrustworthyAgentStack sibling repo absent; hashing helpers unavailable on this clone")
     adapter = CerSophronTelemetryAdapter()
     lines = adapter._render_tas_export_lines(_action(), RuntimeDisposition.CONFIRM_HUMAN.value)
     assert len(lines) == 3
@@ -43,6 +53,8 @@ def test_tas_export_lines_match_validator_contract():
 
 
 def test_telemetry_collect_returns_non_stub_when_local_bridges_exist():
+    if not real_telemetry_stack_available():
+        pytest.skip("CER-Telemetry/SOPHRON sibling repos absent; non-stub collection not testable on this clone")
     bundle = CerSophronTelemetryAdapter().collect(_action(), RuntimeDisposition.CONFIRM_HUMAN.value)
     assert bundle.adapter_provenance is AdapterProvenance.REAL
     assert bundle.sophron_validation.get("tas_local_validation") is not None
