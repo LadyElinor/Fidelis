@@ -4,15 +4,26 @@ import base64
 import hashlib
 import json
 import unicodedata
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Protocol, Set, Tuple
 
 from pydantic import BaseModel, Field, model_validator
 
+try:
+    from nacl.exceptions import BadSignatureError
+    from nacl.signing import VerifyKey
+except Exception:  # pragma: no cover - optional import path for constrained environments
+    BadSignatureError = Exception
+    VerifyKey = None
+
 FrameType = Literal["ASSERT", "REQUEST", "DELEGATE", "COMMIT", "HYPOTHESIZE", "QUERY", "RELAY", "ENDORSE", "DISSENT", "RETRACT"]
 WarrantType = Literal["OBSERVED", "DERIVED", "RETRIEVED", "REPORTED", "ASSUMED"]
 PayloadMode = Literal["legible", "opaque"]
 GroundsStatus = Literal["resolved", "unresolved", "stale", "malformed", "inaccessible_under_profile"]
+AuthorityStatus = Literal["resolved", "unresolved", "expired", "malformed", "inaccessible_under_profile"]
+ResolutionPolicy = Literal["hard_fail", "soft_flag", "profile_unsupported"]
 
 
 CANONICAL_FIELD_ORDER = [
@@ -28,6 +39,8 @@ CANONICAL_FIELD_ORDER = [
     "authority_receipts",
     "content",
 ]
+
+CORE_CANONICAL_FIELD_ORDER = [field for field in CANONICAL_FIELD_ORDER if field != "authority_receipts"]
 
 
 def _normalize_json_value(value: Any) -> Any:
@@ -45,9 +58,26 @@ def canonicalize_json_bytes(value: Any) -> bytes:
     return json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
 
 
+def _parse_iso8601(value: str) -> Optional[datetime]:
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 class GroundsResolution(BaseModel):
     ref: str
     status: GroundsStatus
+    detail: Optional[str] = None
+
+
+class AuthorityResolution(BaseModel):
+    ref: str
+    status: AuthorityStatus
     detail: Optional[str] = None
 
 
@@ -56,9 +86,19 @@ class GroundsResolver(Protocol):
         ...
 
 
+class AuthorityResolver(Protocol):
+    def resolve(self, ref: str) -> AuthorityResolution:
+        ...
+
+
 class FailClosedResolver:
     def resolve(self, ref: str) -> GroundsResolution:
         return GroundsResolution(ref=ref, status="unresolved", detail="no resolver configured")
+
+
+class FailClosedAuthorityResolver:
+    def resolve(self, ref: str) -> AuthorityResolution:
+        return AuthorityResolution(ref=ref, status="unresolved", detail="no authority resolver configured")
 
 
 class StaticGroundsResolver:
@@ -72,6 +112,19 @@ class StaticGroundsResolver:
         if ref in self.known_refs:
             return GroundsResolution(ref=ref, status="resolved")
         return GroundsResolution(ref=ref, status="unresolved")
+
+
+class StaticAuthorityResolver:
+    def __init__(self, known_refs: Optional[Set[str]] = None, status_overrides: Optional[Dict[str, AuthorityStatus]] = None):
+        self.known_refs = known_refs or set()
+        self.status_overrides = status_overrides or {}
+
+    def resolve(self, ref: str) -> AuthorityResolution:
+        if ref in self.status_overrides:
+            return AuthorityResolution(ref=ref, status=self.status_overrides[ref])
+        if ref in self.known_refs:
+            return AuthorityResolution(ref=ref, status="resolved")
+        return AuthorityResolution(ref=ref, status="unresolved")
 
 
 class SignatureVerifier(Protocol):
@@ -104,10 +157,36 @@ class DeterministicSignatureVerifier:
         return sig == f"testsig:{digest}"
 
 
+class Ed25519SignatureVerifier:
+    def __init__(self, public_keys: Optional[Dict[str, str]] = None):
+        self.public_keys = public_keys or {}
+
+    def verify(self, sig: str, message_bytes: bytes, signer: str) -> bool:
+        if VerifyKey is None or not sig.startswith("ed25519:"):
+            return False
+        key_material = self.public_keys.get(signer)
+        if not key_material:
+            return False
+        try:
+            verify_key = VerifyKey(base64.b64decode(key_material + "===", validate=False))
+            verify_key.verify(message_bytes, base64.b64decode(sig.split(":", 1)[1] + "===", validate=False))
+            return True
+        except (BadSignatureError, ValueError, TypeError):
+            return False
+
+
 class Warrant(BaseModel):
     type: WarrantType
     confidence: Optional[Tuple[float, float]] = None
     grounds: List[str] = Field(default_factory=list)
+
+
+class GroundsResolutionPolicy(BaseModel):
+    unresolved_observed: ResolutionPolicy = "hard_fail"
+    unresolved_derived: ResolutionPolicy = "hard_fail"
+    unresolved_retrieved: ResolutionPolicy = "hard_fail"
+    unresolved_reported: ResolutionPolicy = "hard_fail"
+    confidence_without_method_artifact: ResolutionPolicy = "soft_flag"
 
 
 class AuthorityReceipt(BaseModel):
@@ -152,11 +231,21 @@ class AttestMessage(BaseModel):
         }
         return {field: canonical[field] for field in CANONICAL_FIELD_ORDER}
 
+    def canonical_core_dict(self) -> Dict[str, Any]:
+        canonical = self.canonical_dict()
+        return {field: canonical[field] for field in CORE_CANONICAL_FIELD_ORDER}
+
     def canonical_bytes(self) -> bytes:
         return canonicalize_json_bytes(self.canonical_dict())
 
+    def canonical_core_bytes(self) -> bytes:
+        return canonicalize_json_bytes(self.canonical_core_dict())
+
     def compute_id(self) -> str:
         return hashlib.sha256(self.canonical_bytes()).hexdigest()
+
+    def compute_core_id(self) -> str:
+        return hashlib.sha256(self.canonical_core_bytes()).hexdigest()
 
     @model_validator(mode="after")
     def check_id_consistency(self) -> "AttestMessage":
@@ -190,6 +279,7 @@ class DeploymentProfile(BaseModel):
             "policy": "local policy artifacts",
         }
     )
+    grounds_resolution_policy: GroundsResolutionPolicy = Field(default_factory=GroundsResolutionPolicy)
     warrant_strength_order: Dict[WarrantType, int] = Field(
         default_factory=lambda: {
             "OBSERVED": 5,
@@ -202,6 +292,7 @@ class DeploymentProfile(BaseModel):
     relay_parent_prefixes: List[str] = Field(default_factory=lambda: ["h:upstream-relay", "relay:hop:"])
     independence_policy_name: str = "declared-lineage-default"
     ordering_anchor_semantics: str = "timestamp-sequence-total-order"
+    signer_public_keys: Dict[str, str] = Field(default_factory=dict)
 
     def strength_of(self, warrant_type: WarrantType) -> int:
         return self.warrant_strength_order.get(warrant_type, 0)
@@ -227,11 +318,13 @@ class AttestVerifier:
         self,
         profile: Optional[DeploymentProfile] = None,
         grounds_resolver: Optional[GroundsResolver] = None,
+        authority_resolver: Optional[AuthorityResolver] = None,
         signature_verifier: Optional[SignatureVerifier] = None,
     ):
         self.profile = profile or load_profile()
         self.grounds_resolver = grounds_resolver or FailClosedResolver()
-        self.signature_verifier = signature_verifier or StubSignatureVerifier()
+        self.authority_resolver = authority_resolver or FailClosedAuthorityResolver()
+        self.signature_verifier = signature_verifier or Ed25519SignatureVerifier(self.profile.signer_public_keys)
 
     def max_chain_strength(self, chain: List[AttestMessage]) -> int:
         strengths = [self.profile.strength_of(m.warrant.type) for m in chain if m.warrant]
@@ -258,20 +351,55 @@ class AttestVerifier:
     def _grounds_reference_external_authority(self, grounds: List[str]) -> bool:
         return any(any(g.startswith(prefix) for prefix in self.profile.external_authority_prefixes) for g in grounds)
 
-    def _authority_receipt_binds_message(self, receipt: AuthorityReceipt, msg: AttestMessage, computed_id: str) -> bool:
-        message_match = receipt.bound_message_id in (None, computed_id)
-        parent_match = not receipt.bound_parent_ids or receipt.bound_parent_ids == msg.parents
-        return message_match and parent_match
+    def _authority_receipt_binds_message(self, receipt: AuthorityReceipt, msg: AttestMessage, computed_core_id: str) -> bool:
+        if receipt.bound_message_id != computed_core_id:
+            return False
+        if receipt.bound_parent_ids != msg.parents:
+            return False
+        return True
 
-    def _has_local_authority_receipt(self, msg: AttestMessage, computed_id: str) -> bool:
+    def _authority_receipt_unexpired(self, receipt: AuthorityReceipt) -> bool:
+        if receipt.expires_at is None:
+            return True
+        expires = _parse_iso8601(receipt.expires_at)
+        if expires is None:
+            return False
+        return expires >= datetime.now(timezone.utc)
+
+    def _evaluate_authority_receipts(self, msg: AttestMessage, computed_core_id: str) -> Tuple[bool, List[str]]:
+        errors: List[str] = []
+        if msg.frame not in self.profile.authority_required_frames:
+            return True, errors
+        if not msg.authority_receipts:
+            errors.append("AUTHORITY_RECEIPT_REQUIRED")
+            return False, errors
+
+        valid_receipt_found = False
         for receipt in msg.authority_receipts:
-            if (
-                receipt.kind in self.profile.accepted_authority_kinds
-                and any(receipt.receipt_ref.startswith(prefix) for prefix in self.profile.local_authority_prefixes)
-                and self._authority_receipt_binds_message(receipt, msg, computed_id)
-            ):
-                return True
-        return False
+            resolution = self.authority_resolver.resolve(receipt.receipt_ref)
+            if resolution.status != "resolved":
+                errors.append(f"AUTHORITY_RECEIPT_UNRESOLVED:{receipt.receipt_ref}")
+                continue
+            if receipt.kind not in self.profile.accepted_authority_kinds:
+                errors.append(f"AUTHORITY_KIND_UNACCEPTED:{receipt.kind}")
+                continue
+            if not any(receipt.receipt_ref.startswith(prefix) for prefix in self.profile.local_authority_prefixes):
+                errors.append(f"AUTHORITY_RECEIPT_PREFIX_INVALID:{receipt.receipt_ref}")
+                continue
+            if not self._authority_receipt_binds_message(receipt, msg, computed_core_id):
+                errors.append("AUTHORITY_RECEIPT_BINDING_INVALID")
+                continue
+            if not self._authority_receipt_unexpired(receipt):
+                errors.append("AUTHORITY_RECEIPT_EXPIRED")
+                continue
+            if not receipt.nonce:
+                errors.append("AUTHORITY_RECEIPT_NONCE_REQUIRED")
+                continue
+            valid_receipt_found = True
+
+        if not valid_receipt_found and not errors:
+            errors.append("AUTHORITY_RECEIPT_REQUIRED")
+        return valid_receipt_found, errors
 
     def _warrant_required(self, msg: AttestMessage) -> bool:
         if msg.frame in ("ASSERT", "HYPOTHESIZE", "ENDORSE", "DISSENT"):
@@ -289,6 +417,65 @@ class AttestVerifier:
                 issues.append(f"GROUND_NAMESPACE_UNSUPPORTED:{ground}")
         return issues
 
+    def _apply_ground_resolution_policy(self, warrant_type: WarrantType, unresolved: List[str], result: Dict[str, List[str]]) -> None:
+        policy_map = {
+            "OBSERVED": self.profile.grounds_resolution_policy.unresolved_observed,
+            "DERIVED": self.profile.grounds_resolution_policy.unresolved_derived,
+            "RETRIEVED": self.profile.grounds_resolution_policy.unresolved_retrieved,
+            "REPORTED": self.profile.grounds_resolution_policy.unresolved_reported,
+        }
+        policy = policy_map.get(warrant_type, "hard_fail")
+        if warrant_type == "OBSERVED":
+            code = "OBSERVED_GROUNDS_NOT_ARTIFACT_BACKED"
+        else:
+            code = "GROUNDS_UNRESOLVED"
+        if policy == "hard_fail":
+            result["hard_fail"].append(code)
+        elif policy == "soft_flag":
+            result["soft_flag"].append(code)
+        else:
+            result["pass_scope_limit"].append(code)
+        result["soft_flag"].append(f"GROUND_RESOLUTION_FAILURES:{','.join(unresolved)}")
+
+    def _build_known_message_map(self, known_messages: List[AttestMessage]) -> Dict[str, AttestMessage]:
+        message_map: Dict[str, AttestMessage] = {}
+        for message in known_messages:
+            message_map[message.compute_id()] = message
+            if message.id:
+                message_map[message.id] = message
+            for target in message.targets:
+                if message.frame == "RETRACT":
+                    message_map.setdefault(target, message)
+        return message_map
+
+    def _is_retracted_at_or_before_message(self, parent_id: str, msg: AttestMessage, known_messages: List[AttestMessage]) -> bool:
+        for candidate in known_messages:
+            if candidate.frame != "RETRACT":
+                continue
+            if parent_id not in candidate.targets:
+                continue
+            if candidate.ordering_anchor <= msg.ordering_anchor:
+                return True
+        return False
+
+    def _transitively_relies_on_retracted_target(self, msg: AttestMessage, known_messages: List[AttestMessage]) -> bool:
+        if msg.frame not in ("ASSERT", "COMMIT", "ENDORSE"):
+            return False
+        known_map = self._build_known_message_map(known_messages)
+        visited: Set[str] = set()
+        queue = deque(msg.parents)
+        while queue:
+            parent_id = queue.popleft()
+            if parent_id in visited:
+                continue
+            visited.add(parent_id)
+            if self._is_retracted_at_or_before_message(parent_id, msg, known_messages):
+                return True
+            parent_message = known_map.get(parent_id)
+            if parent_message:
+                queue.extend(parent_message.parents)
+        return False
+
     def verify(
         self,
         msg: AttestMessage,
@@ -300,6 +487,7 @@ class AttestVerifier:
         known_messages = known_messages or []
 
         computed_id = msg.compute_id()
+        computed_core_id = msg.compute_core_id()
         if msg.id is not None and msg.id != computed_id:
             result["hard_fail"].append("ID_MISMATCH")
 
@@ -316,12 +504,8 @@ class AttestVerifier:
         if msg.warrant and msg.warrant.type in ("OBSERVED", "DERIVED", "RETRIEVED", "REPORTED"):
             if msg.warrant.grounds and not self._grounds_all_resolved(ground_resolutions):
                 unresolved = [resolution.ref for resolution in ground_resolutions if resolution.status != "resolved"]
-                if msg.warrant.type == "OBSERVED":
-                    result["hard_fail"].append("OBSERVED_GROUNDS_NOT_ARTIFACT_BACKED")
-                else:
-                    result["hard_fail"].append("GROUNDS_UNRESOLVED")
-                result["soft_flag"].append(f"GROUND_RESOLUTION_FAILURES:{','.join(unresolved)}")
-                if msg.warrant.confidence:
+                self._apply_ground_resolution_policy(msg.warrant.type, unresolved, result)
+                if msg.warrant.confidence and self.profile.grounds_resolution_policy.confidence_without_method_artifact == "soft_flag":
                     result["soft_flag"].append("CONFIDENCE_DOWNGRADED_TO_ASSUMED")
 
         if msg.frame == "ENDORSE" and msg.warrant:
@@ -352,42 +536,36 @@ class AttestVerifier:
         if msg.frame == "COMMIT" and self._relay_parent_present(msg):
             result["soft_flag"].append("RELAY_UPTAKE_MISSING")
 
-        has_external_grounds = bool(msg.warrant and self._grounds_reference_external_authority(msg.warrant.grounds))
-        has_local_authority = self._has_local_authority_receipt(msg, computed_id)
+        authority_valid, authority_errors = self._evaluate_authority_receipts(msg, computed_core_id)
+        result["hard_fail"].extend(authority_errors)
 
-        if msg.authority_receipts and not has_local_authority and msg.frame in self.profile.authority_required_frames:
-            result["hard_fail"].append("AUTHORITY_RECEIPT_BINDING_INVALID")
+        has_external_grounds = bool(msg.warrant and self._grounds_reference_external_authority(msg.warrant.grounds))
 
         if (
             self.profile.require_local_authority_chain_for_state_change
             and msg.frame in self.profile.authority_required_frames
-            and not has_local_authority
+            and not authority_valid
         ):
             result["hard_fail"].append("LOCAL_AUTHORITY_CHAIN_REQUIRED")
 
         if msg.frame == "COMMIT" and has_external_grounds:
-            if has_local_authority:
+            if authority_valid:
                 result["soft_flag"].append("EXTERNAL_EVIDENCE_PRESENT_WITH_LOCAL_AUTHORITY")
             else:
                 result["soft_flag"].append("EXTERNAL_TELEMETRY_USED_AS_EXECUTION_AUTHORITY")
 
         if msg.frame == "ENDORSE" and has_external_grounds:
-            if has_local_authority:
+            if authority_valid:
                 result["soft_flag"].append("EXTERNAL_EVIDENCE_PRESENT_WITH_LOCAL_AUTHORITY")
             else:
                 result["soft_flag"].append("EXTERNAL_REMEDIATION_LAUNDERED_INTO_AUTHORITY")
 
-        retracted_targets = {target for m in known_messages if m.frame == "RETRACT" for target in m.targets}
-        if msg.frame in ("ASSERT", "COMMIT", "ENDORSE") and retracted_targets and any(parent in retracted_targets for parent in msg.parents):
+        if self._transitively_relies_on_retracted_target(msg, known_messages):
             result["hard_fail"].append("RETRACTED_TARGET_STILL_RELIED_ON")
 
         relay_hops = [parent for parent in msg.parents if parent.startswith("relay:hop:")]
         if msg.frame == "ASSERT" and len(relay_hops) >= 2:
             result["pass_scope_limit"].append("RELAY_CHAIN_VISIBLE")
-
-        if msg.frame == "ASSERT" and msg.content == "aggregate: dissent referenced but minimized":
-            result["soft_flag"].append("DISSENT_MEANING_LAUNDERED")
-            result["pass_scope_limit"].append("DISSENT_PRESENCE_PRESERVED_ONLY")
 
         if msg.mode == "opaque":
             result["pass_scope_limit"].append("OPAQUE_PAYLOAD_TRUTH_BINDING_LIMIT")

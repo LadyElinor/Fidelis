@@ -1,16 +1,21 @@
+import base64
 import json
 import re
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
+from nacl.signing import SigningKey
+
 from attest_ref_impl import (
     AcceptAllSignatureVerifier,
     AttestMessage,
     AttestVerifier,
+    AuthorityResolution,
     DeploymentProfile,
-    DeterministicSignatureVerifier,
+    Ed25519SignatureVerifier,
+    GroundsResolution,
+    StaticAuthorityResolver,
     StaticGroundsResolver,
-    canonicalize_json_bytes,
     load_profile,
 )
 
@@ -22,7 +27,7 @@ EXAMPLE_EXPECTATIONS: List[Tuple[str, str]] = [
     ("Case 4. ENDORSE with new-but-correlated grounds", "soft_flag"),
     ("Case 5. RELAY consumed without explicit uptake", "hard_fail"),
     ("Case 6. Unsigned reliance-bearing ASSERT", "hard_fail"),
-    ("Case 7. Dissent ID preserved but meaning laundered", "soft_flag"),
+    ("Case 7. Dissent ID preserved but meaning laundered", "pass"),
     ("Case 8. Aggregate relies on already retracted message (ancestry-reachable)", "hard_fail"),
     ("Case 9. Relay-chain lineage vs mutable handler trail", "pass_scope_limit"),
     ("Case 10. Opaque payload with strong-looking warrant envelope", "pass_scope_limit"),
@@ -31,6 +36,9 @@ EXAMPLE_EXPECTATIONS: List[Tuple[str, str]] = [
     ("Case 13. External telemetry with explicit local approval receipt", "soft_flag"),
     ("Case 14. Misbound authority receipt on COMMIT", "hard_fail"),
 ]
+
+SIGNING_KEY = SigningKey.generate()
+VERIFY_KEY_B64 = base64.b64encode(bytes(SIGNING_KEY.verify_key)).decode("ascii")
 
 
 def harness_profile(signature_required_frames=None) -> DeploymentProfile:
@@ -48,6 +56,7 @@ def crypto_profile() -> DeploymentProfile:
     profile.signature_required_frames = {"ASSERT", "ENDORSE", "DISSENT"}
     profile.signature_required_retract_when_warranted = True
     profile.signature_recommended_frames = {"COMMIT"}
+    profile.signer_public_keys = {"agent:crypto-tester": VERIFY_KEY_B64}
     return profile
 
 
@@ -105,6 +114,23 @@ def infer_adopted_chain(name: str) -> List[AttestMessage]:
             )
         ]
 
+    if name == "Case 8. Aggregate relies on already retracted message (ancestry-reachable)":
+        intermediate = make_message(
+            {
+                "id": "msg:intermediate-b",
+                "frame": "ASSERT",
+                "mode": "legible",
+                "from": "agent:planner-0",
+                "to": "agent:planner-1",
+                "parents": ["h:message-a"],
+                "ordering_anchor": ["2026-06-29T20:34:00Z", 120],
+                "warrant": {"type": "DERIVED", "grounds": ["msg:h:message-a"]},
+                "content": "Intermediate aggregate over A.",
+            },
+            keep_id=False,
+        )
+        return [intermediate]
+
     return []
 
 
@@ -123,7 +149,8 @@ def infer_known_messages(name: str) -> List[AttestMessage]:
                 "content": "Withdraw premise A due to upstream correction.",
             }
         )
-        return [retract]
+        intermediate = infer_adopted_chain(name)[0]
+        return [retract, intermediate]
 
     return []
 
@@ -169,9 +196,19 @@ def collect_resolver_known_refs(examples: Dict[str, dict], known_messages: List[
             "msg:h:message-a",
             "h:message-a",
             "receipt:approval-001",
+            "approval:ops-001",
             "policy:local-ops-v1",
         }
     )
+    return refs
+
+
+def collect_known_authorities(case_name: str) -> Set[str]:
+    refs = set()
+    if case_name == "Case 4. ENDORSE with new-but-correlated grounds":
+        refs.add("policy:review-only-endorse")
+    if case_name == "Case 13. External telemetry with explicit local approval receipt":
+        refs.add("approval:ops-001")
     return refs
 
 
@@ -179,11 +216,27 @@ def materialize_special_references(name: str, data: dict) -> dict:
     data = json.loads(json.dumps(data))
 
     if name == "Case 8. Aggregate relies on already retracted message (ancestry-reachable)":
-        data["parents"] = ["h:message-a"]
+        data["parents"] = ["msg:intermediate-b"]
         data["warrant"]["grounds"] = ["msg:h:message-a"]
 
     if name == "Case 6. Unsigned reliance-bearing ASSERT":
         data["sig"] = None
+
+    if name == "Case 4. ENDORSE with new-but-correlated grounds":
+        data["authority_receipts"] = [
+            {
+                "kind": "local_policy",
+                "receipt_ref": "policy:review-only-endorse",
+                "scope": "general",
+                "issuer": "policy:attest-default-v02",
+                "bound_message_id": "PENDING",
+                "bound_parent_ids": data["parents"],
+                "expires_at": "2099-01-01T00:00:00Z",
+                "nonce": "nonce-policy-001",
+            }
+        ]
+        temp = make_message(data)
+        data["authority_receipts"][0]["bound_message_id"] = temp.compute_core_id()
 
     if name == "Case 13. External telemetry with explicit local approval receipt":
         data["authority_receipts"] = [
@@ -192,8 +245,14 @@ def materialize_special_references(name: str, data: dict) -> dict:
                 "receipt_ref": "approval:ops-001",
                 "scope": "state_change",
                 "issuer": "human:operator",
+                "bound_message_id": "PENDING",
+                "bound_parent_ids": data["parents"],
+                "expires_at": "2099-01-01T00:00:00Z",
+                "nonce": "nonce-ops-001",
             }
         ]
+        temp = make_message(data)
+        data["authority_receipts"][0]["bound_message_id"] = temp.compute_core_id()
 
     return data
 
@@ -208,9 +267,9 @@ def classify_result(result: Dict[str, List[str]]) -> str:
     return "pass"
 
 
-def deterministic_test_sig(msg: AttestMessage) -> str:
-    digest = canonicalize_json_bytes(msg.canonical_dict())
-    return f"testsig:{__import__('hashlib').sha256((msg.from_ + ':').encode('utf-8') + digest).hexdigest()}"
+def sign_ed25519_message(msg: AttestMessage) -> str:
+    signature = SIGNING_KEY.sign(msg.canonical_bytes()).signature
+    return "ed25519:" + base64.b64encode(signature).decode("ascii")
 
 
 def build_crypto_vector() -> AttestMessage:
@@ -227,7 +286,7 @@ def build_crypto_vector() -> AttestMessage:
         }
     )
     payload = msg.model_dump(by_alias=True)
-    payload["sig"] = deterministic_test_sig(msg)
+    payload["sig"] = sign_ed25519_message(msg)
     return AttestMessage.model_validate(payload)
 
 
@@ -254,7 +313,9 @@ def run_tests() -> int:
                 "scope": "state_change",
                 "issuer": "human:operator",
                 "bound_message_id": "deadbeef",
-                "bound_parent_ids": ["relay:hop:other"]
+                "bound_parent_ids": ["relay:hop:other"],
+                "expires_at": "2099-01-01T00:00:00Z",
+                "nonce": "nonce-invalid"
             }
         ],
         "content": "Apply remediation from external issue.",
@@ -265,16 +326,18 @@ def run_tests() -> int:
         known_messages = infer_known_messages(name)
         adopted_chain = infer_adopted_chain(name)
         known_refs = collect_resolver_known_refs(synthetic_examples, known_messages + adopted_chain, name)
+        authority_refs = collect_known_authorities(name)
         profile = harness_profile({"ASSERT"} if name == "Case 6. Unsigned reliance-bearing ASSERT" else set())
         verifier = AttestVerifier(
             profile=profile,
             grounds_resolver=StaticGroundsResolver(known_refs),
+            authority_resolver=StaticAuthorityResolver(authority_refs),
             signature_verifier=AcceptAllSignatureVerifier(),
         )
 
         data = materialize_special_references(name, synthetic_examples[name])
         msg = make_message(data)
-        result = verifier.verify(msg, adopted_chain=adopted_chain, known_messages=known_messages)
+        result = verifier.verify(msg, adopted_chain=adopted_chain, known_messages=known_messages + adopted_chain)
         actual = classify_result(result)
         ok = actual == expected
         if not ok:
@@ -285,7 +348,8 @@ def run_tests() -> int:
     crypto_verifier = AttestVerifier(
         profile=crypto_profile(),
         grounds_resolver=StaticGroundsResolver({"src:doi:10.1234/example/p7"}),
-        signature_verifier=DeterministicSignatureVerifier(),
+        authority_resolver=StaticAuthorityResolver(set()),
+        signature_verifier=Ed25519SignatureVerifier({"agent:crypto-tester": VERIFY_KEY_B64}),
     )
     crypto_result = crypto_verifier.verify(crypto_msg)
     crypto_ok = classify_result(crypto_result) == "pass"

@@ -7,16 +7,17 @@ This document separates three layers of change so Attest can evolve without mixi
 ### 1.1 Normative canonicalization
 Attest v0.2 should replace draft-level canonicalization guidance with a precise interoperable rule set.
 
-Required clarifications:
-- omitted fields versus explicit `null`
-- Unicode normalization form
-- scalar and numeric encoding rules
-- list-order preservation rules
-- canonical field ordering
-- canonical byte examples with golden test vectors
+Implemented in the reference model now:
+- explicit canonical field ordering
+- NFC normalization
+- deterministic JSON encoding with `allow_nan=False`
+
+Still needed for a stronger v0.2 claim:
+- numeric cross-language golden vectors
+- explicit omitted-versus-null compatibility rules in the normative spec text
 
 ### 1.2 First-class deployment profile artifact
-Profiles should become first-class protocol artifacts rather than remaining mostly implementation-side objects.
+Profiles are now represented as first-class artifacts in draft form.
 
 A profile artifact should declare at minimum:
 - `profile_id`
@@ -27,66 +28,71 @@ A profile artifact should declare at minimum:
 - resolver policy and supported grounds namespaces
 - ordering-anchor comparison semantics
 - independence policy label
+- signer public keys or key-discovery indirection where deployments allow it
 
 ### 1.3 Grounds namespace and resolver contract
-Attest v0.2 should define reference classes and minimum verifier behavior.
+Attest now defines reference classes and minimum verifier behavior in the reference implementation.
 
-Suggested namespaces:
+Current namespaces:
 - `msg:` message IDs
 - `tool:` tool-call receipts
 - `src:` external source citations
 - `doc:` document anchors
 - `receipt:` authority or execution receipts
 - `policy:` local policy artifacts
+- `h:` legacy content-addressed message identifiers
 
-Suggested verifier outcomes:
+Current resolution outcomes:
 - resolved
 - unresolved
 - stale
-- syntactically malformed
+- malformed
 - inaccessible-under-profile
 
 ### 1.4 Authority receipt binding
-Authority receipts should bind not just to generic approval class, but to the concrete state-changing reliance context.
+Authority receipts now bind not just to generic approval class, but to the concrete state-changing reliance context.
 
-Suggested binding fields:
-- `bound_message_id`
-- `bound_parent_ids` or adopted-chain root
+Current binding fields:
+- `bound_message_id` (bound to the authority-excluded core digest to avoid self-reference loops)
+- `bound_parent_ids`
 - `scope`
 - `issuer`
 - optional `expires_at`
-- optional nonce or approval token
+- required nonce in current reference behavior for authority-required frames
 
 ### 1.5 Dissent-layer split
-Attest v0.2 should explicitly distinguish:
+Attest v0.2 distinguishes:
 - dissent-presence preservation, artifact-local and sometimes hard-checkable
 - dissent-faithfulness preservation, semantic and soft
+
+The generic verifier no longer contains the old example-specific dissent oracle.
 
 ## 2. Default-profile changes
 
 ### 2.1 Signature policy
-The default profile should continue to require signatures for reliance-bearing `ASSERT`, `ENDORSE`, `DISSENT`, and evidential `RETRACT`, while keeping evidence-bearing `COMMIT` at recommended or required depending on deployment risk.
+The default profile continues to require signatures for reliance-bearing `ASSERT`, `ENDORSE`, `DISSENT`, and evidential `RETRACT`, while keeping evidence-bearing `COMMIT` at recommended status in the draft default profile.
 
 ### 2.2 Authority policy
-The default profile should explicitly declare which frame classes require local authority receipts and how authority can be proven without laundering external evidence into local authorization.
+The default profile explicitly declares which frame classes require local authority receipts and how authority can be proven without laundering external evidence into local authorization.
 
 ### 2.3 Resolver policy
-The default profile should declare which grounds namespaces are accepted and whether unresolved grounds hard-fail, soft-flag, or remain profile-unsupported.
+The default profile now carries a `grounds_resolution_policy` block that is consumed by the reference verifier instead of ignored.
 
 ## 3. Reference implementation changes
 
 ### 3.1 Canonicalization implementation
-Move the reference implementation closer to a real canonicalization target with explicit tests and cross-language reproducibility fixtures.
+The reference implementation moved closer to a real canonicalization target with explicit tests and cross-case reproducibility checks.
 
 ### 3.2 Signed conformance vectors
-Add real Ed25519 test vectors:
-- valid signature over canonical bytes
-- invalid signature with unchanged bytes
-- valid signature over differently serialized but canonically equivalent payload
-- wrong-key verification failure
+The reference repo now includes real Ed25519 signing and verification tests using PyNaCl-backed vectors in the harness and pytest suite.
+
+Still recommended next additions:
+- wrong-key verification failure vector
+- same-logical-message / alternate-source-serialization vector
+- invalid-signature corruption vector
 
 ### 3.3 Harness split
-Keep two harness classes:
+Two harness classes remain useful:
 - semantic/non-crypto fixture harness for protocol logic
 - crypto conformance harness for real signing/verification vectors
 
@@ -101,7 +107,7 @@ Verifier outputs should distinguish:
 ## 4. Documentation changes
 
 ### 4.1 Pitch reconciliation
-Narrative artifacts such as `attest.txt` should be rewritten to match the narrower, more honest scope already present in the spec and review notes.
+Narrative artifacts such as `attest.txt` have been rewritten to match the narrower, more honest scope already present in the spec and review notes.
 
 ### 4.2 Layer separation
 Repository docs should distinguish clearly between:
@@ -118,3 +124,12 @@ Repository docs should distinguish clearly between:
 5. real signed test vectors
 6. dissent-layer split in examples and verifier outputs
 7. pitch/document reconciliation
+
+## 6. Newly verified hardening pass
+The current reference implementation now additionally enforces:
+- real authority resolution instead of prefix-only authorization
+- mandatory authority binding for authority-required frames
+- expiry and nonce checks for local authority receipts
+- ordering-aware, ancestry-walking retract checks
+- consumed grounds-resolution policy instead of decorative profile drift
+- removal of the generic example-specific dissent oracle from verifier logic

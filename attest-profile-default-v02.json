@@ -35,5 +35,6 @@
   "external_authority_prefixes": ["src:sentry-event", "src:external-issue", "src:ticket", "src:web", "src:github-issue"],
   "relay_parent_prefixes": ["h:upstream-relay", "relay:hop:"],
   "ordering_anchor_semantics": "timestamp-sequence-total-order",
-  "independence_policy_name": "declared-lineage-default"
+  "independence_policy_name": "declared-lineage-default",
+  "signer_public_keys": {}
 }
