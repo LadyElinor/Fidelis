@@ -1,4 +1,4 @@
-# Attest Specification (Draft v0.1)
+# Attest Specification (Draft v0.2)
 
 ## 1. Purpose
 
@@ -74,7 +74,8 @@ Each Attest message has two major parts:
 1. **Envelope**
    - typed act
    - sender/recipient context
-   - warrant
+   - epistemic warrant (on assertive frames)
+   - deontic warrant / authority (on performative or state-changing frames)
    - lineage
    - integrity material
 
@@ -98,9 +99,11 @@ Attest uses a small closed set of frame types.
 
 - `DELEGATE`
   - Sender assigns a task, optionally with constraints and expected deliverables.
+  - A `DELEGATE` exercises the authority to delegate and may also make epistemic claims about the delegated task or its basis; it must carry deontic warrant (§8A) whose authority the sender holds and does not exceed (§8A.5).
 
 - `COMMIT`
   - Sender commits to perform an action or maintain a constraint.
+  - `COMMIT` frames that are state-changing under the deployment's declared `state_changing_frames` policy must carry deontic warrant (§8A) and declare `action_scope` (§8A.6).
 
 - `HYPOTHESIZE`
   - Sender proposes a tentative explanatory or predictive claim with declared uncertainty.
@@ -115,6 +118,7 @@ Attest uses a small closed set of frame types.
   - Sender adopts, elevates, or normatively relies on previously relayed or reported content under its own declared warrant.
   - **Warrant Ceiling Rule**: An ENDORSE must not declare a warrant type stronger than the strongest type in the adopted chain unless it supplies new grounds sufficient to justify the stronger classification; whether those grounds are genuinely independent is evaluated separately under the protocol's soft independence checks.
   - If no qualifying new grounds are supplied, the ENDORSE inherits the maximum warrant strength of the adopted chain.
+  - An `ENDORSE` carries deontic warrant (§8A) only when the deployment places it in `state_changing_frames`; by default it does not.
 
 - `DISSENT`
   - Sender explicitly opposes, qualifies, or blocks another message.
@@ -156,7 +160,9 @@ If mode is `opaque`, a verifier may still validate:
 
 But a verifier may not be able to interpret the semantic content itself.
 
-## 8. Warrant model
+## 8. Epistemic warrant model
+
+This section governs *epistemic* warrant, how a claim is known. Authorization, by what right an agent may act, is governed by the parallel deontic warrant layer (§8A). "Warrant" without qualifier means epistemic warrant.
 
 The following frames are warrant-bearing and must include a warrant whenever they make or adopt an epistemic or normative commitment:
 
@@ -244,6 +250,76 @@ This rule applies at minimum to:
 
 "Assertion without receipt" is a syntax violation, not a style issue. The same rule extends to any warrant-bearing evidential act, not only plain assertions.
 
+## 8A. Deontic warrant (authority) model
+
+Deontic warrant answers *by what right the sender may perform the act a message enacts.* It is the authorization counterpart to §8 epistemic warrant and has the same shape: a typed, resolvable, bindable object. The two axes are orthogonal, a message may carry neither, either, or both. An `ASSERT` claims knowledge but exercises no authority, no deontic warrant. A state-changing `COMMIT` asserts nothing but exercises authority, so deontic warrant is required. A `DELEGATE` does both.
+
+### 8A.1 Authority object fields
+
+A deontic warrant contains:
+
+- `type`
+- `authority`, a set of references, all of which must resolve
+- `scope`, the action class authorized
+- `binds`, the concrete reliance context: `{ message, parents }`
+- `expires`, optional ordering or anchor bound
+- `nonce`, optional single-use token
+
+The message additionally declares `action_scope` on state-changing frames (§8A.6).
+
+### 8A.2 Authority types
+
+The type set is closed and mirrors the epistemic warrant types (§8.2):
+
+- `HUMAN_APPROVAL`, a human authorizer approved this specific act and the reference resolves to a signed approval record. This is the deontic analog of `OBSERVED`.
+- `POLICY`, a pre-registered local policy permits the act class and the reference resolves to a policy artifact. This is the analog of `DERIVED`.
+- `CAPABILITY`, a held, scoped grant or credential licenses the act and the reference resolves to a capability token. This is the analog of `RETRIEVED`.
+- `DELEGATED`, authority passed down an explicit chain from a holding principal and the reference resolves to the cited delegating grant. This is the analog of `REPORTED`.
+- `SANDBOX`, the act is permitted by containment and the reference resolves to the enforcement policy; it authorizes only within the enforced boundary.
+- `NONE`, claimed with no resolvable basis. This is the analog of `ASSUMED`, useful for explicit negative examples and test fixtures. `NONE` is the bottom element and is malformed on any state-changing frame.
+
+As with §8.2.1, deployments may declare an authority-strength lattice with a documented default. Compatibility depends on publishing that lattice, and the ordering must not be hard-coded into conformance. By default `HUMAN_APPROVAL` and `POLICY` are strongest local roots, `CAPABILITY` inherits its issuing root, `DELEGATED` inherits the minimum of its chain, and `NONE` is bottom.
+
+### 8A.3 Authority-namespace contract and the external-source exclusion
+
+Parallel to the grounds-namespace contract, a deployment profile declares which reference namespaces are admissible as authority, default local set: `approval:`, `policy:`, `grant:`, `capability:`, `sandbox:`.
+
+Namespaces admissible as epistemic grounds but declared external, external `src:` references for telemetry, tickets, issues, or web material, and external `tool:` outputs, must not satisfy a deontic authority requirement. External evidence may inform belief; it may never constitute authority. A deontic warrant whose `authority` set contains no admissible local authority reference is malformed, even when it cites resolvable external evidence. The profile may tighten the admissible-authority set but must not waive this exclusion.
+
+### 8A.4 Binding to the concrete reliance context
+
+A deontic warrant must bind to the act it authorizes. `binds.message` must equal the message's own computed ID, or be establishable as covering it, for example an approval issued against the adopted-chain root the message derives from, and `binds.parents` must match the message's `parents`. An absent binding, or a binding that does not match, is malformed on a state-changing frame. Unbound authority is never universally valid.
+
+### 8A.5 Delegation chains and the delegation ceiling
+
+`DELEGATED` authority must cite a delegating grant that resolves, and the chain must terminate in a holding principal whose own authority is non-`DELEGATED`. Two hard constraints apply:
+
+- **Delegation ceiling**. The effective scope and strength of `DELEGATED` authority must not exceed what the delegating principal held. An agent may not delegate authority it does not hold. This is the deontic analog of the endorsement ceiling (§13.3).
+- **No delegation cycles**. If the delegation graph contains a cycle, the authority is malformed. This is the deontic analog of circular reasoning and reuses the grounds or ancestry cycle check.
+
+### 8A.6 Scope coverage
+
+State-changing frames must declare `action_scope`, default ontology, profile-declared and extensible: `state_change`, `package_install`, `shell_exec`, `network_fetch`, `general`. The deontic warrant's `scope` must cover the message's `action_scope`.
+
+- Hard: typed scope non-coverage, for example authority scoped `network_fetch` while the act declares `state_change`, is a well-formedness failure.
+- Soft: whether a covering scope is substantively appropriate to the act described in `content` is a semantic judgment (§15.8).
+
+### 8A.7 Well-formedness rules
+
+For any message whose frame is in the deployment's `state_changing_frames`, default `{COMMIT}`, or is `DELEGATE`:
+
+1. It must carry a `deontic` object. Absence is malformed.
+2. Every reference in `deontic.authority` must resolve, under the authority-namespace contract, to an inspectable authorization artifact. Any unresolved authority reference is malformed. This is parallel to §8.5.
+3. `deontic.binds` must be present and must match per §8A.4. Absent or non-matching binding is malformed.
+4. `deontic.authority` must contain at least one admissible local authority reference (§8A.3). External-only authority is malformed, even with resolvable external grounds.
+5. `DELEGATED` authority must satisfy the delegation ceiling and be acyclic (§8A.5). A ceiling violation or delegation cycle is malformed.
+6. If `expires` or `nonce` are present they must be enforced. Where a trusted ordering authority exists, expired or replayed authority is malformed. Without a trusted ordering authority, expiry or replay degrades to a soft audit signal, consistent with the retract-ordering limit (§18).
+7. `deontic` and `action_scope` are identity-bearing (§10.2). Authority cannot be added, removed, or retargeted without changing the message ID and breaking integrity.
+
+### 8A.8 Honest scope boundary
+
+This layer guarantees that no well-formed state-changing message exists without a resolved, bound, non-external, non-circular authority attributable to a holding principal. It does not guarantee the authorization is correct, wise, or uncoerced: a human can approve the wrong act, a policy can be misapplied, and a capability can be over-broad. Authority becomes attributable and structurally disciplined; its substance remains a soft judgment (§15.8). Resolved authority does not make an action justified, only attributable. This mirrors the epistemic boundary: resolving grounds does not make a claim true (§4, §7.2).
+
 ## 9. Provenance and lineage
 
 Each message must carry ancestry sufficient to reconstruct communication history.
@@ -274,7 +350,7 @@ Lineage allows a verifier to detect:
 
 ## 10. Canonicalization and integrity model
 
-Attest messages are content-addressed, which means canonical serialization is a v0.1 correctness requirement, not a future refinement.
+Attest messages are content-addressed, which means canonical serialization is a v0.2 correctness requirement, not a future refinement.
 
 ### 10.1 Canonical serialization
 
@@ -286,7 +362,7 @@ At minimum, canonicalization must fix:
 - field ordering
 - scalar encoding rules
 - list ordering rules where order is semantically meaningful
-- treatment of omitted vs null fields
+- treatment of omitted vs null fields: optional envelope fields that are absent must be omitted from the canonical form, not serialized as null, so that adding optional fields such as deontic warrant (§8A) is backward-compatible for messages that do not use them
 - string normalization rules
 
 Two conformant implementations presented with the same logical message must produce the same canonical byte sequence.
@@ -299,14 +375,16 @@ A message ID is the hash of the canonicalized form of exactly these fields:
 - payload mode
 - sender metadata
 - recipient metadata or scope
-- warrant
+- warrant (epistemic)
+- deontic warrant (authority) when present
+- action_scope when present
 - content payload
 - parents
 - in-reply-to reference when present
 - target references when present
 - ordering anchor
 
-No implementation may add or omit identity-bearing fields from this set while claiming compatibility.
+No implementation may add or omit identity-bearing fields from this set while claiming compatibility. Consistent with §10.1, fields marked "when present" are omitted from the canonical form when absent, so a message carrying no deontic warrant hashes identically to the pre-§8A form.
 
 ### 10.3 Signatures and origin binding
 
@@ -382,7 +460,7 @@ This rule is strongest as an audit constraint and weakest where enforcement depe
 
 ### 13.3 Endorsement ceiling
 
-An `ENDORSE` (or `ASSERT` that adopts prior relayed or reported content) must obey the warrant ceiling.
+An `ENDORSE` or `ASSERT` that adopts prior relayed or reported content must obey the warrant ceiling.
 
 The declared `warrant.type` shall not exceed the strongest type present in the adopted chain unless the endorser supplies new, independent, and sufficient grounds.
 
@@ -399,6 +477,8 @@ Enforcement:
 - **soft check**: verifiers should flag cases where new grounds exist formally but fail genuine independence or substantive justification
 
 Verifiers should distinguish hard failures from soft independence concerns explicitly.
+
+The deontic analog of this ceiling is the delegation ceiling (§8A.5): an agent may not delegate authority it does not hold, and delegation graphs must be acyclic.
 
 ## 14. Canonical message shape
 
@@ -438,6 +518,28 @@ msg{
     grounds: [h:9f2a..., note:"sample size underdetermines universality"]
   }
   content: "Treat the cited figure as a central tendency, not a hard bound."
+}
+```
+
+State-changing commit example:
+
+```text
+msg{
+  id: h:7be3...
+  frame: COMMIT
+  mode: legible
+  from: agent:executor-2
+  action_scope: state_change
+  parents: [h:plan-root...]
+  ordering_anchor: [2026-06-30T15:00:00Z, 204]
+  deontic: {
+    type: HUMAN_APPROVAL,
+    authority: [approval:ops-77],
+    scope: state_change,
+    binds: { message: h:7be3..., parents: [h:plan-root...] }
+  }
+  content: "Apply migration 0041 to the production store."
+  sig: ed25519:...
 }
 ```
 
@@ -491,6 +593,26 @@ This check does not by itself solve hidden common-mode error such as shared trai
 
 This becomes strong only for artifact-local checks such as whether a known dissent message ID was retained in a fully visible aggregate ancestry. It remains soft for the semantically stronger question of whether the aggregate faithfully represented the meaning and force of the dissent. All such checks weaken when source-set visibility is partial.
 
+### 15.7 Authority well-formedness (hard)
+
+On state-changing and `DELEGATE` frames the verifier applies §8A.7:
+
+- the frame carries deontic warrant
+- every authority reference resolves under the authority-namespace contract
+- authority binds to the concrete reliance context, message ID and parents
+- at least one admissible local authority reference is present
+- `DELEGATED` authority satisfies the delegation ceiling and is acyclic
+- present `expires` or `nonce` are enforced under the available freshness trust model
+- the authority scope covers the declared `action_scope`
+
+Missing, unresolved, unbound, external-only, ceiling-violating, cyclic, or expired or replayed authority, and typed scope non-coverage, are hard failures when the freshness substrate supports them. Otherwise freshness degrades to soft audit status rather than silent acceptance.
+
+### 15.8 Authority appropriateness (soft)
+
+- whether a well-formed authority is substantively appropriate to the described act, scope breadth, an approval plausibly obtained under deception, or a policy that should not apply, is flagged, not adjudicated
+- external evidence present alongside valid local authority is a soft flag, never a hard failure
+- freshness concerns that cannot be made hard because the deployment lacks trusted ordering are reported as soft audit findings
+
 ## 16. Minimal compliance rules
 
 A system claiming Attest compatibility should, at minimum:
@@ -502,8 +624,11 @@ A system claiming Attest compatibility should, at minimum:
 5. preserve unresolved dissent in aggregation
 6. distinguish legible from opaque payload mode
 7. reject malformed evidential assertions without grounds
+8. implement deontic warrant (§8A) on state-changing frames
+9. reject malformed authority, missing, unresolved, unbound, external-only, ceiling-violating, or cyclic, as a well-formedness failure, not a policy preference
+10. treat deontic warrant and action_scope as identity-bearing
 
-## 17. Open questions for v0.2
+## 17. Open questions for the next revision
 
 1. Concrete canonical encoding choice
    - JSON canonicalization, CBOR canonicalization, or custom binary framing
@@ -523,6 +648,21 @@ A system claiming Attest compatibility should, at minimum:
 
 6. Runtime integration
    - how Attest maps onto existing receipt, lineage, and verification systems
+
+7. Multi-principal or quorum authority
+   - threshold or committee authorization objects
+
+8. Authority freshness trust model
+   - binding authority validity to a trusted ordering authority so expiry and nonce are hard rather than soft; shares the retract-ordering limit (§18)
+
+9. Action-scope ontology
+   - a richer typed scope lattice so more scope-coverage moves from soft to hard
+
+10. Authority revocation semantics
+   - the deontic analog of retraction and supersession (§18); revoking a grant supersedes downstream delegated authority, with effect defined over causal reachability
+
+11. Coverage commitments, next major semantic extension
+   - a signed consumed-set manifest for aggregate and synthesis claims, an explicit completeness claim scoped to that manifest, verifier faithfulness-to-declared-set checks, and later-discovered omitted reachable inputs as attributable falsifiers of the completeness claim; sequenced after deontic warrant so it is designed against an already first-class authority layer
 
 ## 18. Retraction and supersession semantics
 
