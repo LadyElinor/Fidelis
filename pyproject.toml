@@ -16,6 +16,14 @@ dependencies = [
 [project.scripts]
 trusted-runtime = "trusted_runtime.cli:main"
 
+[project.optional-dependencies]
+# The exact dependency set the test suite needs; CI installs `.[test]`.
+# pynacl is required at collection time by the Ed25519 profile seam test.
+test = [
+  "pytest>=8.0",
+  "pynacl>=1.5",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

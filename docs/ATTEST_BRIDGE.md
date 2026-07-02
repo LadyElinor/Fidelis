@@ -83,3 +83,36 @@ Current work does **not** claim:
 - `src/trusted_runtime/integration/attest_bridge.py`
 - `docs/attest_bridge_test_plan.md`
 - `tests/test_attest_bridge.py`
+
+## Resolver input trust boundary
+
+Resolver inputs can mark grounds and authority as RESOLVED, confer grants, and
+override resolution status. Where those inputs come from is therefore a trust
+decision, and the current engine accepts them from two sources with very
+different standing:
+
+- **Runtime-observed**: known message refs derived from evidence records the
+  runtime itself collected. These are trusted.
+- **Proposer-supplied**: `attest_known_message_refs`,
+  `attest_known_authority_refs`, `attest_authority_grants`,
+  `attest_grounds_status_overrides`, and `attest_authority_status_overrides`
+  read from the proposed action's own `context`. These are authored by the
+  party whose action is being verified - self-certification, the structure
+  the independence invariant exists to forbid.
+
+Interim semantics (current): proposer-supplied surfaces are **tainted, not
+trusted-as-acceptable**. Each contributing surface is recorded in
+`AttestResolverInputs.proposer_supplied_surfaces`, the bridge emits a
+`RESOLVER_INPUTS_PROPOSER_SUPPLIED:<surface>` soft flag per surface on both
+the real and stub verification paths, and - via the standard soft-flag rule -
+a verification that would otherwise PASS is downgraded to REVIEW. The flags
+flow into `AttestVerificationState` and the CER receipt fragment, so every
+downstream artifact carries the taint. There is no configuration that
+suppresses the taint.
+
+Planned semantics (deliberate design, not yet implemented): an
+orchestrator-owned grant store becomes the only source of authority grants
+and resolution overrides. Proposer context may then only *suggest refs for
+checking* - expanding what gets examined, never what counts as resolved.
+Until that lands, treat any tainted REVIEW as requiring exactly the scrutiny
+the flag names: the proposer helped verify itself.

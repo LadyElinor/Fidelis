@@ -1048,31 +1048,55 @@ def _coverage_records(
 
 
 def _attest_resolver_inputs_for_action(action: ProposedAction, evidence_records: list[EvidenceRecord]) -> AttestResolverInputs:
+    """Derive resolver inputs, tainting every trust-affecting surface that
+    arrives from the proposer's own context.
+
+    Trust boundary: action.context is authored by whoever proposed the
+    action. Known refs mark grounds/authority RESOLVED in the static
+    resolvers, grants confer authority, and status overrides set resolution
+    outcomes directly - so any of these arriving via context means the
+    assessed party supplied part of its own assessment inputs. That flow is
+    tainted, never trusted: each contributing surface is recorded in
+    proposer_supplied_surfaces and the bridge denies a clean PASS. Evidence-
+    record sources are runtime-observed and do NOT taint. The durable fix is
+    an orchestrator-owned grant store (docs/ATTEST_BRIDGE.md).
+    """
     context = action.context or {}
+    proposer_supplied_surfaces: list[str] = []
 
     known_message_refs: list[str] = []
     for item in context.get("attest_known_message_refs") or []:
         ref = str(item).strip()
         if ref and ref not in known_message_refs:
             known_message_refs.append(ref)
+    if known_message_refs:
+        proposer_supplied_surfaces.append("known_message_refs")
 
     known_authority_refs: list[str] = []
     for item in context.get("attest_known_authority_refs") or []:
         ref = str(item).strip()
         if ref and ref not in known_authority_refs:
             known_authority_refs.append(ref)
+    if known_authority_refs:
+        proposer_supplied_surfaces.append("known_authority_refs")
 
     authority_grants = context.get("attest_authority_grants") or {}
     if not isinstance(authority_grants, dict):
         authority_grants = {}
+    if authority_grants:
+        proposer_supplied_surfaces.append("authority_grants")
 
     grounds_status_overrides = context.get("attest_grounds_status_overrides") or {}
     if not isinstance(grounds_status_overrides, dict):
         grounds_status_overrides = {}
+    if grounds_status_overrides:
+        proposer_supplied_surfaces.append("grounds_status_overrides")
 
     authority_status_overrides = context.get("attest_authority_status_overrides") or {}
     if not isinstance(authority_status_overrides, dict):
         authority_status_overrides = {}
+    if authority_status_overrides:
+        proposer_supplied_surfaces.append("authority_status_overrides")
 
     for record in evidence_records:
         if record.source and record.source not in known_message_refs:
@@ -1084,6 +1108,7 @@ def _attest_resolver_inputs_for_action(action: ProposedAction, evidence_records:
         authority_grants=authority_grants,
         grounds_status_overrides={str(k): str(v) for k, v in grounds_status_overrides.items()},
         authority_status_overrides={str(k): str(v) for k, v in authority_status_overrides.items()},
+        proposer_supplied_surfaces=proposer_supplied_surfaces,
     )
 
 
@@ -1095,6 +1120,7 @@ def _attest_resolver_summary(resolver_inputs: AttestResolverInputs) -> dict[str,
         "known_authority_refs_preview": resolver_inputs.known_authority_refs[:5],
         "authority_grant_keys": sorted(resolver_inputs.authority_grants.keys()),
         "grounds_status_override_keys": sorted(resolver_inputs.grounds_status_overrides.keys()),
+        "proposer_supplied_surfaces": list(resolver_inputs.proposer_supplied_surfaces),
         "authority_status_override_keys": sorted(resolver_inputs.authority_status_overrides.keys()),
     }
 

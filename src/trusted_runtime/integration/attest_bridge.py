@@ -57,13 +57,33 @@ class AttestVerificationState(BaseModel):
 
 
 class AttestResolverInputs(BaseModel):
-    """Runtime-supplied resolver surface for a verification call."""
+    """Runtime-supplied resolver surface for a verification call.
+
+    Trust boundary: fields here can mark grounds and authority as RESOLVED,
+    so where they came from matters. Surfaces listed in
+    `proposer_supplied_surfaces` arrived from the proposed action's own
+    context - i.e. the party whose action is being verified supplied part of
+    the evidence used to verify it. That is self-certification, and it is
+    never silently acceptable: the bridge emits a
+    RESOLVER_INPUTS_PROPOSER_SUPPLIED:<surface> soft flag per tainted
+    surface, which denies a clean PASS. The durable fix is an
+    orchestrator-owned grant store (see docs/ATTEST_BRIDGE.md, "Resolver
+    input trust boundary"); this field is the interim taint marker, not a
+    legitimation of the flow it marks.
+    """
 
     known_message_refs: list[str] = Field(default_factory=list)
     known_authority_refs: list[str] = Field(default_factory=list)
     authority_grants: dict[str, dict[str, Any]] = Field(default_factory=dict)
     grounds_status_overrides: dict[str, str] = Field(default_factory=dict)
     authority_status_overrides: dict[str, str] = Field(default_factory=dict)
+    proposer_supplied_surfaces: list[str] = Field(default_factory=list)
+
+    def taint_flags(self) -> list[str]:
+        return [
+            f"RESOLVER_INPUTS_PROPOSER_SUPPLIED:{surface}"
+            for surface in self.proposer_supplied_surfaces
+        ]
 
 
 class IndependenceSignals(BaseModel):
@@ -195,6 +215,7 @@ class AttestBridge:
         if extra_soft_flags:
             soft_flags.extend(extra_soft_flags)
         resolver_inputs = resolver_inputs or AttestResolverInputs()
+        soft_flags.extend(resolver_inputs.taint_flags())
         return AttestVerificationState(
             message_id=message_hash,
             canonical_hash=message_hash,
@@ -429,10 +450,13 @@ class AttestBridge:
                     signature_verifier=signature_verifier,
                 )
                 result = verifier.verify(attest_message, known_messages=attest_known_messages)
+                # Proposer-supplied resolver evidence is self-certification;
+                # it denies a clean PASS via the soft-flag -> REVIEW rule.
+                soft_flags_with_taint = list(result.get("soft_flag", [])) + resolver_inputs.taint_flags()
                 decision_effect: Literal["PASS", "REVIEW", "BLOCK", "UNVERIFIABLE"] = "PASS"
                 if result.get("hard_fail"):
                     decision_effect = "BLOCK"
-                elif result.get("soft_flag") or result.get("pass_scope_limit"):
+                elif soft_flags_with_taint or result.get("pass_scope_limit"):
                     decision_effect = "REVIEW"
                 return AttestVerificationState(
                     message_id=getattr(attest_message, "compute_id")(),
@@ -442,7 +466,7 @@ class AttestBridge:
                     profile_hash=sha256(self._stable_json(profile.model_dump(mode="json")).encode("utf-8")).hexdigest(),
                     verifier_version="attest_ref_impl",
                     hard_fail=list(result.get("hard_fail", [])),
-                    soft_flag=list(result.get("soft_flag", [])),
+                    soft_flag=soft_flags_with_taint,
                     pass_scope_limit=list(result.get("pass_scope_limit", [])),
                     decision_effect=decision_effect,
                     known_message_set_hash=known_hash,

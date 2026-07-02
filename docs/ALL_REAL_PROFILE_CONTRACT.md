@@ -68,3 +68,5 @@ Phase 1 establishes:
 - test coverage for fallback truthfulness
 
 Phase 1 does **not** by itself certify full L2 or L4 closure.
+
+- Proposer-supplied resolver evidence (grants, status overrides, known refs arriving via action context) is tainted: it denies a clean `PASS`, downgrading to `REVIEW` with named `RESOLVER_INPUTS_PROPOSER_SUPPLIED` flags. All-real status never launders this taint; behavior-real layers with self-certified authority inputs still surface the flags in decision artifacts.

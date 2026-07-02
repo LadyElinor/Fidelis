@@ -76,6 +76,8 @@ def test_tas_adapter_stub_path_surfaces_incomplete_closure_bar():
 
 
 def test_tas_partial_path_surfaces_missing_route_requirement():
+    if not trustworthy_agent_stack_available():
+        pytest.skip("TrustworthyAgentStack sibling repo absent; the real branch that degrades to PARTIAL is unreachable on this clone")
     action = _action()
     council = _council()
     original_classifier = TrustworthyAgentStackAdapter.assess.__globals__.get("tas_classify_task")
