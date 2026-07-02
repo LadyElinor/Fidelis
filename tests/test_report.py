@@ -25,12 +25,20 @@ def test_report_surfaces_attest_resolver_context():
     report = render_markdown_report(decision)
 
     assert "## Attest bridge" in report
+    assert "verifier provenance status" in report
     assert "grounds resolver" in report
     assert "authority resolver" in report
     assert "signature verifier" in report
     assert "known message refs" in report
     assert "known authority refs" in report
     assert "authority grants" in report
+    assert "### CER verifier provenance" in report
+    assert "evaluated at" in report
+    assert "profile hash" in report
+    assert "known message set hash" in report
+    assert "signature verifier identity" in report
+    assert "verifier hash" in report
+    assert "resolver config hash" in report
     assert "## Integration Mode (Computed)" in report
     assert "overall mode" in report.lower()
     assert "behavior_real" in report

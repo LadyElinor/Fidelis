@@ -33,6 +33,7 @@ from trusted_runtime.shared.enums import (
     TripValidationStatus,
 )
 from trusted_runtime.shared.models import (
+    CERFragmentEnrichment,
     CERRecordBundle,
     CouncilAssessment,
     CoverageRecord,
@@ -635,7 +636,13 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
         report = json.loads(output_path.read_text(encoding="utf-8"))
         return report, completed.stdout.strip()
 
-    def collect(self, action: ProposedAction, runtime_disposition: str) -> CERRecordBundle:
+    def collect(
+        self,
+        action: ProposedAction,
+        runtime_disposition: str,
+        cer_enrichment: CERFragmentEnrichment | None = None,
+    ) -> CERRecordBundle:
+        cer_enrichment = cer_enrichment or CERFragmentEnrichment()
         if validate_cer_export is None or deterministic_hash is None or sign_payload is None or _CER_TELEMETRY_SRC is None:
             payload = {
                 "layer": "cer_stub",
@@ -659,6 +666,7 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
                     receipt_linkage=False,
                     tas_closure_referenced=False,
                 ),
+                cer_enrichment=cer_enrichment,
                 confidence_notes=["Stubbed CER/SOPHRON output, replace with real adapter"],
                 adapter_provenance=AdapterProvenance.STUB,
                 receipt=ReceiptRef(sha256=sha256_hex(payload), schema_version=ReceiptSchemaVersion.V1_0_0),
@@ -764,6 +772,7 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
                 invariants_checked=invariants_checked,
                 provenance_hashes=provenance_hashes,
                 sophron_validation=sophron_validation,
+                cer_enrichment=cer_enrichment,
                 confidence_notes=confidence_notes,
                 adapter_provenance=adapter_provenance,
                 receipt=ReceiptRef(
@@ -1090,6 +1099,31 @@ def _attest_resolver_summary(resolver_inputs: AttestResolverInputs) -> dict[str,
     }
 
 
+def _cer_enrichment_from_attest_verification(verification: Any) -> CERFragmentEnrichment:
+    resolver_config_hash = sha256_hex(
+        {
+            "grounds_resolver_config_hash": verification.grounds_resolver_config_hash,
+            "authority_resolver_config_hash": verification.authority_resolver_config_hash,
+        }
+    )
+    verifier_hash = sha256_hex(
+        {
+            "verifier_version": verification.verifier_version,
+            "signature_verifier_name": verification.signature_verifier_name,
+            "signature_verifier_config_hash": verification.signature_verifier_config_hash,
+        }
+    )
+    return CERFragmentEnrichment(
+        evaluated_at=verification.evaluated_at,
+        profile_hash=verification.profile_hash,
+        verifier_hash=verifier_hash,
+        resolver_config_hash=resolver_config_hash,
+        known_message_set_hash=verification.known_message_set_hash,
+        signature_verifier_identity=verification.signature_verifier_name,
+        replay_nonce=None,
+    )
+
+
 def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | None = None) -> ExecutionDecision:
     adapters = adapters or default_adapters()
 
@@ -1103,6 +1137,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         evaluated_at=action.timestamp,
     )
     attest_receipt_fragment = _ATTEST_BRIDGE.cer_receipt_fragment(verification=attest_ingress_verification)
+    attest_cer_enrichment = _cer_enrichment_from_attest_verification(attest_ingress_verification)
 
     reviewability = _build_reviewability_profile(action)
 
@@ -1126,7 +1161,11 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         },
     }
     warrant = adapters.warrant.assess(action)
-    cer_bundle = adapters.telemetry.collect(action, runtime_disposition.value)
+    cer_bundle = adapters.telemetry.collect(
+        action,
+        runtime_disposition.value,
+        cer_enrichment=attest_cer_enrichment,
+    )
 
     adapter_provenance = {
         "council": council.adapter_provenance,

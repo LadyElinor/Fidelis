@@ -4,6 +4,7 @@ import pytest
 
 from trusted_runtime.integration.attest_bridge import (
     AttestBridge,
+    AttestBridgeConfig,
     AttestResolverInputs,
     AttestReviewPacket,
     AttestVerificationState,
@@ -174,6 +175,81 @@ def load_profile(path=None):
     assert result.grounds_resolver_name == "StaticGroundsResolver"
     assert result.authority_resolver_name == "StaticAuthorityResolver"
     assert result.signature_verifier_name == "AcceptAllSignatureVerifier"
+
+
+def test_bridge_plumbing_supports_configured_deterministic_test_verifier(tmp_path):
+    repo_root = tmp_path
+    shadow = repo_root / "attest_ref_impl.py"
+    shadow.write_text(
+        """
+from pydantic import BaseModel
+class DeploymentProfile(BaseModel):
+    name: str = 'shadow-profile'
+    signer_public_keys: dict = {}
+class AttestMessage(BaseModel):
+    frame: str
+    mode: str
+    from_: str
+    to: str | None = None
+    parents: list[str] = []
+    ordering_anchor: tuple[str, int]
+    content: dict
+    @classmethod
+    def model_validate(cls, payload):
+        payload = dict(payload)
+        payload['from_'] = payload.pop('from')
+        return cls(**payload)
+    def compute_id(self):
+        return 'shadow-msg-id'
+class StaticGroundsResolver:
+    def __init__(self, known_refs=None, status_overrides=None):
+        pass
+class StaticAuthorityResolver:
+    def __init__(self, known_refs=None, status_overrides=None, grants=None):
+        pass
+class AcceptAllSignatureVerifier:
+    pass
+class DeterministicSignatureVerifier:
+    pass
+class AttestVerifier:
+    def __init__(self, profile=None, grounds_resolver=None, authority_resolver=None, signature_verifier=None):
+        self.profile = profile
+        self.signature_verifier = signature_verifier
+    def verify(self, msg, adopted_chain=None, known_messages=None):
+        return {'hard_fail': [], 'soft_flag': [], 'pass_scope_limit': []}
+def load_profile(path=None):
+    return DeploymentProfile()
+""",
+        encoding="utf-8",
+    )
+    bridge = AttestBridge(
+        config=AttestBridgeConfig(signature_verifier_mode="deterministic-test"),
+        attest_root=repo_root,
+    )
+    result = bridge.verify_for_runtime(
+        {
+            "frame": "REQUEST",
+            "mode": "legible",
+            "from": "trusted-runtime:ingress",
+            "to": "trusted-runtime:orchestrator",
+            "parents": [],
+            "ordering_anchor": ["2026-07-01T22:11:00Z", 1],
+            "content": {"action_id": "x", "description": "y", "context": {}, "proposed_by": "z"},
+        },
+        [],
+        evaluated_at=FIXED_TS,
+    )
+
+    assert result.decision_effect == "PASS"
+    assert result.signature_verifier_name == "DeterministicSignatureVerifier"
+
+
+def test_stub_verification_records_selected_verifier_mode():
+    bridge = AttestBridge(config=AttestBridgeConfig(signature_verifier_mode="ed25519-profile"))
+    result = bridge.verify_for_runtime({"frame": "ASSERT", "content": {"x": 1}}, [])
+
+    assert result.decision_effect == "UNVERIFIABLE"
+    assert result.signature_verifier_name == "stub-none:ed25519-profile"
 
 
 def test_bridge_falls_back_truthfully_when_loaded_module_throws_shadow_mock(tmp_path):

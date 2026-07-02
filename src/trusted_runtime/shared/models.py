@@ -139,6 +139,22 @@ class SophronValidation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CERFragmentEnrichment(BaseModel):
+    """Optional typed enrichment fields for verifiable CER receipt fragments.
+
+    These fields are intentionally nullable until the runtime has concrete,
+    provenance-defined population rules for each value.
+    """
+
+    evaluated_at: datetime | None = None
+    profile_hash: str | None = None
+    verifier_hash: str | None = None
+    resolver_config_hash: str | None = None
+    known_message_set_hash: str | None = None
+    signature_verifier_identity: str | None = None
+    replay_nonce: str | None = None
+
+
 class CERRecordBundle(BaseModel):
     """Evidence-spine output.
 
@@ -151,6 +167,7 @@ class CERRecordBundle(BaseModel):
     invariants_checked: list[dict[str, Any]] = Field(default_factory=list)
     provenance_hashes: list[str] = Field(default_factory=list)
     sophron_validation: SophronValidation = Field(default_factory=SophronValidation)
+    cer_enrichment: CERFragmentEnrichment = Field(default_factory=CERFragmentEnrichment)
     confidence_notes: list[str] = Field(default_factory=list)
     adapter_provenance: AdapterProvenance = AdapterProvenance.UNAVAILABLE
     receipt: ReceiptRef

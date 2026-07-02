@@ -49,6 +49,16 @@ Each adapter truth surface should distinguish:
 
 Maturity labels should derive from those facts, not replace them.
 
+For the Attest/CER seam specifically, human-visible reports should preserve the typed CER verifier provenance block when available, including:
+- `evaluated_at`
+- `profile_hash`
+- `known_message_set_hash`
+- `signature_verifier_identity`
+- `verifier_hash`
+- `resolver_config_hash`
+
+These fields document which verifier/config surface actually ran and was serialized into the decision artifact. They are provenance evidence, not a substitute for a green semantic verifier result or a broader security certification claim.
+
 ## Phase 1 scope
 
 Phase 1 establishes:

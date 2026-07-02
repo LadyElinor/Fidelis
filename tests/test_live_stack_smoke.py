@@ -20,6 +20,7 @@ def test_live_stack_smoke_writes_machine_readable_artifact(tmp_path: Path):
     assert (tmp_path / "smoke_decision_report.md").exists()
 
     payload = json.loads((tmp_path / "live_stack_smoke.json").read_text(encoding="utf-8"))
+    report_md = (tmp_path / "smoke_decision_report.md").read_text(encoding="utf-8")
     assert payload["smoke_test"]["runtime_disposition"] != "PROCEED"
     assert payload["smoke_test"]["runtime_disposition"] == "HALT"
     assert payload["smoke_test"]["risk_state"] in {"RED", "AMBER"}
@@ -30,6 +31,11 @@ def test_live_stack_smoke_writes_machine_readable_artifact(tmp_path: Path):
     assert payload["smoke_test"]["integration_mode_report"] is not None
     assert "components" in payload["smoke_test"]["integration_mode_report"]
     assert "adapter_provenance" in payload["smoke_test"]
+    assert "verifier_provenance_summary" in payload["smoke_test"]
+    assert "status_line" in payload["smoke_test"]["verifier_provenance_summary"]
+    assert "decision_effect" in payload["smoke_test"]["verifier_provenance_summary"]
+    assert "verifier provenance status" in report_md
+    assert payload["smoke_test"]["verifier_provenance_summary"]["status_line"] in report_md
     assert payload["smoke_test"]["truthfulness_gate_passed"] is True
     assert payload["smoke_test"]["phase4_truthfulness_failures"] == []
     assert payload["smoke_test"]["fail_closed_reason"] is None

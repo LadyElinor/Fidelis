@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-"""Attest integration design stub for TrustedRuntime.
+"""Attest bridge seam for TrustedRuntime.
 
-This module is intentionally non-executing scaffolding.
-It captures the integration contract for using Attest as the typed message
-layer between TrustedRuntime components while preserving TrustedRuntime as the
-runtime/orchestration layer and CER as the durable receipt ledger.
+This module implements a first-pass Attest-shaped integration seam.
+It captures and partially executes the contract for using Attest as the typed
+message layer between TrustedRuntime components while preserving
+TrustedRuntime as the runtime/orchestration layer and CER as the durable
+receipt ledger.
 
 Design constraints captured here:
 - ENDORSE means adoption, not mere agreement.
@@ -21,12 +22,12 @@ Design constraints captured here:
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 import importlib.util
-from pathlib import Path
 import sys
 
 from trusted_runtime.shared.models import ProposedAction
@@ -107,12 +108,14 @@ class AttestBridgeConfig:
     verifier_version: str = "trusted-runtime-attest-bridge-draft-0"
     runtime_signer: str = "trusted-runtime:orchestrator"
     commit_whitelist: tuple[str, ...] = ("trusted-runtime:orchestrator",)
+    signature_verifier_mode: Literal["accept-all", "deterministic-test", "ed25519-profile"] = "accept-all"
+    profile_path: Path | None = None
 
 
 class AttestBridge:
-    """Design stub for TrustedRuntime <-> Attest integration.
+    """First-pass TrustedRuntime <-> Attest integration seam.
 
-    Intended responsibilities:
+    Responsibilities:
     1. Wrap ingress and adapter outputs into Attest-shaped messages.
     2. Verify those messages under the active Attest deployment profile.
     3. Compute independence/correlation signals from message structure.
@@ -120,8 +123,10 @@ class AttestBridge:
     5. Emit CER-ready receipt fragments including Attest IDs, hashes, profile
        identity, and known-message-set hashing.
 
-    This stub does not import AttestAgentConlang directly yet. It defines the
-    contract TrustedRuntime should implement when the dependency is wired.
+    Current truth boundary:
+    - a real dynamic import/wiring path exists when AttestAgentConlang is present
+    - fallback degrades explicitly to stub / UNVERIFIABLE when the dependency is absent or the real path fails
+    - the current real-path verifier wiring is structural/profile-aware, but not yet a strong cryptographic trust claim by itself
     """
 
     def __init__(
@@ -164,6 +169,8 @@ class AttestBridge:
             return None
         return {
             "AcceptAllSignatureVerifier": getattr(module, "AcceptAllSignatureVerifier"),
+            "DeterministicSignatureVerifier": getattr(module, "DeterministicSignatureVerifier", None),
+            "Ed25519SignatureVerifier": getattr(module, "Ed25519SignatureVerifier", None),
             "AttestMessage": getattr(module, "AttestMessage"),
             "AttestVerifier": getattr(module, "AttestVerifier"),
             "StaticAuthorityResolver": getattr(module, "StaticAuthorityResolver"),
@@ -207,10 +214,32 @@ class AttestBridge:
                 "known_authority_refs": sorted(resolver_inputs.known_authority_refs),
                 "authority_grants": resolver_inputs.authority_grants,
             }).encode("utf-8")).hexdigest(),
-            signature_verifier_name="stub-none",
-            signature_verifier_config_hash=sha256(b"stub-none").hexdigest(),
+            signature_verifier_name=f"stub-none:{self.config.signature_verifier_mode}",
+            signature_verifier_config_hash=sha256(self.config.signature_verifier_mode.encode("utf-8")).hexdigest(),
             evaluated_at=evaluated_at or datetime.now(timezone.utc),
         )
+
+    def _build_signature_verifier(self, profile: Any) -> tuple[Any, str]:
+        if self._real_attest is None:
+            raise RuntimeError("real Attest path unavailable")
+
+        mode = self.config.signature_verifier_mode
+        if mode == "accept-all":
+            verifier = self._real_attest["AcceptAllSignatureVerifier"]()
+        elif mode == "deterministic-test":
+            verifier_cls = self._real_attest.get("DeterministicSignatureVerifier")
+            if verifier_cls is None:
+                raise RuntimeError("DeterministicSignatureVerifier unavailable")
+            verifier = verifier_cls()
+        elif mode == "ed25519-profile":
+            verifier_cls = self._real_attest.get("Ed25519SignatureVerifier")
+            if verifier_cls is None:
+                raise RuntimeError("Ed25519SignatureVerifier unavailable")
+            verifier = verifier_cls(getattr(profile, "signer_public_keys", {}))
+        else:
+            raise RuntimeError(f"unsupported signature verifier mode: {mode}")
+
+        return verifier, sha256(mode.encode("utf-8")).hexdigest()
 
     # ------------------------------------------------------------------
     # Message wrapping rules
@@ -380,7 +409,7 @@ class AttestBridge:
 
         if self._real_attest is not None:
             try:
-                profile = self._real_attest["load_profile"]()
+                profile = self._real_attest["load_profile"](str(self.config.profile_path) if self.config.profile_path is not None else None)
                 attest_message = self._real_attest["AttestMessage"].model_validate(message)
                 attest_known_messages = [self._real_attest["AttestMessage"].model_validate(item) for item in known_messages]
                 grounds_resolver = self._real_attest["StaticGroundsResolver"](
@@ -392,7 +421,7 @@ class AttestBridge:
                     status_overrides=resolver_inputs.authority_status_overrides,
                     grants=resolver_inputs.authority_grants,
                 )
-                signature_verifier = self._real_attest["AcceptAllSignatureVerifier"]()
+                signature_verifier, signature_verifier_config_hash = self._build_signature_verifier(profile)
                 verifier = self._real_attest["AttestVerifier"](
                     profile=profile,
                     grounds_resolver=grounds_resolver,
@@ -422,7 +451,7 @@ class AttestBridge:
                     authority_resolver_name=type(authority_resolver).__name__,
                     authority_resolver_config_hash=sha256(self._stable_json(authority_resolver_config).encode("utf-8")).hexdigest(),
                     signature_verifier_name=type(signature_verifier).__name__,
-                    signature_verifier_config_hash=sha256(b"AcceptAllSignatureVerifier").hexdigest(),
+                    signature_verifier_config_hash=signature_verifier_config_hash,
                     evaluated_at=evaluated_at or datetime.now(timezone.utc),
                 )
             except Exception as exc:

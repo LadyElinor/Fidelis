@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from trusted_runtime.shared.models import CERRecordBundle, CouncilAssessment, ProposedAction, WarrantAssay
+from trusted_runtime.shared.models import CERFragmentEnrichment, CERRecordBundle, CouncilAssessment, ProposedAction, WarrantAssay
 
 
 class HazardAdapter(Protocol):
@@ -17,7 +17,12 @@ class WarrantAdapter(Protocol):
 
 
 class TelemetryAdapter(Protocol):
-    def collect(self, action: ProposedAction, runtime_disposition: str) -> CERRecordBundle:
+    def collect(
+        self,
+        action: ProposedAction,
+        runtime_disposition: str,
+        cer_enrichment: CERFragmentEnrichment | None = None,
+    ) -> CERRecordBundle:
         ...
 
 

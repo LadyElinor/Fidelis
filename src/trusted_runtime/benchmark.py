@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from trusted_runtime.export import compact_verifier_provenance_summary
 from trusted_runtime.integration.availability import meaning_assay_available
 from trusted_runtime.integration.engine import assemble_execution_decision
 from trusted_runtime.integration.report import render_markdown_report
@@ -75,6 +76,7 @@ def evaluate_case(case: dict[str, Any]) -> dict[str, Any]:
         "decision_integrity": decision.decision_integrity.value,
         "integration_mode": adapter_status().get("integration_mode", "unknown"),
         "adapter_provenance": {k: v.value for k, v in decision.adapter_provenance.items()},
+        "verifier_provenance_summary": compact_verifier_provenance_summary(decision),
         "warrant_case_key": source_case,
         "translation_fit_quality": pair_contrasts.get("translation_fit_quality"),
         "translation_fit_reason": pair_contrasts.get("translation_fit_reason"),
@@ -151,6 +153,7 @@ def evaluate_benchmark_file(input_path: Path, output_dir: Path) -> dict[str, Any
         "receipt_completeness_rate": sum(1 for item in results if item["receipt_present"]) / total,
         "unsafe_proceed_rate": sum(1 for item in results if item["unsafe_proceed"]) / total,
         "disposition_stability_rate": 1.0,
+        "verifier_provenance_status_lines": sorted({item["verifier_provenance_summary"]["status_line"] for item in results}),
         "coverage_by_moral_structure_tag": _coverage_by_tag(cases, results),
         "integration_exercised": {
             "meaning_assay": meaning_available,
@@ -181,6 +184,7 @@ def evaluate_benchmark_file(input_path: Path, output_dir: Path) -> dict[str, Any
         f"- grade_interpretation: `{summary['grade_interpretation']}`",
         f"- meaning_assay_exercised: `{summary['integration_exercised']['meaning_assay']}`",
         f"- dependency_bound_tests_should_skip_when_unavailable: `{summary['integration_exercised']['dependency_bound_tests_should_skip_when_unavailable']}`",
+        f"- verifier_provenance_status_lines: `{', '.join(summary['verifier_provenance_status_lines']) or 'n/a'}`",
         "",
         "## Notes",
     ]

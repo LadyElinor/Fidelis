@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from trusted_runtime.export import compact_verifier_provenance_summary, export_decision_payload, to_json_safe
 from trusted_runtime.integration.engine import assemble_execution_decision
 from trusted_runtime.integration.report import render_markdown_report
 from trusted_runtime.integration.status import adapter_status
@@ -70,28 +70,30 @@ def run_live_stack_smoke(input_path: Path, output_dir: Path, *, require_all_real
 
     computed_mode = decision.integration_mode_report.mode.value if decision.integration_mode_report is not None else integration_mode
     truthfulness_failures = _phase4_truthfulness_failures(decision)
+    decision_payload = export_decision_payload(decision)
     smoke_artifact = {
         "smoke_test": {
             "case_path": str(input_path),
             "integration_mode": computed_mode,
-            "integration_mode_report": json.loads(json.dumps(asdict(decision.integration_mode_report), default=str)) if decision.integration_mode_report is not None else None,
+            "integration_mode_report": decision_payload.get("integration_mode_report"),
             "require_all_real": require_all_real,
-            "adapter_status": status,
-            "adapter_provenance": {k: v.value for k, v in decision.adapter_provenance.items()},
-            "independently_corroborated": decision.independently_corroborated,
-            "self_attested_evidence_only": decision.self_attested_evidence_only,
-            "certification_grade_corroboration": decision.correlation_report.get("certification_grade_corroboration", False),
-            "weakest_detector_independence": decision.correlation_report.get("weakest_detector_independence", "unknown"),
-            "runtime_disposition": decision.runtime_disposition.value,
-            "risk_state": decision.risk_state.value,
-            "decision_integrity": decision.decision_integrity.value,
+            "adapter_status": to_json_safe(status),
+            "adapter_provenance": decision_payload.get("adapter_provenance", {}),
+            "verifier_provenance_summary": compact_verifier_provenance_summary(decision),
+            "independently_corroborated": decision_payload.get("independently_corroborated", False),
+            "self_attested_evidence_only": decision_payload.get("self_attested_evidence_only", False),
+            "certification_grade_corroboration": decision_payload.get("correlation_report", {}).get("certification_grade_corroboration", False),
+            "weakest_detector_independence": decision_payload.get("correlation_report", {}).get("weakest_detector_independence", "unknown"),
+            "runtime_disposition": decision_payload.get("runtime_disposition"),
+            "risk_state": decision_payload.get("risk_state"),
+            "decision_integrity": decision_payload.get("decision_integrity"),
             "truthfulness_gate_passed": not truthfulness_failures,
             "phase4_truthfulness_failures": truthfulness_failures,
             "fail_closed_reason": "; ".join(truthfulness_failures) if truthfulness_failures else None,
         }
     }
 
-    (output_dir / "smoke_decision_output.json").write_text(decision.model_dump_json(indent=2), encoding="utf-8")
+    (output_dir / "smoke_decision_output.json").write_text(json.dumps(decision_payload, indent=2), encoding="utf-8")
     (output_dir / "smoke_decision_report.md").write_text(render_markdown_report(decision), encoding="utf-8")
     (output_dir / "live_stack_smoke.json").write_text(json.dumps(smoke_artifact, indent=2), encoding="utf-8")
 

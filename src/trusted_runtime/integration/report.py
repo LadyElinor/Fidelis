@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from trusted_runtime.export import compact_verifier_provenance_summary
 from trusted_runtime.shared.models import ExecutionDecision
 
 
@@ -24,11 +25,20 @@ def _render_integration_mode_section(lines: list[str], decision: ExecutionDecisi
 def render_markdown_report(decision: ExecutionDecision) -> str:
     warrant_line = "unavailable"
     soph = decision.cer_bundle.sophron_validation
+    cer_enrichment = getattr(decision.cer_bundle, "cer_enrichment", None)
+    cer_evaluated_at = getattr(cer_enrichment, "evaluated_at", None)
+    cer_profile_hash = getattr(cer_enrichment, "profile_hash", None)
+    cer_known_message_set_hash = getattr(cer_enrichment, "known_message_set_hash", None)
+    cer_signature_verifier_identity = getattr(cer_enrichment, "signature_verifier_identity", None)
+    cer_verifier_hash = getattr(cer_enrichment, "verifier_hash", None)
+    cer_resolver_config_hash = getattr(cer_enrichment, "resolver_config_hash", None)
     if decision.warrant is not None:
         warrant_line = (
             f"{decision.normative_summary.value} "
             f"(significance={decision.warrant.significance}, warrant={decision.warrant.warrant})"
         )
+
+    verifier_summary = compact_verifier_provenance_summary(decision)
 
     lines = [
         f"# Decision Report: {decision.action_id}",
@@ -37,6 +47,7 @@ def render_markdown_report(decision: ExecutionDecision) -> str:
         f"- disposition: `{decision.runtime_disposition.value}`",
         f"- risk state: `{decision.risk_state.value}`",
         f"- integrity: `{decision.decision_integrity.value}`",
+        f"- verifier provenance status: `{verifier_summary['status_line']}`",
         "",
         "## Normative summary",
         f"- result: {warrant_line}",
@@ -92,6 +103,14 @@ def render_markdown_report(decision: ExecutionDecision) -> str:
         f"- known message refs: `{decision.vita_state.get('attest_bridge', {}).get('resolver_inputs', {}).get('known_message_ref_count', 0)}`",
         f"- known authority refs: `{decision.vita_state.get('attest_bridge', {}).get('resolver_inputs', {}).get('known_authority_ref_count', 0)}`",
         f"- authority grants: `{len(decision.vita_state.get('attest_bridge', {}).get('resolver_inputs', {}).get('authority_grant_keys', []))}`",
+        "",
+        "### CER verifier provenance",
+        f"- evaluated at: `{cer_evaluated_at.isoformat() if cer_evaluated_at else 'n/a'}`",
+        f"- profile hash: `{cer_profile_hash or 'n/a'}`",
+        f"- known message set hash: `{cer_known_message_set_hash or 'n/a'}`",
+        f"- signature verifier identity: `{cer_signature_verifier_identity or 'n/a'}`",
+        f"- verifier hash: `{cer_verifier_hash or 'n/a'}`",
+        f"- resolver config hash: `{cer_resolver_config_hash or 'n/a'}`",
         "",
         "## L2 closure",
         f"- enforcement maturity: `{decision.vita_state.get('tas_closure', {}).get('enforcement_maturity', 'n/a')}`",

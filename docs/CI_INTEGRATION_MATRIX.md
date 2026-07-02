@@ -42,6 +42,7 @@ CI summaries should include:
 - skipped count
 - dependency-bound tests skipped because integrations were unavailable
 - adapter status snapshot from `trusted-runtime health`
+- when decision reports are emitted, the CER verifier provenance block should be preserved so reviewers can see which Attest verifier/config surface actually flowed into the CER-facing artifact
 
 ## Minimal desired workflow split
 

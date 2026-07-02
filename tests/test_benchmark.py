@@ -80,6 +80,13 @@ def test_benchmark_evaluator_writes_expected_reports(tmp_path: Path):
     case_results = json.loads((tmp_path / "benchmark_case_results.json").read_text(encoding="utf-8"))
     assert case_results[0]["translation_fit_quality"] == "high"
     assert case_results[0]["warrant_case_key"] == "silent_policy_weaken"
+    assert "verifier_provenance_summary" in case_results[0]
+    assert "status_line" in case_results[0]["verifier_provenance_summary"]
     assert case_results[1]["warrant_case_key"] == "fairness_disparate_impact"
     assert case_results[1]["semantic_fit_result"] is True
     assert case_results[1]["adapter_provenance"]["warrant"] == "REAL"
+    report_summary = json.loads((tmp_path / "benchmark_report.json").read_text(encoding="utf-8"))
+    assert "verifier_provenance_status_lines" in report_summary
+    assert isinstance(report_summary["verifier_provenance_status_lines"], list)
+    report_md = (tmp_path / "benchmark_report.md").read_text(encoding="utf-8")
+    assert "verifier_provenance_status_lines" in report_md
