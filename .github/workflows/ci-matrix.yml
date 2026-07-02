@@ -21,8 +21,8 @@ jobs:
       - name: Test suite (stub profile)
         run: pytest -q
 
-  # Placeholder documentation job for future richer profiles.
-  # These remain explicit so CI truth surfaces distinguish intent from implementation.
+  # Partial remains a documented placeholder until sibling integration mounting is automated.
+  # Keep that explicit so CI truth surfaces distinguish intent from implementation.
   partial-doc-only:
     runs-on: ubuntu-latest
     steps:
@@ -32,11 +32,31 @@ jobs:
           echo "Partial integration profile is documented in docs/CI_INTEGRATION_MATRIX.md"
           echo "This job is a placeholder until sibling integration mounting is automated."
 
-  all-real-doc-only:
+  all-real-smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Declare all-real profile intent
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install TrustedRuntime
         run: |
-          echo "All-real integration profile is documented in docs/ALL_REAL_PROFILE.md"
-          echo "This job is a placeholder until sibling integration mounting is automated."
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Health snapshot
+        run: trusted-runtime health
+      - name: Live stack smoke truthfulness gate
+        run: trusted-runtime live-stack-smoke --input examples/ai_agent_shell_access.json --output .ci-artifacts --require-all-real
+      - name: Show truthfulness gate artifact
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('.ci-artifacts/live_stack_smoke.json')
+          if not path.exists():
+              print('live_stack_smoke.json not produced')
+          else:
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              print(json.dumps(payload.get('smoke_test', {}), indent=2))
+          PY

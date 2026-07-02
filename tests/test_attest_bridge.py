@@ -4,6 +4,7 @@ import pytest
 
 from trusted_runtime.integration.attest_bridge import (
     AttestBridge,
+    AttestResolverInputs,
     AttestReviewPacket,
     AttestVerificationState,
     IndependenceSignals,
@@ -91,6 +92,8 @@ def test_verification_stub_is_unverifiable_not_pass():
     assert result.decision_effect == "UNVERIFIABLE"
     assert result.soft_flag == ["ATTEST_BRIDGE_DESIGN_STUB_ONLY"]
     assert result.hard_fail == []
+    assert result.grounds_resolver_name == "stub-none"
+    assert result.authority_resolver_name == "stub-none"
 
 
 def test_real_attest_bridge_availability_matches_import_gate():
@@ -127,11 +130,14 @@ class AttestMessage(BaseModel):
     def compute_id(self):
         return 'shadow-msg-id'
 class StaticGroundsResolver:
-    def __init__(self, known_refs=None):
+    def __init__(self, known_refs=None, status_overrides=None):
         self.known_refs = known_refs or set()
+        self.status_overrides = status_overrides or {}
 class StaticAuthorityResolver:
-    def __init__(self, known_refs=None):
+    def __init__(self, known_refs=None, status_overrides=None, grants=None):
         self.known_refs = known_refs or set()
+        self.status_overrides = status_overrides or {}
+        self.grants = grants or {}
 class AcceptAllSignatureVerifier:
     pass
 class AttestVerifier:
@@ -156,6 +162,7 @@ def load_profile(path=None):
             "content": {"action_id": "x", "description": "y", "context": {}, "proposed_by": "z"},
         },
         [],
+        resolver_inputs=AttestResolverInputs(known_message_refs=["msg:root"], known_authority_refs=["approval:ops-1"]),
         evaluated_at=FIXED_TS,
     )
 
@@ -164,6 +171,9 @@ def load_profile(path=None):
     assert result.message_id == "shadow-msg-id"
     assert result.profile_id == "shadow-profile"
     assert result.soft_flag == []
+    assert result.grounds_resolver_name == "StaticGroundsResolver"
+    assert result.authority_resolver_name == "StaticAuthorityResolver"
+    assert result.signature_verifier_name == "AcceptAllSignatureVerifier"
 
 
 def test_bridge_falls_back_truthfully_when_loaded_module_throws_shadow_mock(tmp_path):
@@ -269,7 +279,14 @@ def test_unresolved_dissent_ids_preserved_without_retract():
 
 def test_cer_receipt_fragment_includes_profile_and_known_message_hash():
     bridge = AttestBridge()
-    verification = _verification()
+    verification = _verification().model_copy(update={
+        "grounds_resolver_name": "StaticGroundsResolver",
+        "grounds_resolver_config_hash": "grounds-hash-001",
+        "authority_resolver_name": "StaticAuthorityResolver",
+        "authority_resolver_config_hash": "authority-hash-001",
+        "signature_verifier_name": "AcceptAllSignatureVerifier",
+        "signature_verifier_config_hash": "sig-hash-001",
+    })
     independence = IndependenceSignals(
         shared_grounds=["src:file-a"],
         overlap_reasons=["shared_grounds"],
@@ -283,6 +300,9 @@ def test_cer_receipt_fragment_includes_profile_and_known_message_hash():
     assert fragment["attest_profile_id"] == "attest-default-v02"
     assert fragment["attest_known_message_set_hash"] == "known-set-hash-001"
     assert fragment["attest_decision_effect"] == "PASS"
+    assert fragment["attest_grounds_resolver_name"] == "StaticGroundsResolver"
+    assert fragment["attest_authority_resolver_config_hash"] == "authority-hash-001"
+    assert fragment["attest_signature_verifier_name"] == "AcceptAllSignatureVerifier"
     assert fragment["attest_independence"]["policy_result"] == "correlated"
 
 
@@ -339,7 +359,12 @@ def test_integration_real_attest_verifier_executes_real_semantics():
         parents=["msg:root"],
         confidence_interval=(0.7, 0.9),
     )
-    result = bridge.verify_for_runtime(msg, [], evaluated_at=FIXED_TS)
+    result = bridge.verify_for_runtime(
+        msg,
+        [],
+        resolver_inputs=AttestResolverInputs(known_message_refs=["msg:root"]),
+        evaluated_at=FIXED_TS,
+    )
 
     # The real path must have executed: no stub flag, real verifier identity.
     assert "ATTEST_BRIDGE_DESIGN_STUB_ONLY" not in result.soft_flag
@@ -360,7 +385,12 @@ def test_integration_real_attest_message_id_is_real_digest():
 
     bridge = AttestBridge(attest_root=root)
     msg = bridge.wrap_ingress_request(_action())
-    result = bridge.verify_for_runtime(msg, [], evaluated_at=FIXED_TS)
+    result = bridge.verify_for_runtime(
+        msg,
+        [],
+        resolver_inputs=AttestResolverInputs(known_message_refs=[]),
+        evaluated_at=FIXED_TS,
+    )
 
     assert "ATTEST_BRIDGE_DESIGN_STUB_ONLY" not in result.soft_flag
     # Real compute_id() is a sha256 hex digest of canonical bytes, and it is

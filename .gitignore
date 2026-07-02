@@ -8,3 +8,8 @@ __pycache__/
 venv/
 decision_output.json
 decision_report.md
+smoke_out/
+smoke_out_pass_check/
+smoke_out_require/
+onto/
+opus4/

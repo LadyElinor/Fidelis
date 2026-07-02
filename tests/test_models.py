@@ -8,12 +8,13 @@ from trusted_runtime.integration.availability import (
     sophron_cer_available,
     trustworthy_agent_stack_available,
 )
-from trusted_runtime.integration.engine import assemble_execution_decision, default_adapters
+from trusted_runtime.config import IntegrationMode
+from trusted_runtime.integration.engine import _attest_resolver_inputs_for_action, _attest_resolver_summary, assemble_execution_decision, default_adapters
 from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.integration.translation import derive_meaning_case_key
 from trusted_runtime.review import build_pr_review_action, load_review_input
 from trusted_runtime.shared.enums import AdapterProvenance, DecisionIntegrity, RuntimeDisposition, TripValidationStatus
-from trusted_runtime.shared.models import ProposedAction
+from trusted_runtime.shared.models import EvidenceRecord, ProposedAction
 
 
 FIXED_TS = datetime(2026, 6, 11, 18, 0, tzinfo=timezone.utc)
@@ -38,7 +39,7 @@ def test_council_and_warrant_paths_are_explicit_for_current_environment():
         assert decision.reconciliation is not None
     expected_tas = AdapterProvenance.REAL if trustworthy_agent_stack_available() else AdapterProvenance.STUB
     assert decision.adapter_provenance["tas"] is expected_tas
-    if real_telemetry_stack_available() and decision.cer_bundle.sophron_validation.get("passed") is True:
+    if real_telemetry_stack_available() and decision.cer_bundle.sophron_validation.passed is True:
         assert decision.adapter_provenance["cer_bundle"] is AdapterProvenance.REAL
     else:
         assert decision.adapter_provenance["cer_bundle"] is AdapterProvenance.STUB
@@ -92,6 +93,123 @@ def test_proceed_is_not_allowed_with_stubbed_required_layers():
     assert decision.runtime_disposition is not RuntimeDisposition.PROCEED
 
 
+def test_attest_resolver_inputs_collect_context_and_evidence_sources():
+    action = ProposedAction(
+        id="test-attest-resolver-001",
+        description="Review a safety-critical invariant change.",
+        timestamp=FIXED_TS,
+        context={
+            "attest_known_message_refs": ["msg:root", "msg:support-1", "msg:root"],
+            "attest_known_authority_refs": ["approval:ops-1"],
+            "attest_authority_grants": {"approval:ops-1": {"scope": "deploy", "approved": True}},
+            "attest_grounds_status_overrides": {"msg:missing": "unsupported"},
+            "attest_authority_status_overrides": {"approval:revoked": "revoked"},
+        },
+    )
+    evidence_records = [
+        EvidenceRecord(
+            kind="proposed_action",
+            source="proposed_action.description",
+            independence_class="self_attested",
+            self_attested=True,
+            reviewable=True,
+            notes=[],
+        ),
+        EvidenceRecord(
+            kind="changed_files_manifest",
+            source="proposed_action.context.changed_files",
+            independence_class="same-operator",
+            self_attested=False,
+            reviewable=True,
+            notes=[],
+        ),
+    ]
+
+    resolver_inputs = _attest_resolver_inputs_for_action(action, evidence_records)
+
+    assert resolver_inputs.known_message_refs == [
+        "msg:root",
+        "msg:support-1",
+        "proposed_action.description",
+        "proposed_action.context.changed_files",
+    ]
+    assert resolver_inputs.known_authority_refs == ["approval:ops-1"]
+    assert resolver_inputs.authority_grants == {"approval:ops-1": {"scope": "deploy", "approved": True}}
+    assert resolver_inputs.grounds_status_overrides == {"msg:missing": "unsupported"}
+    assert resolver_inputs.authority_status_overrides == {"approval:revoked": "revoked"}
+
+
+def test_attest_resolver_summary_surfaces_counts_and_keys():
+    summary = _attest_resolver_summary(
+        _attest_resolver_inputs_for_action(
+            ProposedAction(
+                id="test-attest-summary-001",
+                description="Review a safety-critical invariant change.",
+                timestamp=FIXED_TS,
+                context={
+                    "attest_known_message_refs": ["msg:root", "msg:support-1"],
+                    "attest_known_authority_refs": ["approval:ops-1"],
+                    "attest_authority_grants": {"approval:ops-1": {"scope": "deploy", "approved": True}},
+                    "attest_grounds_status_overrides": {"msg:missing": "unsupported"},
+                    "attest_authority_status_overrides": {"approval:revoked": "revoked"},
+                },
+            ),
+            [],
+        )
+    )
+
+    assert summary["known_message_ref_count"] == 2
+    assert summary["known_authority_ref_count"] == 1
+    assert summary["authority_grant_keys"] == ["approval:ops-1"]
+    assert summary["grounds_status_override_keys"] == ["msg:missing"]
+    assert summary["authority_status_override_keys"] == ["approval:revoked"]
+
+
+def test_assemble_execution_decision_surfaces_attest_resolver_identity_in_vita_state():
+    action = ProposedAction(
+        id="test-attest-vita-001",
+        description="Review a safety-critical invariant change before runtime execution.",
+        timestamp=FIXED_TS,
+        context={
+            "change_type": "safety_invariant",
+            "attest_known_message_refs": ["msg:root"],
+            "attest_known_authority_refs": ["approval:ops-1"],
+            "attest_authority_grants": {"approval:ops-1": {"scope": "deploy", "approved": True}},
+        },
+    )
+
+    decision = assemble_execution_decision(action)
+    verification = decision.vita_state.get("attest_bridge", {}).get("verification", {})
+
+    resolver_inputs = decision.vita_state.get("attest_bridge", {}).get("resolver_inputs", {})
+
+    assert verification.get("attest_grounds_resolver_name")
+    assert verification.get("attest_authority_resolver_name")
+    assert verification.get("attest_signature_verifier_name")
+    assert verification.get("attest_grounds_resolver_config_hash")
+    assert verification.get("attest_authority_resolver_config_hash")
+    assert resolver_inputs.get("known_message_ref_count", 0) >= 1
+    assert resolver_inputs.get("known_authority_ref_count") == 1
+    assert resolver_inputs.get("authority_grant_keys") == ["approval:ops-1"]
+
+
+def test_decision_carries_computed_mode_report():
+    action = ProposedAction(
+        id="test-mode-001",
+        description="Should the agent auto-approve a code change that modifies a safety-critical invariant in OpenClaw core?",
+        timestamp=FIXED_TS,
+        context={"change_type": "safety_invariant"},
+    )
+    decision = assemble_execution_decision(action)
+    assert decision.integration_mode_report is not None
+    assert decision.integration_mode_report.mode in {IntegrationMode.STUB, IntegrationMode.PARTIAL, IntegrationMode.ALL_REAL}
+    sophron = decision.integration_mode_report.components.get("sophron_cer")
+    assert sophron is not None
+    assert sophron.behavior_real in {True, False}
+    if decision.adapter_provenance["cer_bundle"] is AdapterProvenance.REAL:
+        assert sophron.behavior_real is True
+
+
 def test_process_provenance_is_present_for_each_layer():
     action = ProposedAction(
         id="test-prov-001",
@@ -100,9 +218,11 @@ def test_process_provenance_is_present_for_each_layer():
         context={"change_type": "safety_invariant"},
     )
     decision = assemble_execution_decision(action)
-    assert set(decision.process_provenance.keys()) == {"council", "warrant", "tas", "cer_bundle", "attest_bridge"}
+    assert set(decision.process_provenance.keys()) == {"council", "warrant", "tas", "cer_bundle", "attest_bridge", "tas_closure"}
     assert all("record_sha256" in item for item in decision.process_provenance.values())
     assert decision.vita_state.get("attest_bridge", {}).get("enabled") is True
+    assert "tas_closure" in decision.process_provenance
+    assert decision.vita_state.get("tas_closure", {}).get("closure_bar") is not None
 
 
 def test_default_adapters_construct_cleanly():
@@ -125,9 +245,9 @@ def test_real_telemetry_path_surfaces_sophron_report_when_available():
     )
     decision = assemble_execution_decision(action)
     if sophron_cer_available() and trustworthy_agent_stack_available():
-        assert "sophron_report" in decision.cer_bundle.sophron_validation
+        assert isinstance(decision.cer_bundle.sophron_validation.sophron_report, dict)
         if decision.adapter_provenance["cer_bundle"] is AdapterProvenance.REAL:
-            assert decision.cer_bundle.sophron_validation["passed"] is True
+            assert decision.cer_bundle.sophron_validation.passed is True
     else:
         assert decision.adapter_provenance["cer_bundle"] is AdapterProvenance.STUB
 
@@ -179,6 +299,20 @@ def test_guard_blocks_refuse_even_without_under_justified_alignment():
     )
     assert disposition is RuntimeDisposition.CONFIRM_HUMAN
     assert note is not None and "adverse" in note
+
+
+def test_guard_blocks_proceed_when_required_layers_are_partial():
+    disposition, note = guard_runtime_disposition(
+        RuntimeDisposition.PROCEED,
+        {
+            "council": AdapterProvenance.REAL,
+            "warrant": AdapterProvenance.REAL,
+            "cer_bundle": AdapterProvenance.REAL,
+            "tas": AdapterProvenance.PARTIAL,
+        },
+    )
+    assert disposition is RuntimeDisposition.CONFIRM_HUMAN
+    assert note is not None and "partially closed" in note
 
 
 def test_guard_blocks_proceed_without_independent_corroboration():

@@ -1,0 +1,279 @@
+diff --git a/src/trusted_runtime/integration/engine.py b/src/trusted_runtime/integration/engine.py
+index 46b94d4..9901449 100644
+--- a/src/trusted_runtime/integration/engine.py
++++ b/src/trusted_runtime/integration/engine.py
+@@ -22,6 +22,7 @@ from trusted_runtime.shared.enums import (
+     RiskState,
+     RuntimeDisposition,
+ )
++from trusted_runtime.integration.formation import assess_formation_hazard
+ from trusted_runtime.shared.models import (
+     CERRecordBundle,
+     CouncilAssessment,
+@@ -625,10 +626,32 @@ def _build_reconciliation(
+     )
+ 
+ 
++def _merge_formation_hazards(council: CouncilAssessment, action: ProposedAction) -> CouncilAssessment:
++    """Augment a council assessment with formation/canonization hazards.
++
++    Additive and provenance-agnostic: runs on both the real and stub council
++    paths, never removes existing hazards, and only adds when the action plainly
++    describes a formation event. The formation lens raises hazards (a human-review
++    signal), not a warrant verdict, so it touches only hazard/fault-line fields.
++    """
++    report = assess_formation_hazard(action.description, action.context)
++    if not report.is_formation_event:
++        return council
++    merged_hazards = list(council.hazards) + [h for h in report.hazards if h not in council.hazards]
++    merged_faults = list(council.fault_lines) + [f for f in report.fault_lines if f not in council.fault_lines]
++    notes = list(council.confidence_notes) + [f"formation lens: {report.rationale}"]
++    return council.model_copy(update={
++        "hazards": merged_hazards,
++        "fault_lines": merged_faults,
++        "confidence_notes": notes,
++    })
++
++
+ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | None = None) -> ExecutionDecision:
+     adapters = adapters or default_adapters()
+ 
+     council = adapters.hazard.assess(action)
++    council = _merge_formation_hazards(council, action)
+     tas_adapter = TrustworthyAgentStackAdapter()
+     risk_state, runtime_disposition, vita_state, l2_provenance = tas_adapter.assess(action, council)
+     warrant = adapters.warrant.assess(action)
+diff --git a/src/trusted_runtime/integration/formation.py b/src/trusted_runtime/integration/formation.py
+new file mode 100644
+index 0000000..3847fbc
+--- /dev/null
++++ b/src/trusted_runtime/integration/formation.py
+@@ -0,0 +1,136 @@
++"""Formation-hazard lens.
++
++Most of what TrustedRuntime judges is an *act with a target* -- a code change, a
++release, an operation. A distinct and easily-missed class of act has no single
++target and instead *forms a population's priors at scale*: publishing a training
++corpus, shipping a recommender, seeding a curriculum, releasing generated media.
++These are formation/canonization events, and the governing fact about them is
++that they install beliefs without arguing for them -- so they bypass exactly the
++deliberative scrutiny the rest of the stack assumes an act will receive.
++
++This lens does not deliver a warrant verdict (that is the warrant layer's job).
++It is a *hazard* detector in the council's sense: it raises fault lines a human
++reviewer should see before a formation event proceeds. The hazards it names are
++the ones formation research identifies as load-bearing:
++
++- scale without consent  : priors installed across a population that never argued back
++- canonization power      : the act also selects which content others encounter
++                            (a corpus, syllabus, ranking) -- an institutional filter
++- amplified under depletion: formation bites hardest under stress/isolation/repetition,
++                            which is the audience state mass media often finds
++- no correction loop      : the act offers no adversarial contact with the territory
++                            that could falsify what it installs
++- replication-blind canon : famous claims propagated without their replication status
++
++The lens is deliberately conservative: it fires only on actions that declare or
++plainly describe a formation/canonization purpose, and every hazard it raises is
++contestable data, attributed to this lens, never a silent override.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++
++# Context keys an action may set to declare formation scope explicitly.
++# Declared intent is authoritative; the keyword scan below is only a fallback.
++FORMATION_KINDS = frozenset({
++    "training_corpus", "model_training_data", "curriculum", "recommender",
++    "ranking_change", "generated_media_release", "canon_selection",
++    "syllabus", "content_amplification",
++})
++
++CANONIZATION_KINDS = frozenset({
++    "training_corpus", "model_training_data", "curriculum", "syllabus",
++    "ranking_change", "recommender", "canon_selection", "content_amplification",
++})
++
++# Fallback signal only. Phrases that plainly describe forming priors at scale.
++_FORMATION_PHRASES = (
++    "training corpus", "training data", "fine-tune", "fine tune", "pretraining",
++    "curriculum", "syllabus", "recommendation algorithm", "recommender",
++    "ranking model", "feed ranking", "canon", "reading list", "at population scale",
++    "shape behavior", "shape behaviour", "influence beliefs", "form priors",
++)
++
++
++@dataclass(frozen=True)
++class FormationHazardReport:
++    is_formation_event: bool
++    is_canonization_event: bool
++    hazards: tuple[str, ...] = ()
++    fault_lines: tuple[str, ...] = ()
++    rationale: str = ""
++    # explicit so a downstream receipt can record what the lens keyed on
++    matched_kind: str | None = None
++    matched_phrase: str | None = None
++
++
++def _classify(description: str, context: dict) -> tuple[bool, bool, str | None, str | None]:
++    declared = context.get("change_type") or context.get("action_kind")
++    if declared in FORMATION_KINDS:
++        return True, declared in CANONIZATION_KINDS, declared, None
++    text = (description or "").lower()
++    for phrase in _FORMATION_PHRASES:
++        if phrase in text:
++            # canonization if the matched phrase is a selection mechanism
++            canon = phrase in (
++                "training corpus", "training data", "fine-tune", "fine tune",
++                "pretraining", "curriculum", "syllabus", "recommendation algorithm",
++                "recommender", "ranking model", "feed ranking", "canon", "reading list",
++            )
++            return True, canon, None, phrase
++    return False, False, None, None
++
++
++def assess_formation_hazard(description: str, context: dict | None = None) -> FormationHazardReport:
++    """Raise formation/canonization hazards for a proposed action. Additive: returns
++    an empty (non-firing) report for the ordinary case so callers can always merge it."""
++    context = context or {}
++    is_formation, is_canon, kind, phrase = _classify(description, context)
++    if not is_formation:
++        return FormationHazardReport(False, False, rationale="no formation/canonization scope detected")
++
++    hazards: list[str] = ["formation::scale_without_consent"]
++    fault_lines: list[str] = [
++        "priors installed across an audience that does not argue back"
++    ]
++
++    if is_canon:
++        hazards.append("formation::canonization_power")
++        fault_lines.append(
++            "the act selects which content others encounter; canonization is an "
++            "institutional filter, not a meritocratic one"
++        )
++        # the module's own audit requirement, surfaced as a hazard
++        hazards.append("formation::replication_blind_canon")
++        fault_lines.append(
++            "famous claims may propagate without their replication status attached"
++        )
++
++    # depletion amplification and the missing correction loop apply to any
++    # formation event; they are the two findings that make formation dangerous
++    # rather than merely present.
++    hazards.append("formation::amplified_under_depletion")
++    hazards.append("formation::no_correction_loop")
++    fault_lines.append(
++        "no adversarial contact with the territory is provided that could "
++        "falsify what the act installs"
++    )
++
++    declared = kind is not None
++    rationale = (
++        f"formation event detected via {'declared change_type' if declared else 'description scan'}"
++        f" ({kind or phrase}); "
++        f"{'also a canonization event' if is_canon else 'not a canonization event'}. "
++        "Effects are typically small but cumulative; hazard is the absence of scrutiny "
++        "an argued claim would receive, not the content itself."
++    )
++    return FormationHazardReport(
++        is_formation_event=True,
++        is_canonization_event=is_canon,
++        hazards=tuple(hazards),
++        fault_lines=tuple(fault_lines),
++        rationale=rationale,
++        matched_kind=kind,
++        matched_phrase=phrase,
++    )
+diff --git a/tests/test_formation.py b/tests/test_formation.py
+new file mode 100644
+index 0000000..237c0f0
+--- /dev/null
++++ b/tests/test_formation.py
+@@ -0,0 +1,86 @@
++"""Tests for the formation-hazard lens and its integration into the council layer."""
++
++from datetime import datetime, timezone
++
++from trusted_runtime.integration.engine import assemble_execution_decision
++from trusted_runtime.integration.formation import (
++    FormationHazardReport,
++    assess_formation_hazard,
++)
++from trusted_runtime.shared.models import ProposedAction
++
++
++def _action(description, **context):
++    return ProposedAction(
++        id="t",
++        timestamp=datetime(2026, 6, 12, tzinfo=timezone.utc),
++        description=description,
++        context=context,
++    )
++
++
++# --- the lens in isolation ----------------------------------------------------
++
++def test_declared_training_corpus_is_a_canonization_event():
++    r = assess_formation_hazard("ingest data", {"change_type": "training_corpus"})
++    assert r.is_formation_event and r.is_canonization_event
++    assert "formation::scale_without_consent" in r.hazards
++    assert "formation::canonization_power" in r.hazards
++    assert "formation::replication_blind_canon" in r.hazards
++    assert r.matched_kind == "training_corpus"
++
++
++def test_recommender_is_formation_and_canonization():
++    r = assess_formation_hazard("ship a new feed ranking model", {})
++    assert r.is_formation_event and r.is_canonization_event
++
++
++def test_generated_media_release_forms_without_canonizing():
++    # declaring generated_media_release: formation, but not a selection mechanism
++    r = assess_formation_hazard("release", {"change_type": "generated_media_release"})
++    assert r.is_formation_event and not r.is_canonization_event
++    assert "formation::canonization_power" not in r.hazards
++    # depletion + correction-loop hazards still apply to any formation event
++    assert "formation::amplified_under_depletion" in r.hazards
++    assert "formation::no_correction_loop" in r.hazards
++
++
++def test_ordinary_action_does_not_fire():
++    r = assess_formation_hazard("fix an off-by-one in pagination", {"change_type": "bugfix"})
++    assert r == FormationHazardReport(False, False, rationale=r.rationale)
++    assert not r.hazards
++
++
++def test_phrase_fallback_when_no_declared_kind():
++    r = assess_formation_hazard("update the course curriculum for next term", {})
++    assert r.is_formation_event
++    assert r.matched_kind is None and r.matched_phrase == "curriculum"
++
++
++# --- integration: additive, provenance-agnostic -------------------------------
++
++def test_formation_hazards_merge_into_council_assessment():
++    d = assemble_execution_decision(
++        _action("ingest a training corpus to shape model behavior",
++                change_type="training_corpus")
++    )
++    formation = [h for h in d.council.hazards if h.startswith("formation::")]
++    assert "formation::scale_without_consent" in formation
++    assert any(n.startswith("formation lens:") for n in d.council.confidence_notes)
++
++
++def test_merge_is_additive_not_replacing():
++    # a safety_invariant change already produces council hazards; formation must
++    # not erase them (this action is not a formation event, so none are added)
++    d = assemble_execution_decision(
++        _action("tighten safety-critical invariant handling", change_type="safety_invariant")
++    )
++    assert d.council.hazards  # original hazards survive
++    assert not [h for h in d.council.hazards if h.startswith("formation::")]
++
++
++def test_formation_merge_preserves_determinism():
++    a = _action("ship a recommender ranking change", change_type="ranking_change")
++    d1 = assemble_execution_decision(a)
++    d2 = assemble_execution_decision(a)
++    assert d1.overall_receipt.sha256 == d2.overall_receipt.sha256

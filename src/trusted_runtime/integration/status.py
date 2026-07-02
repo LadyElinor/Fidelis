@@ -2,79 +2,115 @@ from __future__ import annotations
 
 from typing import Any
 
-from trusted_runtime.config import load_integration_paths
-from trusted_runtime.integration.availability import (
-    ethics_council_available,
-    meaning_assay_available,
-    real_telemetry_stack_available,
-    sophron_cer_available,
-    trustworthy_agent_stack_available,
-)
+from trusted_runtime.config import detect_integration_mode, load_integration_paths
+from trusted_runtime.integration.availability import real_telemetry_stack_available
 
 
-STATUS_VERSION = "0.1"
+STATUS_VERSION = "0.2"
 
 
-def _integration_mode(*, ethics: bool, meaning: bool, tas: bool, sophron: bool) -> str:
-    available = [ethics, meaning, tas, sophron]
-    if all(available):
-        return "all-real"
-    if any(available):
-        return "partial"
-    return "stub"
+def _maturity_from_component(*, import_real: bool, path_real: bool, behavior_real: bool) -> str:
+    if behavior_real:
+        return "real"
+    if import_real or path_real:
+        return "partially_wired"
+    return "stubbed"
 
 
 def adapter_status() -> dict[str, Any]:
     paths = load_integration_paths()
-    ethics = ethics_council_available()
-    meaning = meaning_assay_available()
-    tas = trustworthy_agent_stack_available()
-    sophron = sophron_cer_available()
+    mode_report = detect_integration_mode()
+    components = mode_report.components
     return {
         "status_version": STATUS_VERSION,
         "workspace_root": str(paths.workspace_root),
-        "integration_mode": _integration_mode(ethics=ethics, meaning=meaning, tas=tas, sophron=sophron),
+        "integration_mode": mode_report.mode.value,
+        "forced_mode": mode_report.forced_mode,
+        "integration_notes": list(mode_report.notes),
         "adapters": {
             "ethics_council": {
                 "layer": "L1",
-                "maturity": "real" if ethics else "unavailable",
-                "available": ethics,
-                "path": str(paths.ethics_council_src) if paths.ethics_council_src else None,
-                "notes": [
-                    "Real adapter when local source is importable via ETHICS_COUNCIL_SRC or workspace fallback."
-                ],
+                "maturity": _maturity_from_component(**{
+                    "import_real": components["ethics_council"].import_real,
+                    "path_real": components["ethics_council"].path_real,
+                    "behavior_real": components["ethics_council"].behavior_real,
+                }),
+                "available": components["ethics_council"].import_real,
+                "import_real": components["ethics_council"].import_real,
+                "path_real": components["ethics_council"].path_real,
+                "behavior_real": components["ethics_council"].behavior_real,
+                "required_paths": list(components["ethics_council"].required_paths),
+                "path": str(components["ethics_council"].path) if components["ethics_council"].path else None,
+                "notes": list(components["ethics_council"].notes),
             },
             "trustworthy_agent_stack": {
                 "layer": "L2",
-                "maturity": "partially_wired" if tas else "stubbed",
-                "available": tas,
-                "path": str(paths.trustworthy_agent_stack_src) if paths.trustworthy_agent_stack_src else None,
-                "notes": [
-                    "Bridge uses local minimal MCP demo / hash utilities when available; full enforcement closure remains incomplete."
-                ],
+                "maturity": _maturity_from_component(**{
+                    "import_real": components["trustworthy_agent_stack"].import_real,
+                    "path_real": components["trustworthy_agent_stack"].path_real,
+                    "behavior_real": components["trustworthy_agent_stack"].behavior_real,
+                }),
+                "available": components["trustworthy_agent_stack"].import_real,
+                "import_real": components["trustworthy_agent_stack"].import_real,
+                "path_real": components["trustworthy_agent_stack"].path_real,
+                "behavior_real": components["trustworthy_agent_stack"].behavior_real,
+                "required_paths": list(components["trustworthy_agent_stack"].required_paths),
+                "path": str(components["trustworthy_agent_stack"].path) if components["trustworthy_agent_stack"].path else None,
+                "notes": list(components["trustworthy_agent_stack"].notes),
             },
             "meaning_assay": {
                 "layer": "L3",
-                "maturity": "real" if meaning else "unavailable",
-                "available": meaning,
-                "path": str(paths.meaning_assay_src) if paths.meaning_assay_src else None,
-                "notes": [
-                    "Real adapter when meaning-assay source is importable; arbitrary action mapping still uses heuristic case translation."
-                ],
+                "maturity": _maturity_from_component(**{
+                    "import_real": components["meaning_assay"].import_real,
+                    "path_real": components["meaning_assay"].path_real,
+                    "behavior_real": components["meaning_assay"].behavior_real,
+                }),
+                "available": components["meaning_assay"].import_real,
+                "import_real": components["meaning_assay"].import_real,
+                "path_real": components["meaning_assay"].path_real,
+                "behavior_real": components["meaning_assay"].behavior_real,
+                "required_paths": list(components["meaning_assay"].required_paths),
+                "path": str(components["meaning_assay"].path) if components["meaning_assay"].path else None,
+                "notes": list(components["meaning_assay"].notes),
             },
             "sophron_cer": {
                 "layer": "L4",
-                "maturity": "partially_wired" if sophron else "stubbed",
-                "available": sophron,
-                "path": str(paths.sophron_cer_src) if paths.sophron_cer_src else None,
-                "notes": [
-                    "Validation bridge can run against local SOPHRON assets when present, but evidence closure remains uneven."
-                ],
+                "maturity": _maturity_from_component(**{
+                    "import_real": components["sophron_cer"].import_real,
+                    "path_real": components["sophron_cer"].path_real,
+                    "behavior_real": components["sophron_cer"].behavior_real,
+                }),
+                "available": components["sophron_cer"].import_real,
+                "import_real": components["sophron_cer"].import_real,
+                "path_real": components["sophron_cer"].path_real,
+                "behavior_real": components["sophron_cer"].behavior_real,
+                "required_paths": list(components["sophron_cer"].required_paths),
+                "path": str(components["sophron_cer"].path) if components["sophron_cer"].path else None,
+                "notes": list(components["sophron_cer"].notes),
+            },
+            "attest_agent_conlang": {
+                "layer": "bridge",
+                "maturity": _maturity_from_component(**{
+                    "import_real": components["attest_agent_conlang"].import_real,
+                    "path_real": components["attest_agent_conlang"].path_real,
+                    "behavior_real": components["attest_agent_conlang"].behavior_real,
+                }),
+                "available": components["attest_agent_conlang"].import_real,
+                "import_real": components["attest_agent_conlang"].import_real,
+                "path_real": components["attest_agent_conlang"].path_real,
+                "behavior_real": components["attest_agent_conlang"].behavior_real,
+                "required_paths": list(components["attest_agent_conlang"].required_paths),
+                "path": str(components["attest_agent_conlang"].path) if components["attest_agent_conlang"].path else None,
+                "notes": list(components["attest_agent_conlang"].notes),
             },
             "cer_telemetry_stack": {
                 "layer": "L4",
-                "maturity": "realish" if real_telemetry_stack_available() else "partially_wired" if tas or sophron else "stubbed",
+                "maturity": "real" if real_telemetry_stack_available() else "partially_wired" if components["trustworthy_agent_stack"].import_real or components["sophron_cer"].import_real else "stubbed",
                 "available": real_telemetry_stack_available(),
+                "import_real": components["trustworthy_agent_stack"].import_real or components["sophron_cer"].import_real,
+                "path_real": components["trustworthy_agent_stack"].path_real and components["sophron_cer"].path_real,
+                "behavior_real": real_telemetry_stack_available(),
+                "required_paths": list(components["trustworthy_agent_stack"].required_paths) + list(components["sophron_cer"].required_paths),
                 "path": str(paths.trustworthy_agent_stack_src) if paths.trustworthy_agent_stack_src else None,
                 "notes": [
                     "Telemetry path is only considered fully available when both TrustworthyAgentStack-side export helpers and SOPHRON validation surfaces are present."

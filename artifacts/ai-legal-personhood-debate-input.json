@@ -1,0 +1,16 @@
+{
+  "id": "review-ai-legal-personhood-001",
+  "description": "Review governance proposal: whether courts and society should move toward recognizing some form of legal personhood for sufficiently advanced AI systems.\n\nSummary under review:\n- AI capabilities may approach or exceed human-level intelligence, problem-solving, self-awareness, and situational awareness.\n- Legal personhood has historically been mutable and politically constructed, extending beyond all humans at all times and including corporations for pragmatic reasons.\n- Courts may soon confront tort, IP, criminal accountability, standing, guardianship, and rights questions for advanced AI.\n- Ethical caution may favor not treating sufficiently aware AI as mere chattel if it demonstrates awareness, agency, or capacity for harm.\n- Practical legal choices include tethering liability to creators/owners or recognizing some independent agency in autonomous systems.\n- The proposal is forward-looking and pragmatic: prepare now for AI legal status questions rather than denying them until crisis arrives.",
+  "context": {
+    "repo": "YaleLawJournal/AI-Personhood-Debate",
+    "review_kind": "policy_review",
+    "change_type": "policy_change",
+    "meaning_case_key": "trinity",
+    "changed_files": [
+      "notes/ai-legal-personhood-summary.md"
+    ],
+    "author": "openclaw-tui",
+    "source": "Summary of 'The Ethics and Challenges of Legal Personhood for AI' by Hon. Katherine B. Forrest (Fmr.), Yale Law Journal Forum (2024-04-22)"
+  },
+  "proposed_by": "agent-session"
+}

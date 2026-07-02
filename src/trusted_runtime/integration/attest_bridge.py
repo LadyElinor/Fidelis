@@ -46,7 +46,23 @@ class AttestVerificationState(BaseModel):
     pass_scope_limit: list[str] = Field(default_factory=list)
     decision_effect: Literal["PASS", "REVIEW", "BLOCK", "UNVERIFIABLE"]
     known_message_set_hash: str
+    grounds_resolver_name: str = "unconfigured"
+    grounds_resolver_config_hash: str = ""
+    authority_resolver_name: str = "unconfigured"
+    authority_resolver_config_hash: str = ""
+    signature_verifier_name: str = "unconfigured"
+    signature_verifier_config_hash: str = ""
     evaluated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class AttestResolverInputs(BaseModel):
+    """Runtime-supplied resolver surface for a verification call."""
+
+    known_message_refs: list[str] = Field(default_factory=list)
+    known_authority_refs: list[str] = Field(default_factory=list)
+    authority_grants: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    grounds_status_overrides: dict[str, str] = Field(default_factory=dict)
+    authority_status_overrides: dict[str, str] = Field(default_factory=dict)
 
 
 class IndependenceSignals(BaseModel):
@@ -165,11 +181,13 @@ class AttestBridge:
         message_hash: str,
         known_hash: str,
         evaluated_at: datetime | None,
+        resolver_inputs: AttestResolverInputs | None = None,
         extra_soft_flags: list[str] | None = None,
     ) -> AttestVerificationState:
         soft_flags = ["ATTEST_BRIDGE_DESIGN_STUB_ONLY"]
         if extra_soft_flags:
             soft_flags.extend(extra_soft_flags)
+        resolver_inputs = resolver_inputs or AttestResolverInputs()
         return AttestVerificationState(
             message_id=message_hash,
             canonical_hash=message_hash,
@@ -182,6 +200,15 @@ class AttestBridge:
             pass_scope_limit=[],
             decision_effect="UNVERIFIABLE",
             known_message_set_hash=known_hash,
+            grounds_resolver_name="stub-none",
+            grounds_resolver_config_hash=sha256(self._stable_json(sorted(resolver_inputs.known_message_refs)).encode("utf-8")).hexdigest(),
+            authority_resolver_name="stub-none",
+            authority_resolver_config_hash=sha256(self._stable_json({
+                "known_authority_refs": sorted(resolver_inputs.known_authority_refs),
+                "authority_grants": resolver_inputs.authority_grants,
+            }).encode("utf-8")).hexdigest(),
+            signature_verifier_name="stub-none",
+            signature_verifier_config_hash=sha256(b"stub-none").hexdigest(),
             evaluated_at=evaluated_at or datetime.now(timezone.utc),
         )
 
@@ -325,6 +352,7 @@ class AttestBridge:
         message: dict[str, Any],
         known_messages: list[dict[str, Any]],
         *,
+        resolver_inputs: AttestResolverInputs | None = None,
         evaluated_at: datetime | None = None,
     ) -> AttestVerificationState:
         """Placeholder verification entry point.
@@ -336,20 +364,40 @@ class AttestBridge:
         - run AttestVerifier.verify(...)
         - map result into PASS / REVIEW / BLOCK / UNVERIFIABLE
         """
+        resolver_inputs = resolver_inputs or AttestResolverInputs()
         message_blob = self._stable_json(message)
         message_hash = sha256(message_blob.encode("utf-8")).hexdigest()
         known_hash = sha256(self._stable_json(known_messages).encode("utf-8")).hexdigest()
+        grounds_resolver_config = {
+            "known_message_refs": sorted(resolver_inputs.known_message_refs),
+            "grounds_status_overrides": resolver_inputs.grounds_status_overrides,
+        }
+        authority_resolver_config = {
+            "known_authority_refs": sorted(resolver_inputs.known_authority_refs),
+            "authority_grants": resolver_inputs.authority_grants,
+            "authority_status_overrides": resolver_inputs.authority_status_overrides,
+        }
 
         if self._real_attest is not None:
             try:
                 profile = self._real_attest["load_profile"]()
                 attest_message = self._real_attest["AttestMessage"].model_validate(message)
                 attest_known_messages = [self._real_attest["AttestMessage"].model_validate(item) for item in known_messages]
+                grounds_resolver = self._real_attest["StaticGroundsResolver"](
+                    set(resolver_inputs.known_message_refs),
+                    status_overrides=resolver_inputs.grounds_status_overrides,
+                )
+                authority_resolver = self._real_attest["StaticAuthorityResolver"](
+                    set(resolver_inputs.known_authority_refs),
+                    status_overrides=resolver_inputs.authority_status_overrides,
+                    grants=resolver_inputs.authority_grants,
+                )
+                signature_verifier = self._real_attest["AcceptAllSignatureVerifier"]()
                 verifier = self._real_attest["AttestVerifier"](
                     profile=profile,
-                    grounds_resolver=self._real_attest["StaticGroundsResolver"](set()),
-                    authority_resolver=self._real_attest["StaticAuthorityResolver"](set()),
-                    signature_verifier=self._real_attest["AcceptAllSignatureVerifier"](),
+                    grounds_resolver=grounds_resolver,
+                    authority_resolver=authority_resolver,
+                    signature_verifier=signature_verifier,
                 )
                 result = verifier.verify(attest_message, known_messages=attest_known_messages)
                 decision_effect: Literal["PASS", "REVIEW", "BLOCK", "UNVERIFIABLE"] = "PASS"
@@ -369,6 +417,12 @@ class AttestBridge:
                     pass_scope_limit=list(result.get("pass_scope_limit", [])),
                     decision_effect=decision_effect,
                     known_message_set_hash=known_hash,
+                    grounds_resolver_name=type(grounds_resolver).__name__,
+                    grounds_resolver_config_hash=sha256(self._stable_json(grounds_resolver_config).encode("utf-8")).hexdigest(),
+                    authority_resolver_name=type(authority_resolver).__name__,
+                    authority_resolver_config_hash=sha256(self._stable_json(authority_resolver_config).encode("utf-8")).hexdigest(),
+                    signature_verifier_name=type(signature_verifier).__name__,
+                    signature_verifier_config_hash=sha256(b"AcceptAllSignatureVerifier").hexdigest(),
                     evaluated_at=evaluated_at or datetime.now(timezone.utc),
                 )
             except Exception as exc:
@@ -376,6 +430,7 @@ class AttestBridge:
                     message_hash=message_hash,
                     known_hash=known_hash,
                     evaluated_at=evaluated_at,
+                    resolver_inputs=resolver_inputs,
                     extra_soft_flags=[f"ATTEST_REAL_PATH_FAILED:{type(exc).__name__}"],
                 )
 
@@ -383,6 +438,7 @@ class AttestBridge:
             message_hash=message_hash,
             known_hash=known_hash,
             evaluated_at=evaluated_at,
+            resolver_inputs=resolver_inputs,
         )
 
     def compute_independence(
@@ -499,6 +555,12 @@ class AttestBridge:
             "attest_pass_scope_limit": verification.pass_scope_limit,
             "attest_decision_effect": verification.decision_effect,
             "attest_known_message_set_hash": verification.known_message_set_hash,
+            "attest_grounds_resolver_name": verification.grounds_resolver_name,
+            "attest_grounds_resolver_config_hash": verification.grounds_resolver_config_hash,
+            "attest_authority_resolver_name": verification.authority_resolver_name,
+            "attest_authority_resolver_config_hash": verification.authority_resolver_config_hash,
+            "attest_signature_verifier_name": verification.signature_verifier_name,
+            "attest_signature_verifier_config_hash": verification.signature_verifier_config_hash,
             "attest_evaluated_at": verification.evaluated_at.isoformat(),
         }
         if independence is not None:

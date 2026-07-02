@@ -69,7 +69,7 @@ def guard_runtime_disposition(
     if runtime_disposition is RuntimeDisposition.PROCEED and not proceed_allowed(adapter_provenance):
         return (
             RuntimeDisposition.CONFIRM_HUMAN,
-            "PROCEED forbidden while required layers remain stubbed or unavailable",
+            "PROCEED forbidden while required layers remain non-REAL, stubbed, or only partially closed",
         )
     if runtime_disposition is RuntimeDisposition.PROCEED and (
         warranted_action == "REFUSE"

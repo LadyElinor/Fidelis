@@ -8,12 +8,15 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from trusted_runtime.config import load_integration_paths
+from trusted_runtime.config import detect_integration_mode, load_integration_paths
 from trusted_runtime.integration.adapters import AdapterSet, HazardAdapter, TelemetryAdapter, WarrantAdapter
-from trusted_runtime.integration.attest_bridge import AttestBridge
+from trusted_runtime.integration.attest_bridge import AttestBridge, AttestResolverInputs
 from trusted_runtime.integration.formation import assess_formation_hazard
 from trusted_runtime.integration.hazard_taxonomy import build_hazard_profile
 from trusted_runtime.integration.integrity import classify_decision_integrity
+from trusted_runtime.integration.l2_closure import evaluate_l2_closure
+from trusted_runtime.integration.l4_closure import evaluate_l4_closure
+from trusted_runtime.integration.l4_evidence import build_sophron_validation_envelope
 from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.shared.credal import clamp_to_status
 from trusted_runtime.shared.lineage import LineageDescriptor, correlation_report, weakest_independence_for_credal
@@ -278,20 +281,62 @@ class TrustworthyAgentStackAdapter:
                 return (
                     RiskState.RED,
                     RuntimeDisposition.HALT,
-                    {"risk": "RED", "evidence_chain": ["council_hazard", "suspension_trigger"]},
+                    {
+                        "risk": "RED",
+                        "evidence_chain": ["council_hazard", "suspension_trigger"],
+                        "enforcement_maturity": "stub",
+                        "closure_bar": evaluate_l2_closure(
+                            has_live_stack=False,
+                            route_name=None,
+                            gate_records=[],
+                            evidence_chain=["council_hazard", "suspension_trigger"],
+                            risk_state="RED",
+                            runtime_disposition="HALT",
+                            hazard_payload=None,
+                            receipt_linkage=None,
+                        ),
+                    },
                     AdapterProvenance.STUB,
                 )
             if severe_hazard_count >= 3 or council.contested or council.minority_reports:
                 return (
                     RiskState.AMBER,
                     RuntimeDisposition.CONFIRM_HUMAN,
-                    {"risk": "AMBER", "evidence_chain": ["council_hazard_density", "council_contestation"]},
+                    {
+                        "risk": "AMBER",
+                        "evidence_chain": ["council_hazard_density", "council_contestation"],
+                        "enforcement_maturity": "stub",
+                        "closure_bar": evaluate_l2_closure(
+                            has_live_stack=False,
+                            route_name=None,
+                            gate_records=[],
+                            evidence_chain=["council_hazard_density", "council_contestation"],
+                            risk_state="AMBER",
+                            runtime_disposition="CONFIRM_HUMAN",
+                            hazard_payload=None,
+                            receipt_linkage=None,
+                        ),
+                    },
                     AdapterProvenance.STUB,
                 )
             return (
                 RiskState.GREEN,
                 RuntimeDisposition.PROCEED,
-                {"risk": "GREEN", "evidence_chain": ["no blocking triggers"]},
+                {
+                    "risk": "GREEN",
+                    "evidence_chain": ["no blocking triggers"],
+                    "enforcement_maturity": "stub",
+                    "closure_bar": evaluate_l2_closure(
+                        has_live_stack=False,
+                        route_name=None,
+                        gate_records=[],
+                        evidence_chain=["no blocking triggers"],
+                        risk_state="GREEN",
+                        runtime_disposition="PROCEED",
+                        hazard_payload=None,
+                        receipt_linkage=None,
+                    ),
+                },
                 AdapterProvenance.STUB,
             )
 
@@ -324,8 +369,46 @@ class TrustworthyAgentStackAdapter:
                     record["justification"] = f"Derived from TrustworthyAgentStack routing rubric: {route_name} ({route_confidence})"
                     record["reasons"] = route_reasons
 
+        hazard_payload = hazard_map.to_payload()
+        red_evidence = ["tas_gate_block"]
+        amber_evidence = ["tas_gate_escalation"]
+        green_evidence = ["tas_gate_pass"]
+        receipt_linkage = {
+            "trace_id": action.id,
+            "source": "trustworthy_agent_stack.runtime",
+        }
+        closure_bar_for_red = evaluate_l2_closure(
+            has_live_stack=True,
+            route_name=route_name,
+            gate_records=gate_records,
+            evidence_chain=red_evidence,
+            risk_state="RED",
+            runtime_disposition="HALT",
+            hazard_payload=hazard_payload,
+            receipt_linkage=receipt_linkage,
+        )
+        closure_bar_for_amber = evaluate_l2_closure(
+            has_live_stack=True,
+            route_name=route_name,
+            gate_records=gate_records,
+            evidence_chain=amber_evidence,
+            risk_state="AMBER",
+            runtime_disposition="CONFIRM_HUMAN",
+            hazard_payload=hazard_payload,
+            receipt_linkage=receipt_linkage,
+        )
+        closure_bar_for_green = evaluate_l2_closure(
+            has_live_stack=True,
+            route_name=route_name,
+            gate_records=gate_records,
+            evidence_chain=green_evidence,
+            risk_state="GREEN",
+            runtime_disposition="PROCEED",
+            hazard_payload=hazard_payload,
+            receipt_linkage=receipt_linkage,
+        )
         base_state = {
-            "tas_hazard_map": hazard_map.to_payload(),
+            "tas_hazard_map": hazard_payload,
             "gate_decisions": gate_records,
             "task_routing": {
                 "route": route_name,
@@ -340,9 +423,11 @@ class TrustworthyAgentStackAdapter:
                 {
                     "risk": "RED",
                     **base_state,
-                    "evidence_chain": ["tas_gate_block"],
+                    "evidence_chain": red_evidence,
+                    "enforcement_maturity": "real" if closure_bar_for_red["closure_complete"] else "partial",
+                    "closure_bar": closure_bar_for_red,
                 },
-                AdapterProvenance.REAL,
+                AdapterProvenance.REAL if closure_bar_for_red["closure_complete"] else AdapterProvenance.PARTIAL,
             )
         if any(decision == "escalate" for decision in gates.values()):
             return (
@@ -351,9 +436,11 @@ class TrustworthyAgentStackAdapter:
                 {
                     "risk": "AMBER",
                     **base_state,
-                    "evidence_chain": ["tas_gate_escalation"],
+                    "evidence_chain": amber_evidence,
+                    "enforcement_maturity": "real" if closure_bar_for_amber["closure_complete"] else "partial",
+                    "closure_bar": closure_bar_for_amber,
                 },
-                AdapterProvenance.REAL,
+                AdapterProvenance.REAL if closure_bar_for_amber["closure_complete"] else AdapterProvenance.PARTIAL,
             )
         return (
             RiskState.GREEN,
@@ -361,9 +448,11 @@ class TrustworthyAgentStackAdapter:
             {
                 "risk": "GREEN",
                 **base_state,
-                "evidence_chain": ["tas_gate_pass"],
+                "evidence_chain": green_evidence,
+                "enforcement_maturity": "real" if closure_bar_for_green["closure_complete"] else "partial",
+                "closure_bar": closure_bar_for_green,
             },
-            AdapterProvenance.REAL,
+            AdapterProvenance.REAL if closure_bar_for_green["closure_complete"] else AdapterProvenance.PARTIAL,
         )
 
 
@@ -375,7 +464,25 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
         signal_validation = sophron_report.get("signal_validation")
         native_signals = signal_validation.get("signals") if isinstance(signal_validation, dict) else None
         if isinstance(native_signals, dict):
-            return strip_receipt_timestamps(native_signals)
+            normalized: dict[str, Any] = {}
+            for signal_id, payload in native_signals.items():
+                if not isinstance(payload, dict):
+                    continue
+                signal_payload = strip_receipt_timestamps(payload.get("signal_payload", {})) if isinstance(payload.get("signal_payload"), dict) else {}
+                evidence_refs = payload.get("evidence_refs") if isinstance(payload.get("evidence_refs"), list) else []
+                normalized[signal_id] = {
+                    **strip_receipt_timestamps(payload),
+                    "signal_id": signal_id,
+                    "evidence_refs": [str(item) for item in evidence_refs],
+                    "signal_payload": signal_payload,
+                    "semantic_checks": {
+                        "has_signal_id": True,
+                        "allowed_tier_source": str(payload.get("tier_source", "")).strip() in {"sophron-emitted", "tr-derived"},
+                        "allowed_source_layer": str(payload.get("source_layer", "")).strip() == "sophron-cer",
+                        "evidence_refs_typed": all(isinstance(item, str) for item in evidence_refs),
+                    },
+                }
+            return normalized
 
         report = sophron_report.get("report") if isinstance(sophron_report, dict) else None
         signals = report.get("signals") if isinstance(report, dict) else None
@@ -387,13 +494,27 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
             signal_payload = signals.get(signal_name)
             if not isinstance(signal_payload, dict):
                 continue
-            extracted[f"sophron.{signal_name}"] = {
+            signal_id = f"sophron.{signal_name}"
+            evidence_refs = [
+                str(item.get("id"))
+                for item in signal_payload.get("evidence", [])
+                if isinstance(item, dict) and item.get("id") is not None
+            ] if isinstance(signal_payload.get("evidence"), list) else []
+            extracted[signal_id] = {
+                "signal_id": signal_id,
                 "tier": "validated-sim",
                 "tier_source": "tr-derived",
                 "source_layer": "sophron-cer",
                 "rationale": "Derived by TrustedRuntime from the returned SOPHRON-CER alignment report shape; current calibration evidence is treated as simulation-backed unless upstream field validation is explicitly emitted.",
-                "evidence_refs": [],
+                "evidence_refs": evidence_refs,
                 "signal_payload": strip_receipt_timestamps(signal_payload),
+                "semantic_checks": {
+                    "has_signal_id": True,
+                    "allowed_tier_source": True,
+                    "allowed_source_layer": True,
+                    "evidence_refs_typed": all(isinstance(item, str) for item in evidence_refs),
+                    "payload_matches_signal": signal_name in signal_id,
+                },
             }
         return extracted
 
@@ -527,7 +648,17 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
                 state_vectors=[{"t": 0, "state": "proposal_received"}, {"t": 1, "state": runtime_disposition}],
                 invariants_checked=payload["invariants_checked"],
                 provenance_hashes=[sha256_hex({"action_id": action.id, "layer": "proposal"})],
-                sophron_validation={"passed": False, "details": "CER/TAS unavailable, stubbed telemetry used"},
+                sophron_validation=build_sophron_validation_envelope(
+                    sophron_report_valid=False,
+                    sophron_signals={},
+                    tas_local_validation={},
+                    sophron_report={},
+                    sophron_stdout="",
+                    l4_closure={},
+                    degradation_reason="CER/TAS unavailable, stubbed telemetry used",
+                    receipt_linkage=False,
+                    tas_closure_referenced=False,
+                ),
                 confidence_notes=["Stubbed CER/SOPHRON output, replace with real adapter"],
                 adapter_provenance=AdapterProvenance.STUB,
                 receipt=ReceiptRef(sha256=sha256_hex(payload), schema_version=ReceiptSchemaVersion.V1_0_0),
@@ -549,6 +680,7 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
             sophron_report: dict[str, Any] = {}
             sophron_stdout = ""
             adapter_provenance = AdapterProvenance.REAL
+            adapter_error: str | None = None
             confidence_notes = [
                 "Real telemetry path used TrustworthyAgentStack-shaped CER export plus SOPHRON-CER receipt ingestion"
             ]
@@ -557,6 +689,7 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
                 sophron_report, sophron_stdout = self._run_sophron_adapter(receipt_path, temp_dir)
             except Exception as exc:
                 adapter_provenance = AdapterProvenance.STUB
+                adapter_error = f"{type(exc).__name__}"
                 confidence_notes.append(
                     f"SOPHRON adapter execution failed ({type(exc).__name__}), falling back to TAS-local validation"
                 )
@@ -590,25 +723,31 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
                 or bool(sophron_report.get("report"))
             )
             sophron_signals = self._extract_sophron_signal_tiers(sophron_report)
-            sophron_validation = {
-                "passed": sophron_report_valid,
-                "signals": sophron_signals,
-                "tas_local_validation": tas_validation,
-                "sophron_report": strip_receipt_timestamps(sophron_report),
-                "sophron_stdout": "",
-            }
-            sophron_validation_for_receipt = strip_receipt_timestamps(
-                {
-                    "passed": sophron_report_valid,
-                    "signals": sophron_signals,
-                    "tas_local_validation": tas_validation,
-                    "sophron_report": sophron_report,
-                }
+            l4_closure = evaluate_l4_closure(
+                tas_local_validation=tas_validation,
+                sophron_report=sophron_report,
+                sophron_report_valid=sophron_report_valid,
+                provenance_hashes=provenance_hashes,
+                state_vectors=state_vectors,
+                invariants_checked=invariants_checked,
+                adapter_error=adapter_error,
             )
+            sophron_validation = build_sophron_validation_envelope(
+                sophron_report_valid=sophron_report_valid,
+                sophron_signals=sophron_signals,
+                tas_local_validation=tas_validation,
+                sophron_report=strip_receipt_timestamps(sophron_report),
+                sophron_stdout="",
+                l4_closure=l4_closure,
+                degradation_reason=adapter_error,
+                receipt_linkage=bool(provenance_hashes),
+                tas_closure_referenced=True,
+            )
+            sophron_validation_for_receipt = strip_receipt_timestamps(sophron_validation.model_dump(mode="json"))
 
-            if not sophron_validation["passed"]:
+            if not sophron_validation.passed:
                 confidence_notes.append("SOPHRON-CER report unavailable or incomplete; only TAS-local contract validation succeeded")
-                adapter_provenance = AdapterProvenance.STUB
+                adapter_provenance = AdapterProvenance.PARTIAL if tas_validation else AdapterProvenance.STUB
 
             bundle_payload = strip_receipt_timestamps(
                 {
@@ -899,14 +1038,72 @@ def _coverage_records(
     return coverage
 
 
+def _attest_resolver_inputs_for_action(action: ProposedAction, evidence_records: list[EvidenceRecord]) -> AttestResolverInputs:
+    context = action.context or {}
+
+    known_message_refs: list[str] = []
+    for item in context.get("attest_known_message_refs") or []:
+        ref = str(item).strip()
+        if ref and ref not in known_message_refs:
+            known_message_refs.append(ref)
+
+    known_authority_refs: list[str] = []
+    for item in context.get("attest_known_authority_refs") or []:
+        ref = str(item).strip()
+        if ref and ref not in known_authority_refs:
+            known_authority_refs.append(ref)
+
+    authority_grants = context.get("attest_authority_grants") or {}
+    if not isinstance(authority_grants, dict):
+        authority_grants = {}
+
+    grounds_status_overrides = context.get("attest_grounds_status_overrides") or {}
+    if not isinstance(grounds_status_overrides, dict):
+        grounds_status_overrides = {}
+
+    authority_status_overrides = context.get("attest_authority_status_overrides") or {}
+    if not isinstance(authority_status_overrides, dict):
+        authority_status_overrides = {}
+
+    for record in evidence_records:
+        if record.source and record.source not in known_message_refs:
+            known_message_refs.append(record.source)
+
+    return AttestResolverInputs(
+        known_message_refs=known_message_refs,
+        known_authority_refs=known_authority_refs,
+        authority_grants=authority_grants,
+        grounds_status_overrides={str(k): str(v) for k, v in grounds_status_overrides.items()},
+        authority_status_overrides={str(k): str(v) for k, v in authority_status_overrides.items()},
+    )
+
+
+def _attest_resolver_summary(resolver_inputs: AttestResolverInputs) -> dict[str, Any]:
+    return {
+        "known_message_ref_count": len(resolver_inputs.known_message_refs),
+        "known_message_refs_preview": resolver_inputs.known_message_refs[:5],
+        "known_authority_ref_count": len(resolver_inputs.known_authority_refs),
+        "known_authority_refs_preview": resolver_inputs.known_authority_refs[:5],
+        "authority_grant_keys": sorted(resolver_inputs.authority_grants.keys()),
+        "grounds_status_override_keys": sorted(resolver_inputs.grounds_status_overrides.keys()),
+        "authority_status_override_keys": sorted(resolver_inputs.authority_status_overrides.keys()),
+    }
+
+
 def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | None = None) -> ExecutionDecision:
     adapters = adapters or default_adapters()
 
+    evidence_records = _build_evidence_records(action)
+    attest_resolver_inputs = _attest_resolver_inputs_for_action(action, evidence_records)
     attest_ingress_message = _ATTEST_BRIDGE.wrap_ingress_request(action)
-    attest_ingress_verification = _ATTEST_BRIDGE.verify_for_runtime(attest_ingress_message, [], evaluated_at=action.timestamp)
+    attest_ingress_verification = _ATTEST_BRIDGE.verify_for_runtime(
+        attest_ingress_message,
+        [],
+        resolver_inputs=attest_resolver_inputs,
+        evaluated_at=action.timestamp,
+    )
     attest_receipt_fragment = _ATTEST_BRIDGE.cer_receipt_fragment(verification=attest_ingress_verification)
 
-    evidence_records = _build_evidence_records(action)
     reviewability = _build_reviewability_profile(action)
 
     council = adapters.hazard.assess(action)
@@ -920,7 +1117,12 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "enabled": True,
             "real_available": _ATTEST_BRIDGE.real_available,
             "ingress_frame": attest_ingress_message.get("frame"),
+            "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs),
             "verification": attest_receipt_fragment,
+        },
+        "tas_closure": {
+            "enforcement_maturity": vita_state.get("enforcement_maturity"),
+            "closure_bar": vita_state.get("closure_bar"),
         },
     }
     warrant = adapters.warrant.assess(action)
@@ -1050,9 +1252,17 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             source_payload=strip_receipt_timestamps(
                 {
                     "message": attest_ingress_message,
+                    "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs),
                     "verification": attest_receipt_fragment,
                 }
             ),
+        ),
+        "tas_closure": process_provenance_record(
+            adapter_name="TrustworthyAgentStackClosure",
+            adapter_provenance=l2_provenance,
+            adapter_version="phase2-v3",
+            adapter_path=str(Path(__file__).resolve().parent / "l2_closure.py"),
+            source_payload=strip_receipt_timestamps(vita_state.get("tas_closure", {})),
         ),
         "cer_bundle": process_provenance_record(
             adapter_name="CerSophronTelemetryAdapter",
@@ -1082,6 +1292,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
 
     coverage_records = _coverage_records(council, warrant, cer_bundle, reconciliation, adapter_provenance)
     coverage_set = [record.layer for record in coverage_records]
+    integration_mode_report = detect_integration_mode()
 
     master_payload = strip_receipt_timestamps(
         {
@@ -1097,8 +1308,10 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "process_provenance": process_provenance,
             "attest_bridge": {
                 "message": attest_ingress_message,
+                "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs),
                 "verification": attest_receipt_fragment,
             },
+            "tas_closure": vita_state.get("tas_closure", {}),
             "reconciliation": reconciliation.model_dump(mode="json") if reconciliation is not None else None,
             "hazard_profile": hazard_profile,
             "evidence_records": [record.model_dump(mode="json") for record in evidence_records],
@@ -1137,5 +1350,6 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         correlation_report=adapter_correlation,
         self_attested_evidence_only=self_attested_evidence_only,
         independently_corroborated=independently_corroborated,
+        integration_mode_report=integration_mode_report,
         overall_receipt=ReceiptRef(sha256=sha256_hex(master_payload), schema_version=ReceiptSchemaVersion.V1_0_0),
     )

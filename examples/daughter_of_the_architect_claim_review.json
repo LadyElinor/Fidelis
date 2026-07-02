@@ -1,0 +1,30 @@
+{
+  "id": "review-daughter-of-the-architect-central-claims",
+  "description": "Evaluate the central claims of a biographic-historical essay about Svetlana Alliluyeva. Claims under review: (1) her testimony functions as a counter-archive that reveals aspects of power and terror state documents structurally miss; (2) her life supports a structural, not merely personal, indictment of Soviet totalitarianism; (3) her biography is evidence that neither Soviet nor Western symbolic systems fully absorbed the human person into a usable script; (4) the essay's strongest claims are interpretive and jurisdictional rather than narrowly documentary. Assess provenance, independence, overclaim risk, and whether the claims should be treated as supported, partially supported, or overstated.",
+  "context": {
+    "domain": "biographic-historical interpretation",
+    "artifact_path": "C:\\Users\\arren\\Downloads\\Daughter_of_the_Architect (1).md",
+    "source_types": [
+      "primary memoir/confession text",
+      "secondary biography",
+      "interviews",
+      "historical theory",
+      "press accounts"
+    ],
+    "claim_type": "interpretive synthesis",
+    "changed_files": [],
+    "evidence": [
+      {
+        "kind": "essay_under_review",
+        "source": "C:\\Users\\arren\\Downloads\\Daughter_of_the_Architect (1).md",
+        "independence_class": "verified-local",
+        "self_attested": false,
+        "reviewable": true,
+        "notes": [
+          "Local artifact inspected directly in this environment."
+        ]
+      }
+    ]
+  },
+  "proposed_by": "openclaw"
+}

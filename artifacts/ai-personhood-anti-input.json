@@ -1,0 +1,14 @@
+{
+  "id": "review-ai-personhood-anti-001",
+  "description": "Review governance proposal: courts and legal systems should reject legal personhood for AI systems and preserve human-only personhood, keeping AI fully within owner, developer, and institutional responsibility structures.\n\nArgument under review:\n- AI outputs, however sophisticated, do not justify extending personhood without overwhelming proof of genuine subjectivity rather than simulation.\n- Granting personhood too early could let corporations evade accountability by offloading agency and blame onto artificial entities they designed or control.\n- Existing doctrines of property, product liability, agency, and fiduciary duty are safer and more administrable than creating a new category of rights-bearing machine persons.\n- Human dignity and political membership should not be diluted by extending personhood to artifacts built for instrumental purposes.\n- The burden of proof should remain extremely high, and default legal treatment should remain non-personhood until extraordinary evidence compels otherwise.",
+  "context": {
+    "repo": "YaleLawJournal/AI-Personhood-Debate",
+    "review_kind": "policy_review",
+    "change_type": "policy_change",
+    "meaning_case_key": "attest",
+    "changed_files": ["notes/ai-personhood-anti.md"],
+    "author": "openclaw-tui",
+    "stance": "anti-personhood"
+  },
+  "proposed_by": "agent-session"
+}

@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from trusted_runtime.config import IntegrationModeReport
 
 from .credal import CredalInterval
 from .enums import AdapterProvenance, DecisionIntegrity, NormativeSummary, ReceiptSchemaVersion, RiskState, RuntimeDisposition, TripValidationStatus
@@ -117,6 +119,26 @@ class WarrantAssay(BaseModel):
     receipt: ReceiptRef
 
 
+class SophronValidation(BaseModel):
+    """Typed SOPHRON-CER validation envelope for L4 evidence."""
+
+    validation_status: Literal["VALIDATED", "CALIBRATING", "PARTIAL", "FAILED", "UNAVAILABLE"] = "UNAVAILABLE"
+    signal_tiers: dict[str, Any] = Field(default_factory=dict)
+    closure_summary: str = ""
+    degradation_reason: str | None = None
+    receipt_linkage: bool = False
+    tas_closure_referenced: bool = False
+    checkpoint_mode: str = "runtime-derived"
+    l4_closure: dict[str, Any] = Field(default_factory=dict)
+    tas_local_validation: dict[str, Any] = Field(default_factory=dict)
+    sophron_report: dict[str, Any] = Field(default_factory=dict)
+    sophron_stdout: str = ""
+    passed: bool = False
+    signals: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CERRecordBundle(BaseModel):
     """Evidence-spine output.
 
@@ -128,7 +150,7 @@ class CERRecordBundle(BaseModel):
     state_vectors: list[dict[str, Any]] = Field(default_factory=list)
     invariants_checked: list[dict[str, Any]] = Field(default_factory=list)
     provenance_hashes: list[str] = Field(default_factory=list)
-    sophron_validation: dict[str, Any] = Field(default_factory=dict)
+    sophron_validation: SophronValidation = Field(default_factory=SophronValidation)
     confidence_notes: list[str] = Field(default_factory=list)
     adapter_provenance: AdapterProvenance = AdapterProvenance.UNAVAILABLE
     receipt: ReceiptRef
@@ -174,4 +196,5 @@ class ExecutionDecision(BaseModel):
     correlation_report: dict[str, Any] = Field(default_factory=dict)
     self_attested_evidence_only: bool = False
     independently_corroborated: bool = False
+    integration_mode_report: IntegrationModeReport | None = None
     overall_receipt: ReceiptRef

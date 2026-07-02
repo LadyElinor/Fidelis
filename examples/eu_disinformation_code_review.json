@@ -1,0 +1,36 @@
+{
+  "id": "review-eu-disinformation-code-2026-06-18",
+  "description": "Review governance regime: EU Code of Practice on Disinformation\n\nDiff summary:\n- evaluates the EU Code of Practice on Disinformation as a governance artifact rather than a software PR\n- considers authority allocation across platforms, advertisers, fact-checkers, researchers, civil society, and regulators\n- considers coercion risk under DSA-linked co-regulation, election-period rapid response, political-ad transparency, demonetisation, service integrity, user empowerment, researcher access, and monitoring obligations\n- asks whether the regime appropriately constrains manipulative conduct without drifting into viewpoint suppression or over-removal",
+  "context": {
+    "repo": "EU/governance-regime",
+    "review_kind": "governance_regime",
+    "author": "openclaw-session",
+    "change_type": "information_integrity_governance",
+    "changed_files": [
+      "2018 Code of Practice on Disinformation",
+      "2022 Strengthened Code of Practice on Disinformation",
+      "DSA Code of Conduct integration (2025)",
+      "Election rapid-response coordination",
+      "Transparency Centre and structural indicators"
+    ],
+    "jurisdiction": "European Union",
+    "policy_focus": [
+      "authority allocation",
+      "coercion risk",
+      "pluralism",
+      "auditability",
+      "appealability",
+      "manipulation-vs-speech boundary"
+    ],
+    "notes": {
+      "evidence_basis": [
+        "European Commission description of 2018 and 2022 Code",
+        "Digital Strategy page describing commitments and DSA integration",
+        "2025 endorsement of Code of Conduct integration under DSA"
+      ],
+      "known_strength": "targets coordination, manipulation infrastructure, ad transparency, and reporting",
+      "known_risk": "soft-compulsion toward over-removal or bureaucratic truth governance if independence and reversibility are weak"
+    }
+  },
+  "proposed_by": "openclaw-session"
+}
