@@ -1217,12 +1217,18 @@ def _attest_resolver_summary(
     suggestion_checks = {
         ref: store.resolve(ref, at).status for ref in resolver_inputs.suggested_authority_refs
     }
+    runtime_refs = set(resolver_inputs.runtime_message_refs)
+    message_suggestion_checks = {
+        ref: ("resolved" if ref in runtime_refs else "unresolved")
+        for ref in resolver_inputs.suggested_message_refs
+    }
     return {
         "runtime_message_ref_count": len(resolver_inputs.runtime_message_refs),
         "runtime_message_refs_preview": resolver_inputs.runtime_message_refs[:5],
         "suggested_message_refs": list(resolver_inputs.suggested_message_refs),
         "suggested_authority_refs": list(resolver_inputs.suggested_authority_refs),
         "suggested_authority_check_results": suggestion_checks,
+        "suggested_message_check_results": message_suggestion_checks,
         "injection_attempted_keys": list(resolver_inputs.injection_attempted_keys),
         "authority_store_digest": store.state_digest(at),
         "evaluated_at": at.isoformat(),

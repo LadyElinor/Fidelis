@@ -108,7 +108,12 @@ def test_stub_path_surfaces_injection_attempt(tmp_path: Path):
     assert "PROPOSER_AUTHORITY_INJECTION_ATTEMPTED:attest_authority_grants" in result.soft_flag
 
 
-def test_suggested_message_refs_are_checked_in_real_grounds_path():
+def test_suggested_message_refs_never_resolve_grounds():
+    """A proposer citing msg:maybe as its warrant grounds AND suggesting
+    msg:maybe must still fail grounds resolution: suggestions expand only
+    what is checked and reported, never what resolves. Anything else is the
+    retired attest_known_message_refs flow under a new key name — grounds
+    self-certification by the same hand that authored the claim."""
     root = _real_attest_root()
     if root is None:
         pytest.skip("AttestAgentConlang sibling repo absent; set ATTEST_AGENT_CONLANG_SRC to run the real seam")
@@ -129,10 +134,27 @@ def test_suggested_message_refs_are_checked_in_real_grounds_path():
         evaluated_at=T0,
     )
 
+    # The suggestion changes NOTHING about resolution outcomes...
     assert "GROUNDS_UNRESOLVED" in without_suggestion.hard_fail
-    assert "GROUND_RESOLUTION_FAILURES:msg:maybe" in without_suggestion.soft_flag
-    assert "GROUNDS_UNRESOLVED" not in with_suggestion.hard_fail
-    assert "GROUND_RESOLUTION_FAILURES:msg:maybe" not in with_suggestion.soft_flag
+    assert "GROUNDS_UNRESOLVED" in with_suggestion.hard_fail
+    assert with_suggestion.hard_fail == without_suggestion.hard_fail
+    # ...and does not perturb the grounds resolver configuration either.
+    assert (
+        with_suggestion.grounds_resolver_config_hash
+        == without_suggestion.grounds_resolver_config_hash
+    )
+
+    # Whereas the same ref observed BY THE RUNTIME resolves with or without
+    # a suggestion — suggestion is a resolution no-op in both directions.
+    runtime_backed = bridge.verify_for_runtime(
+        msg,
+        [],
+        resolver_inputs=AttestResolverInputs(
+            runtime_message_refs=["msg:maybe"], suggested_message_refs=["msg:maybe"]
+        ),
+        evaluated_at=T0,
+    )
+    assert "GROUNDS_UNRESOLVED" not in runtime_backed.hard_fail
 
 
 # --- The structural property: injected authority does not resolve ------------

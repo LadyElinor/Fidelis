@@ -432,13 +432,14 @@ class AttestBridge:
         message_hash = sha256(message_blob.encode("utf-8")).hexdigest()
         known_hash = sha256(self._stable_json(known_messages).encode("utf-8")).hexdigest()
         verification_instant = evaluated_at or datetime.now(timezone.utc)
-        grounds_check_refs = sorted(
-            set(resolver_inputs.runtime_message_refs) | set(resolver_inputs.suggested_message_refs)
-        )
+        # Suggested message refs are CHECKED against runtime-held state and the
+        # outcomes reported (see suggested_message_check_results in the engine
+        # summary); they never enter the resolvable set. StaticGroundsResolver
+        # membership IS resolution, so seeding it with suggestions would let a
+        # proposer self-certify its own warrant grounds — the retired
+        # attest_known_message_refs flow under a new key name.
         grounds_resolver_config = {
             "runtime_message_refs": sorted(resolver_inputs.runtime_message_refs),
-            "suggested_message_refs": sorted(resolver_inputs.suggested_message_refs),
-            "grounds_check_refs": grounds_check_refs,
         }
 
         if self._real_attest is not None:
@@ -447,7 +448,7 @@ class AttestBridge:
                 attest_message = self._real_attest["AttestMessage"].model_validate(message)
                 attest_known_messages = [self._real_attest["AttestMessage"].model_validate(item) for item in known_messages]
                 grounds_resolver = self._real_attest["StaticGroundsResolver"](
-                    set(grounds_check_refs),
+                    set(resolver_inputs.runtime_message_refs),
                 )
                 if self.authority_store is not None:
                     authority_resolver = _StoreAuthorityResolverAdapter(
