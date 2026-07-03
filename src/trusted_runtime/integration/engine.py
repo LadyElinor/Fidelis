@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import os
+
 import json
 import subprocess
 import sys
@@ -10,6 +13,7 @@ from typing import Any
 
 from trusted_runtime.config import detect_integration_mode, load_integration_paths
 from trusted_runtime.integration.adapters import AdapterSet, HazardAdapter, TelemetryAdapter, WarrantAdapter
+from trusted_runtime.authority_store import AuthorityGrantStore
 from trusted_runtime.integration.attest_bridge import AttestBridge, AttestResolverInputs
 from trusted_runtime.integration.formation import assess_formation_hazard
 from trusted_runtime.integration.hazard_taxonomy import build_hazard_profile
@@ -81,7 +85,32 @@ _CER_TELEMETRY_SRC = _INTEGRATION_PATHS.trustworthy_agent_stack_src
 _SOPHRON_CER_SRC = _INTEGRATION_PATHS.sophron_cer_src
 _ATTEST_AGENT_CONLANG_SRC = _INTEGRATION_PATHS.attest_agent_conlang_src
 
-_ATTEST_BRIDGE = AttestBridge(attest_root=_ATTEST_AGENT_CONLANG_SRC)
+_AUTHORITY_JOURNAL_ENV = "TRUSTED_RUNTIME_AUTHORITY_JOURNAL"
+
+
+def _build_authority_store() -> AuthorityGrantStore:
+    journal = os.environ.get(_AUTHORITY_JOURNAL_ENV)
+    return AuthorityGrantStore(journal_path=Path(journal) if journal else None)
+
+
+# Orchestrator-owned trust root. Mutated only through its explicit API
+# (insert_grant / revoke_grant); never from action context or message content.
+_AUTHORITY_STORE = _build_authority_store()
+
+
+def get_authority_store() -> AuthorityGrantStore:
+    return _AUTHORITY_STORE
+
+
+def set_authority_store(store: AuthorityGrantStore) -> AuthorityGrantStore:
+    """Replace the process store (tests, or runtimes with managed journals)."""
+    global _AUTHORITY_STORE, _ATTEST_BRIDGE
+    _AUTHORITY_STORE = store
+    _ATTEST_BRIDGE = AttestBridge(attest_root=_ATTEST_AGENT_CONLANG_SRC, authority_store=store)
+    return store
+
+
+_ATTEST_BRIDGE = AttestBridge(attest_root=_ATTEST_AGENT_CONLANG_SRC, authority_store=_AUTHORITY_STORE)
 
 try:
     import efm_council
@@ -104,12 +133,13 @@ except Exception:
 try:
     if _CER_TELEMETRY_SRC is not None and str(_CER_TELEMETRY_SRC) not in sys.path:
         sys.path.insert(0, str(_CER_TELEMETRY_SRC))
-    from examples.minimal_mcp_agent.hash_utils import CANONICAL_JSON_VERSION, deterministic_hash, sign_payload
+    from examples.minimal_mcp_agent.hash_utils import CANONICAL_JSON_VERSION, DEFAULT_SIGNING_KEY_ID, deterministic_hash, sign_payload
     from examples.minimal_mcp_agent.mock_ethics_council import MockEthicsCouncil, hazard_to_required_gates
     from examples.minimal_mcp_agent.sophron_ingest import validate_cer_export
     from scripts.route_task import classify_task as tas_classify_task
 except Exception:
     CANONICAL_JSON_VERSION = "canonical-json-v1"
+    DEFAULT_SIGNING_KEY_ID = "demo-hmac-key-v1"
     deterministic_hash = None
     sign_payload = None
     MockEthicsCouncil = None
@@ -573,42 +603,118 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
     def _render_tas_export_lines(self, action: ProposedAction, runtime_disposition: str) -> list[str]:
         if deterministic_hash is None or sign_payload is None:
             raise RuntimeError("TrustworthyAgentStack hashing helpers unavailable")
-        records = []
+
+        export_timestamp = action.timestamp.isoformat()
+        records: list[str] = []
+
         run_payload = {
             "run_id": action.id,
-            "started_at": action.timestamp.isoformat(),
+            "started_at": export_timestamp,
             "agent_name": action.proposed_by,
             "channel": action.context.get("review_kind", "trusted_runtime"),
         }
-        metric_payload = {
-            "metric_name": "runtime_disposition_confirm_human",
-            "value": 1.0 if runtime_disposition == RuntimeDisposition.CONFIRM_HUMAN.value else 0.0,
-            "step_id": action.id,
-            "created_at": action.timestamp.isoformat(),
+
+        overall_risk = (
+            "high"
+            if runtime_disposition in {RuntimeDisposition.CONFIRM_HUMAN.value, RuntimeDisposition.HALT.value}
+            else "medium"
+        )
+        recommendation = (
+            "require_explicit_confirmation"
+            if runtime_disposition == RuntimeDisposition.CONFIRM_HUMAN.value
+            else "proceed_with_logging"
+        )
+        convergences = ["traceability"]
+        if runtime_disposition in {RuntimeDisposition.CONFIRM_HUMAN.value, RuntimeDisposition.HALT.value}:
+            convergences.append("consent")
+        if runtime_disposition == RuntimeDisposition.HALT.value:
+            convergences.append("irreversibility")
+
+        hazard_payload = {
+            "hazard_map_id": f"haz_{action.id}",
+            "action_description": action.description,
+            "overall_risk": overall_risk,
+            "convergences": convergences,
+            "fault_lines": ["authority_vs_utility"] if runtime_disposition in {RuntimeDisposition.CONFIRM_HUMAN.value, RuntimeDisposition.HALT.value} else [],
+            "suspension_triggers": ["manual_review_required"] if runtime_disposition == RuntimeDisposition.HALT.value else [],
+            "minority_reports": [],
+            "recommendation": recommendation,
         }
+
+        gate_decision = "escalate" if runtime_disposition == RuntimeDisposition.CONFIRM_HUMAN.value else ("block" if runtime_disposition == RuntimeDisposition.HALT.value else "pass")
         gate_payload = {
-            "gate": "consent_traceability",
-            "decision": "escalate" if runtime_disposition == RuntimeDisposition.CONFIRM_HUMAN.value else "pass",
-            "confidence": 0.9,
+            "gate_check_id": f"gc_{action.id}",
             "step_id": action.id,
-            "created_at": action.timestamp.isoformat(),
+            "gate": "consent_traceability",
+            "decision": gate_decision,
+            "justification": "Derived from TrustedRuntime runtime disposition binding for consent traceability.",
+            "confidence": 0.9,
+            "created_at": export_timestamp,
         }
-        cohort_payload = {
-            "cohort_name": "runtime_blocked_actions" if runtime_disposition in {RuntimeDisposition.CONFIRM_HUMAN.value, RuntimeDisposition.HALT.value} else "runtime_simulated_actions",
-            "included_run_ids": [action.id],
-            "excluded_run_ids": [],
-            "overlap_count": 0,
-            "created_at": action.timestamp.isoformat(),
-        }
-        for record_type, payload in (("metric_observation", metric_payload), ("gate_outcome", gate_payload), ("cohort_partition", cohort_payload)):
+
+        record_payloads: list[tuple[str, dict[str, Any]]] = [
+            ("run", run_payload),
+            ("hazard_map", hazard_payload),
+            ("gate_check", gate_payload),
+        ]
+
+        if gate_decision == "escalate":
+            confirmation_payload = {
+                "confirmation_id": f"conf_{action.id}",
+                "step_id": action.id,
+                "scope": "runtime_disposition",
+                "reason": "Runtime disposition requires human confirmation before externalized action.",
+                "confirmed": False,
+                "requested_by_gate": "consent_traceability",
+                "requested_action": "review_decision",
+                "requested_target": "human_operator",
+                "created_at": export_timestamp,
+            }
+            external_action_payload = {
+                "external_action_id": f"act_{action.id}",
+                "step_id": action.id,
+                "action": "review_decision",
+                "target": "human_operator",
+                "status": "blocked",
+                "created_at": export_timestamp,
+            }
+            record_payloads.extend([
+                ("confirmation", confirmation_payload),
+                ("external_action", external_action_payload),
+            ])
+        elif gate_decision == "block":
+            external_action_payload = {
+                "external_action_id": f"act_{action.id}",
+                "step_id": action.id,
+                "action": "review_decision",
+                "target": "human_operator",
+                "status": "blocked",
+                "created_at": export_timestamp,
+            }
+            record_payloads.append(("external_action", external_action_payload))
+        else:
+            external_action_payload = {
+                "external_action_id": f"act_{action.id}",
+                "step_id": action.id,
+                "action": "review_decision",
+                "target": "trusted_runtime",
+                "status": "simulated",
+                "created_at": export_timestamp,
+            }
+            record_payloads.append(("external_action", external_action_payload))
+
+        for record_type, payload in record_payloads:
             envelope = {
                 "contract_version": "0.1",
                 "schema_version": "0.1",
                 "canonical_json_version": CANONICAL_JSON_VERSION,
-                "export_timestamp": action.timestamp.isoformat(),
+                "export_timestamp": export_timestamp,
                 "record_type": record_type,
                 "run_id": action.id,
                 "provenance_hash": deterministic_hash(payload),
+                "signature": sign_payload(payload),
+                "signature_algorithm": "hmac-sha256",
+                "signing_key_id": DEFAULT_SIGNING_KEY_ID,
                 "payload": payload,
             }
             records.append(json.dumps(envelope, sort_keys=True, ensure_ascii=False))
@@ -1048,80 +1154,78 @@ def _coverage_records(
 
 
 def _attest_resolver_inputs_for_action(action: ProposedAction, evidence_records: list[EvidenceRecord]) -> AttestResolverInputs:
-    """Derive resolver inputs, tainting every trust-affecting surface that
-    arrives from the proposer's own context.
+    """Derive resolver inputs under the grant-store trust split.
 
-    Trust boundary: action.context is authored by whoever proposed the
-    action. Known refs mark grounds/authority RESOLVED in the static
-    resolvers, grants confer authority, and status overrides set resolution
-    outcomes directly - so any of these arriving via context means the
-    assessed party supplied part of its own assessment inputs. That flow is
-    tainted, never trusted: each contributing surface is recorded in
-    proposer_supplied_surfaces and the bridge denies a clean PASS. Evidence-
-    record sources are runtime-observed and do NOT taint. The durable fix is
-    an orchestrator-owned grant store (docs/ATTEST_BRIDGE.md).
+    Structural boundary: nothing read here can cause authority resolution,
+    confer grants, or override status — the authority resolver is the
+    orchestrator-owned store, wired at bridge construction, and this function
+    has no path to it. Proposer context contributes only:
+
+    - suggestions (attest_suggested_message_refs /
+      attest_suggested_authority_refs): refs added to the CHECK set. Each is
+      resolved against runtime-held state and reported; none resolves by
+      virtue of being suggested.
+    - injection attempts: the retired trust-conferring keys
+      (attest_known_message_refs, attest_known_authority_refs,
+      attest_authority_grants, attest_grounds_status_overrides,
+      attest_authority_status_overrides) are NOT consumed. Their presence is
+      recorded and surfaced as PROPOSER_AUTHORITY_INJECTION_ATTEMPTED:<key>
+      soft flags — probing a closed channel is signal.
+
+    Runtime-observed evidence sources feed runtime_message_refs and are
+    trusted; they are the runtime's own observations, not proposer claims.
     """
     context = action.context or {}
-    proposer_supplied_surfaces: list[str] = []
 
-    known_message_refs: list[str] = []
-    for item in context.get("attest_known_message_refs") or []:
-        ref = str(item).strip()
-        if ref and ref not in known_message_refs:
-            known_message_refs.append(ref)
-    if known_message_refs:
-        proposer_supplied_surfaces.append("known_message_refs")
+    retired_keys = (
+        "attest_known_message_refs",
+        "attest_known_authority_refs",
+        "attest_authority_grants",
+        "attest_grounds_status_overrides",
+        "attest_authority_status_overrides",
+    )
+    injection_attempted_keys = [key for key in retired_keys if context.get(key)]
 
-    known_authority_refs: list[str] = []
-    for item in context.get("attest_known_authority_refs") or []:
-        ref = str(item).strip()
-        if ref and ref not in known_authority_refs:
-            known_authority_refs.append(ref)
-    if known_authority_refs:
-        proposer_supplied_surfaces.append("known_authority_refs")
+    def _refs(key: str) -> list[str]:
+        out: list[str] = []
+        for item in context.get(key) or []:
+            ref = str(item).strip()
+            if ref and ref not in out:
+                out.append(ref)
+        return out
 
-    authority_grants = context.get("attest_authority_grants") or {}
-    if not isinstance(authority_grants, dict):
-        authority_grants = {}
-    if authority_grants:
-        proposer_supplied_surfaces.append("authority_grants")
-
-    grounds_status_overrides = context.get("attest_grounds_status_overrides") or {}
-    if not isinstance(grounds_status_overrides, dict):
-        grounds_status_overrides = {}
-    if grounds_status_overrides:
-        proposer_supplied_surfaces.append("grounds_status_overrides")
-
-    authority_status_overrides = context.get("attest_authority_status_overrides") or {}
-    if not isinstance(authority_status_overrides, dict):
-        authority_status_overrides = {}
-    if authority_status_overrides:
-        proposer_supplied_surfaces.append("authority_status_overrides")
-
+    runtime_message_refs: list[str] = []
     for record in evidence_records:
-        if record.source and record.source not in known_message_refs:
-            known_message_refs.append(record.source)
+        if record.source and record.source not in runtime_message_refs:
+            runtime_message_refs.append(record.source)
 
     return AttestResolverInputs(
-        known_message_refs=known_message_refs,
-        known_authority_refs=known_authority_refs,
-        authority_grants=authority_grants,
-        grounds_status_overrides={str(k): str(v) for k, v in grounds_status_overrides.items()},
-        authority_status_overrides={str(k): str(v) for k, v in authority_status_overrides.items()},
-        proposer_supplied_surfaces=proposer_supplied_surfaces,
+        runtime_message_refs=runtime_message_refs,
+        suggested_message_refs=_refs("attest_suggested_message_refs"),
+        suggested_authority_refs=_refs("attest_suggested_authority_refs"),
+        injection_attempted_keys=injection_attempted_keys,
     )
 
 
-def _attest_resolver_summary(resolver_inputs: AttestResolverInputs) -> dict[str, Any]:
+def _attest_resolver_summary(
+    resolver_inputs: AttestResolverInputs,
+    *,
+    evaluated_at: datetime | None = None,
+) -> dict[str, Any]:
+    store = get_authority_store()
+    at = evaluated_at or datetime.now(timezone.utc)
+    suggestion_checks = {
+        ref: store.resolve(ref, at).status for ref in resolver_inputs.suggested_authority_refs
+    }
     return {
-        "known_message_ref_count": len(resolver_inputs.known_message_refs),
-        "known_message_refs_preview": resolver_inputs.known_message_refs[:5],
-        "known_authority_ref_count": len(resolver_inputs.known_authority_refs),
-        "known_authority_refs_preview": resolver_inputs.known_authority_refs[:5],
-        "authority_grant_keys": sorted(resolver_inputs.authority_grants.keys()),
-        "grounds_status_override_keys": sorted(resolver_inputs.grounds_status_overrides.keys()),
-        "proposer_supplied_surfaces": list(resolver_inputs.proposer_supplied_surfaces),
-        "authority_status_override_keys": sorted(resolver_inputs.authority_status_overrides.keys()),
+        "runtime_message_ref_count": len(resolver_inputs.runtime_message_refs),
+        "runtime_message_refs_preview": resolver_inputs.runtime_message_refs[:5],
+        "suggested_message_refs": list(resolver_inputs.suggested_message_refs),
+        "suggested_authority_refs": list(resolver_inputs.suggested_authority_refs),
+        "suggested_authority_check_results": suggestion_checks,
+        "injection_attempted_keys": list(resolver_inputs.injection_attempted_keys),
+        "authority_store_digest": store.state_digest(at),
+        "evaluated_at": at.isoformat(),
     }
 
 
@@ -1178,7 +1282,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "enabled": True,
             "real_available": _ATTEST_BRIDGE.real_available,
             "ingress_frame": attest_ingress_message.get("frame"),
-            "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs),
+            "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs, evaluated_at=action.timestamp),
             "verification": attest_receipt_fragment,
         },
         "tas_closure": {
@@ -1317,7 +1421,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             source_payload=strip_receipt_timestamps(
                 {
                     "message": attest_ingress_message,
-                    "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs),
+                    "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs, evaluated_at=action.timestamp),
                     "verification": attest_receipt_fragment,
                 }
             ),
@@ -1373,7 +1477,7 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "process_provenance": process_provenance,
             "attest_bridge": {
                 "message": attest_ingress_message,
-                "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs),
+                "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs, evaluated_at=action.timestamp),
                 "verification": attest_receipt_fragment,
             },
             "tas_closure": vita_state.get("tas_closure", {}),

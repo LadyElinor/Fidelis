@@ -6,7 +6,7 @@ This document defines the reproducible "all-real" profile for TrustedRuntime.
 
 "All-real" means the runtime executes against locally available, importable sibling integrations rather than falling back to stubbed or partial paths.
 
-It does **not** imply independent corroboration. Real adapter execution and independence are separate axes.
+It does **not** imply independent corroboration, certification-grade corroboration, or that every evidence surface is semantically complete. Real adapter execution, structural validation, semantic adequacy, and independence are separate axes.
 
 ## Required sibling integrations
 
@@ -69,6 +69,12 @@ Expected behavior:
 - L4 telemetry/validation path runs at the currently supported real/realish surface
 - integration-bound tests run instead of skipping
 
+Important non-claim:
+- `all-real` is a wiring/execution mode, not a blanket truth claim
+- it does not by itself mean `independently_corroborated == true`
+- it does not by itself mean `certification_grade_corroboration == true`
+- it does not by itself mean every report surface is beyond calibration or semantic hardening
+
 ## Bootstrap checklist
 
 1. Clone or mount all sibling repos.
@@ -91,3 +97,4 @@ When publishing results, always report:
 - which sibling repos were actually available
 - whether any tests were skipped because integration dependencies were missing
 - adapter provenance separately from independence/correlation findings
+- structural validation / closure status separately from broader semantic-confidence claims

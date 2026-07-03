@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from trusted_runtime.integration.availability import (
@@ -96,15 +98,39 @@ def test_tas_partial_path_surfaces_missing_route_requirement():
     assert vita_state["closure_bar"]["closure_checks"]["receipt_linkage"] is True
 
 
-def test_tas_export_lines_match_validator_contract():
+@pytest.mark.parametrize(
+    ("disposition", "expected_types", "expected_gate_decision"),
+    [
+        (RuntimeDisposition.PROCEED.value, ["run", "hazard_map", "gate_check", "external_action"], "pass"),
+        (RuntimeDisposition.CONFIRM_HUMAN.value, ["run", "hazard_map", "gate_check", "confirmation", "external_action"], "escalate"),
+        (RuntimeDisposition.HALT.value, ["run", "hazard_map", "gate_check", "external_action"], "block"),
+    ],
+)
+def test_tas_export_lines_match_validator_contract(disposition, expected_types, expected_gate_decision):
     if not trustworthy_agent_stack_available():
         pytest.skip("TrustworthyAgentStack sibling repo absent; hashing helpers unavailable on this clone")
     adapter = CerSophronTelemetryAdapter()
-    lines = adapter._render_tas_export_lines(_action(), RuntimeDisposition.CONFIRM_HUMAN.value)
-    assert len(lines) == 3
-    assert '"record_type": "metric_observation"' in lines[0]
-    assert '"record_type": "gate_outcome"' in lines[1]
-    assert '"record_type": "cohort_partition"' in lines[2]
+    lines = adapter._render_tas_export_lines(_action(), disposition)
+    records = [json.loads(line) for line in lines]
+
+    assert [record["record_type"] for record in records] == expected_types
+    assert all(record["signature_algorithm"] == "hmac-sha256" for record in records)
+    assert all(record["signing_key_id"] == "demo-hmac-key-v1" for record in records)
+    assert all(record["signature"] for record in records)
+    assert records[0]["payload"]["run_id"] == "t1"
+    assert records[1]["payload"]["hazard_map_id"] == "haz_t1"
+    assert records[2]["payload"]["decision"] == expected_gate_decision
+
+    if disposition == RuntimeDisposition.CONFIRM_HUMAN.value:
+        assert records[3]["payload"]["requested_target"] == "human_operator"
+        assert records[3]["payload"]["confirmed"] is False
+        assert records[4]["payload"]["status"] == "blocked"
+    elif disposition == RuntimeDisposition.HALT.value:
+        assert records[3]["payload"]["target"] == "human_operator"
+        assert records[3]["payload"]["status"] == "blocked"
+    else:
+        assert records[3]["payload"]["target"] == "trusted_runtime"
+        assert records[3]["payload"]["status"] == "simulated"
 
 
 def test_telemetry_collect_returns_non_stub_when_local_bridges_exist():
