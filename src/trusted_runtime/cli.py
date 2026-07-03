@@ -57,6 +57,21 @@ def main() -> None:
         print("Artifacts written: benchmark_case_results.json, benchmark_report.json, and benchmark_report.md")
         return
 
+    if argv[0] == "verify-authority-digest":
+        journal = _value_after("--journal", argv)
+        at = _value_after("--at", argv)
+        digest = _value_after("--digest", argv)
+        if not (journal and at and digest):
+            print("usage: trusted-runtime verify-authority-digest --journal PATH --at ISO8601 --digest HEX")
+            raise SystemExit(2)
+        from trusted_runtime.authority_store import replay_verify_digest
+
+        verdict = replay_verify_digest(Path(journal), at, digest)
+        print(json.dumps(verdict.model_dump(mode="json"), indent=2))
+        # The rejecter: a receipt whose digest cannot be reproduced from the
+        # journal fold at its own evaluated_at exits non-zero.
+        raise SystemExit(0 if verdict.accept else 1)
+
     if argv[0] == "live-stack-smoke":
         input_arg = _value_after("--input", argv)
         if input_arg is None:

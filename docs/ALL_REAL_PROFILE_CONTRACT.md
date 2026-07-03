@@ -69,4 +69,4 @@ Phase 1 establishes:
 
 Phase 1 does **not** by itself certify full L2 or L4 closure.
 
-- Proposer-supplied resolver evidence (grants, status overrides, known refs arriving via action context) is tainted: it denies a clean `PASS`, downgrading to `REVIEW` with named `RESOLVER_INPUTS_PROPOSER_SUPPLIED` flags. All-real status never launders this taint; behavior-real layers with self-certified authority inputs still surface the flags in decision artifacts.
+- Proposer-supplied authority evidence (grants, status overrides, known refs arriving via action context) is structurally non-authoritative: the retired keys are never consumed, authority resolves only from the orchestrator-owned grant store, and each attempt surfaces as a named `PROPOSER_AUTHORITY_INJECTION_ATTEMPTED` flag that denies a clean `PASS`. All-real status never launders this; the receipt's authority digest is replay-checkable against the store journal.

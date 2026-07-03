@@ -100,19 +100,17 @@ different standing:
   party whose action is being verified - self-certification, the structure
   the independence invariant exists to forbid.
 
-Interim semantics (current): proposer-supplied surfaces are **tainted, not
-trusted-as-acceptable**. Each contributing surface is recorded in
-`AttestResolverInputs.proposer_supplied_surfaces`, the bridge emits a
-`RESOLVER_INPUTS_PROPOSER_SUPPLIED:<surface>` soft flag per surface on both
-the real and stub verification paths, and - via the standard soft-flag rule -
-a verification that would otherwise PASS is downgraded to REVIEW. The flags
-flow into `AttestVerificationState` and the CER receipt fragment, so every
-downstream artifact carries the taint. There is no configuration that
-suppresses the taint.
-
-Planned semantics (deliberate design, not yet implemented): an
-orchestrator-owned grant store becomes the only source of authority grants
-and resolution overrides. Proposer context may then only *suggest refs for
-checking* - expanding what gets examined, never what counts as resolved.
-Until that lands, treat any tainted REVIEW as requiring exactly the scrutiny
-the flag names: the proposer helped verify itself.
+Current patch semantics (grant-store split, approved design in
+AUTHORITY_GRANT_STORE.md): the retired trust-conferring keys are **not
+consumed at all**. The authority resolver is the orchestrator-owned
+AuthorityGrantStore, constructor-injected into the bridge. Grounds checking
+is seeded by runtime-observed refs, and proposer suggestions
+(`attest_suggested_message_refs` / `attest_suggested_authority_refs`) expand
+what gets checked without expanding what counts as resolved. Presence of any
+retired key is surfaced as a
+`PROPOSER_AUTHORITY_INJECTION_ATTEMPTED:<key>` soft flag on every
+verification path, denying a clean PASS: probing the closed channel is
+itself signal. The receipt's `authority_resolver_config_hash` is the store's
+`state_digest(evaluated_at)`, externally re-checkable with
+`trusted-runtime verify-authority-digest`, which exits non-zero on any
+digest that the journal fold cannot reproduce.

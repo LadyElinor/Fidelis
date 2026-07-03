@@ -127,16 +127,22 @@ def test_attest_resolver_inputs_collect_context_and_evidence_sources():
 
     resolver_inputs = _attest_resolver_inputs_for_action(action, evidence_records)
 
-    assert resolver_inputs.known_message_refs == [
-        "msg:root",
-        "msg:support-1",
+    # Grant-store split: retired trust-conferring context keys are NOT
+    # consumed. Runtime-observed evidence sources are the only trusted refs,
+    # and every injection attempt is named for flag emission.
+    assert resolver_inputs.runtime_message_refs == [
         "proposed_action.description",
         "proposed_action.context.changed_files",
     ]
-    assert resolver_inputs.known_authority_refs == ["approval:ops-1"]
-    assert resolver_inputs.authority_grants == {"approval:ops-1": {"scope": "deploy", "approved": True}}
-    assert resolver_inputs.grounds_status_overrides == {"msg:missing": "unsupported"}
-    assert resolver_inputs.authority_status_overrides == {"approval:revoked": "revoked"}
+    assert resolver_inputs.suggested_message_refs == []
+    assert resolver_inputs.suggested_authority_refs == []
+    assert resolver_inputs.injection_attempted_keys == [
+        "attest_known_message_refs",
+        "attest_known_authority_refs",
+        "attest_authority_grants",
+        "attest_grounds_status_overrides",
+        "attest_authority_status_overrides",
+    ]
 
 
 def test_attest_resolver_summary_surfaces_counts_and_keys():
@@ -158,11 +164,16 @@ def test_attest_resolver_summary_surfaces_counts_and_keys():
         )
     )
 
-    assert summary["known_message_ref_count"] == 2
-    assert summary["known_authority_ref_count"] == 1
-    assert summary["authority_grant_keys"] == ["approval:ops-1"]
-    assert summary["grounds_status_override_keys"] == ["msg:missing"]
-    assert summary["authority_status_override_keys"] == ["approval:revoked"]
+    assert summary["runtime_message_ref_count"] == 0
+    assert summary["suggested_authority_refs"] == []
+    assert summary["injection_attempted_keys"] == [
+        "attest_known_message_refs",
+        "attest_known_authority_refs",
+        "attest_authority_grants",
+        "attest_grounds_status_overrides",
+        "attest_authority_status_overrides",
+    ]
+    assert len(summary["authority_store_digest"]) == 64
 
 
 def test_assemble_execution_decision_surfaces_attest_resolver_identity_in_vita_state():
@@ -188,9 +199,16 @@ def test_assemble_execution_decision_surfaces_attest_resolver_identity_in_vita_s
     assert verification.get("attest_signature_verifier_name")
     assert verification.get("attest_grounds_resolver_config_hash")
     assert verification.get("attest_authority_resolver_config_hash")
-    assert resolver_inputs.get("known_message_ref_count", 0) >= 1
-    assert resolver_inputs.get("known_authority_ref_count") == 1
-    assert resolver_inputs.get("authority_grant_keys") == ["approval:ops-1"]
+    # Retired trust-conferring keys in the context must surface as
+    # injection attempts, never as consumed resolver state.
+    assert resolver_inputs.get("injection_attempted_keys") == [
+        "attest_known_message_refs",
+        "attest_known_authority_refs",
+        "attest_authority_grants",
+    ]
+    flags = verification.get("attest_soft_flag", [])
+    assert "PROPOSER_AUTHORITY_INJECTION_ATTEMPTED:attest_authority_grants" in flags
+    assert verification.get("attest_decision_effect") != "PASS"
 
 
 def test_decision_carries_computed_mode_report():

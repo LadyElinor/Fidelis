@@ -134,6 +134,11 @@ class StaticGroundsResolver:
     def __init__(self, known_refs=None, status_overrides=None):
         self.known_refs = known_refs or set()
         self.status_overrides = status_overrides or {}
+class AuthorityResolution:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 class StaticAuthorityResolver:
     def __init__(self, known_refs=None, status_overrides=None, grants=None):
         self.known_refs = known_refs or set()
@@ -163,7 +168,7 @@ def load_profile(path=None):
             "content": {"action_id": "x", "description": "y", "context": {}, "proposed_by": "z"},
         },
         [],
-        resolver_inputs=AttestResolverInputs(known_message_refs=["msg:root"], known_authority_refs=["approval:ops-1"]),
+        resolver_inputs=AttestResolverInputs(runtime_message_refs=["msg:root"]),
         evaluated_at=FIXED_TS,
     )
 
@@ -204,6 +209,11 @@ class AttestMessage(BaseModel):
 class StaticGroundsResolver:
     def __init__(self, known_refs=None, status_overrides=None):
         pass
+class AuthorityResolution:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 class StaticAuthorityResolver:
     def __init__(self, known_refs=None, status_overrides=None, grants=None):
         pass
@@ -268,6 +278,11 @@ class AttestMessage:
 class StaticGroundsResolver:
     def __init__(self, known_refs=None):
         pass
+class AuthorityResolution:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 class StaticAuthorityResolver:
     def __init__(self, known_refs=None):
         pass
@@ -438,7 +453,7 @@ def test_integration_real_attest_verifier_executes_real_semantics():
     result = bridge.verify_for_runtime(
         msg,
         [],
-        resolver_inputs=AttestResolverInputs(known_message_refs=["msg:root"]),
+        resolver_inputs=AttestResolverInputs(runtime_message_refs=["msg:root"]),
         evaluated_at=FIXED_TS,
     )
 
@@ -464,7 +479,7 @@ def test_integration_real_attest_message_id_is_real_digest():
     result = bridge.verify_for_runtime(
         msg,
         [],
-        resolver_inputs=AttestResolverInputs(known_message_refs=[]),
+        resolver_inputs=AttestResolverInputs(runtime_message_refs=[]),
         evaluated_at=FIXED_TS,
     )
 

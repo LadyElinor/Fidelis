@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 import importlib.util
 import sys
 
+from trusted_runtime.authority_store import AuthorityGrantStore
 from trusted_runtime.shared.models import ProposedAction
 
 
@@ -57,32 +58,38 @@ class AttestVerificationState(BaseModel):
 
 
 class AttestResolverInputs(BaseModel):
-    """Runtime-supplied resolver surface for a verification call.
+    """Resolver surface for a verification call, post grant-store split.
 
-    Trust boundary: fields here can mark grounds and authority as RESOLVED,
-    so where they came from matters. Surfaces listed in
-    `proposer_supplied_surfaces` arrived from the proposed action's own
-    context - i.e. the party whose action is being verified supplied part of
-    the evidence used to verify it. That is self-certification, and it is
-    never silently acceptable: the bridge emits a
-    RESOLVER_INPUTS_PROPOSER_SUPPLIED:<surface> soft flag per tainted
-    surface, which denies a clean PASS. The durable fix is an
-    orchestrator-owned grant store (see docs/ATTEST_BRIDGE.md, "Resolver
-    input trust boundary"); this field is the interim taint marker, not a
-    legitimation of the flow it marks.
+    Trust boundary (structural, not behavioral): authority resolution comes
+    ONLY from the orchestrator-owned AuthorityGrantStore handed to the bridge
+    at construction, and grounds resolution ONLY from a runtime-held check
+    set. That check set is seeded by runtime_message_refs, which the runtime
+    derives from its own observed evidence, and may be expanded by
+    suggested_message_refs without making any suggestion resolved by virtue of
+    being suggested. Nothing in this model can mark anything resolved, confer
+    a grant, or override a status.
+
+    Proposer influence is suggestion-only: suggested_*_refs expand what gets
+    CHECKED (each suggestion is resolved against runtime-held state and the
+    outcome reported), never what counts as RESOLVED. A suggestion that
+    runtime-held state does not already resolve fails exactly as if the
+    verifier had discovered the ref itself.
+
+    injection_attempted_keys records retired proposer authority keys found in
+    action context. Those keys are never consumed; their presence is surfaced
+    as PROPOSER_AUTHORITY_INJECTION_ATTEMPTED:<key> soft flags, because
+    probing a closed channel is itself signal.
     """
 
-    known_message_refs: list[str] = Field(default_factory=list)
-    known_authority_refs: list[str] = Field(default_factory=list)
-    authority_grants: dict[str, dict[str, Any]] = Field(default_factory=dict)
-    grounds_status_overrides: dict[str, str] = Field(default_factory=dict)
-    authority_status_overrides: dict[str, str] = Field(default_factory=dict)
-    proposer_supplied_surfaces: list[str] = Field(default_factory=list)
+    runtime_message_refs: list[str] = Field(default_factory=list)
+    suggested_message_refs: list[str] = Field(default_factory=list)
+    suggested_authority_refs: list[str] = Field(default_factory=list)
+    injection_attempted_keys: list[str] = Field(default_factory=list)
 
-    def taint_flags(self) -> list[str]:
+    def injection_flags(self) -> list[str]:
         return [
-            f"RESOLVER_INPUTS_PROPOSER_SUPPLIED:{surface}"
-            for surface in self.proposer_supplied_surfaces
+            f"PROPOSER_AUTHORITY_INJECTION_ATTEMPTED:{key}"
+            for key in self.injection_attempted_keys
         ]
 
 
@@ -154,9 +161,13 @@ class AttestBridge:
         config: AttestBridgeConfig | None = None,
         *,
         attest_root: Path | None = None,
+        authority_store: "AuthorityGrantStore | None" = None,
     ):
         self.config = config or AttestBridgeConfig()
         self.attest_root = attest_root
+        # Runtime-owned trust root. Constructor-injected by the orchestrator;
+        # never derived from message content or proposer context.
+        self.authority_store = authority_store
         self._real_attest = self._load_real_attest() if attest_root is not None else None
 
     def _load_real_attest(self) -> dict[str, Any] | None:
@@ -194,6 +205,7 @@ class AttestBridge:
             "AttestMessage": getattr(module, "AttestMessage"),
             "AttestVerifier": getattr(module, "AttestVerifier"),
             "StaticAuthorityResolver": getattr(module, "StaticAuthorityResolver"),
+            "AuthorityResolution": getattr(module, "AuthorityResolution"),
             "StaticGroundsResolver": getattr(module, "StaticGroundsResolver"),
             "load_profile": getattr(module, "load_profile"),
         }
@@ -215,7 +227,7 @@ class AttestBridge:
         if extra_soft_flags:
             soft_flags.extend(extra_soft_flags)
         resolver_inputs = resolver_inputs or AttestResolverInputs()
-        soft_flags.extend(resolver_inputs.taint_flags())
+        soft_flags.extend(resolver_inputs.injection_flags())
         return AttestVerificationState(
             message_id=message_hash,
             canonical_hash=message_hash,
@@ -229,12 +241,13 @@ class AttestBridge:
             decision_effect="UNVERIFIABLE",
             known_message_set_hash=known_hash,
             grounds_resolver_name="stub-none",
-            grounds_resolver_config_hash=sha256(self._stable_json(sorted(resolver_inputs.known_message_refs)).encode("utf-8")).hexdigest(),
+            grounds_resolver_config_hash=sha256(self._stable_json(sorted(resolver_inputs.runtime_message_refs)).encode("utf-8")).hexdigest(),
             authority_resolver_name="stub-none",
-            authority_resolver_config_hash=sha256(self._stable_json({
-                "known_authority_refs": sorted(resolver_inputs.known_authority_refs),
-                "authority_grants": resolver_inputs.authority_grants,
-            }).encode("utf-8")).hexdigest(),
+            authority_resolver_config_hash=(
+                self.authority_store.state_digest(evaluated_at)
+                if self.authority_store is not None
+                else sha256(b"no-authority-store").hexdigest()
+            ),
             signature_verifier_name=f"stub-none:{self.config.signature_verifier_mode}",
             signature_verifier_config_hash=sha256(self.config.signature_verifier_mode.encode("utf-8")).hexdigest(),
             evaluated_at=evaluated_at or datetime.now(timezone.utc),
@@ -418,14 +431,14 @@ class AttestBridge:
         message_blob = self._stable_json(message)
         message_hash = sha256(message_blob.encode("utf-8")).hexdigest()
         known_hash = sha256(self._stable_json(known_messages).encode("utf-8")).hexdigest()
+        verification_instant = evaluated_at or datetime.now(timezone.utc)
+        grounds_check_refs = sorted(
+            set(resolver_inputs.runtime_message_refs) | set(resolver_inputs.suggested_message_refs)
+        )
         grounds_resolver_config = {
-            "known_message_refs": sorted(resolver_inputs.known_message_refs),
-            "grounds_status_overrides": resolver_inputs.grounds_status_overrides,
-        }
-        authority_resolver_config = {
-            "known_authority_refs": sorted(resolver_inputs.known_authority_refs),
-            "authority_grants": resolver_inputs.authority_grants,
-            "authority_status_overrides": resolver_inputs.authority_status_overrides,
+            "runtime_message_refs": sorted(resolver_inputs.runtime_message_refs),
+            "suggested_message_refs": sorted(resolver_inputs.suggested_message_refs),
+            "grounds_check_refs": grounds_check_refs,
         }
 
         if self._real_attest is not None:
@@ -434,14 +447,20 @@ class AttestBridge:
                 attest_message = self._real_attest["AttestMessage"].model_validate(message)
                 attest_known_messages = [self._real_attest["AttestMessage"].model_validate(item) for item in known_messages]
                 grounds_resolver = self._real_attest["StaticGroundsResolver"](
-                    set(resolver_inputs.known_message_refs),
-                    status_overrides=resolver_inputs.grounds_status_overrides,
+                    set(grounds_check_refs),
                 )
-                authority_resolver = self._real_attest["StaticAuthorityResolver"](
-                    set(resolver_inputs.known_authority_refs),
-                    status_overrides=resolver_inputs.authority_status_overrides,
-                    grants=resolver_inputs.authority_grants,
-                )
+                if self.authority_store is not None:
+                    authority_resolver = _StoreAuthorityResolverAdapter(
+                        module=self._real_attest,
+                        store=self.authority_store,
+                        at=verification_instant,
+                    )
+                    authority_resolver_hash = self.authority_store.state_digest(
+                        verification_instant
+                    )
+                else:
+                    authority_resolver = self._real_attest["StaticAuthorityResolver"](set())
+                    authority_resolver_hash = sha256(b"no-authority-store").hexdigest()
                 signature_verifier, signature_verifier_config_hash = self._build_signature_verifier(profile)
                 verifier = self._real_attest["AttestVerifier"](
                     profile=profile,
@@ -449,10 +468,19 @@ class AttestBridge:
                     authority_resolver=authority_resolver,
                     signature_verifier=signature_verifier,
                 )
-                result = verifier.verify(attest_message, known_messages=attest_known_messages)
-                # Proposer-supplied resolver evidence is self-certification;
-                # it denies a clean PASS via the soft-flag -> REVIEW rule.
-                soft_flags_with_taint = list(result.get("soft_flag", [])) + resolver_inputs.taint_flags()
+                try:
+                    # v0.3 Attest: inject the evaluation instant so the verdict,
+                    # the receipt, and the store digest all bind the same time.
+                    result = verifier.verify(
+                        attest_message, known_messages=attest_known_messages, at=verification_instant
+                    )
+                except TypeError:
+                    # pre-v0.3 sibling without injectable time
+                    result = verifier.verify(attest_message, known_messages=attest_known_messages)
+                # Retired proposer authority keys are never consumed, but the
+                # attempt is surfaced and denies a clean PASS via the
+                # soft-flag -> REVIEW rule.
+                soft_flags_with_taint = list(result.get("soft_flag", [])) + resolver_inputs.injection_flags()
                 decision_effect: Literal["PASS", "REVIEW", "BLOCK", "UNVERIFIABLE"] = "PASS"
                 if result.get("hard_fail"):
                     decision_effect = "BLOCK"
@@ -473,10 +501,10 @@ class AttestBridge:
                     grounds_resolver_name=type(grounds_resolver).__name__,
                     grounds_resolver_config_hash=sha256(self._stable_json(grounds_resolver_config).encode("utf-8")).hexdigest(),
                     authority_resolver_name=type(authority_resolver).__name__,
-                    authority_resolver_config_hash=sha256(self._stable_json(authority_resolver_config).encode("utf-8")).hexdigest(),
+                    authority_resolver_config_hash=authority_resolver_hash,
                     signature_verifier_name=type(signature_verifier).__name__,
                     signature_verifier_config_hash=signature_verifier_config_hash,
-                    evaluated_at=evaluated_at or datetime.now(timezone.utc),
+                    evaluated_at=verification_instant,
                 )
             except Exception as exc:
                 return self._stub_verification(
@@ -650,3 +678,47 @@ class AttestBridge:
         import json
 
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+class _StoreAuthorityResolverAdapter:
+    """Adapts the orchestrator-owned grant store to Attest's AuthorityResolver
+    protocol. Resolution is evaluation-time aware: the same `at` that goes
+    into the receipt drives store resolution, which is what makes the
+    receipt's authority digest replayable.
+
+    Status mapping: resolved and expired map directly. `revoked` maps to
+    Attest's `revoked` status when the loaded implementation supports it
+    (v0.3+), else degrades to `unresolved` with the revocation detail
+    preserved — the distinction is never silently dropped from the receipt
+    because the store detail string carries it either way.
+    """
+
+    def __init__(self, *, module: dict[str, Any], store: AuthorityGrantStore, at: datetime) -> None:
+        self._resolution_cls = module["AuthorityResolution"]
+        self._store = store
+        self._at = at
+
+    def resolve(self, ref: str) -> Any:
+        res = self._store.resolve(ref, self._at)
+        status = res.status
+        kwargs: dict[str, Any] = {"ref": ref, "detail": res.detail}
+        if status == "resolved":
+            kwargs.update(
+                status="resolved",
+                granted_type=res.granted_type,
+                granted_scope=res.granted_scope,
+                delegates_from=list(res.delegates_from),
+            )
+            # v0.3 fields, passed only when the loaded impl accepts them.
+            for extra_field, value in (("expires", res.expires), ("strength", res.strength)):
+                if extra_field in getattr(self._resolution_cls, "model_fields", {}):
+                    kwargs[extra_field] = value
+            return self._resolution_cls(**kwargs)
+        if status == "expired":
+            return self._resolution_cls(status="expired", **kwargs)
+        if status == "revoked":
+            try:
+                return self._resolution_cls(status="revoked", **kwargs)
+            except Exception:
+                return self._resolution_cls(status="unresolved", **kwargs)
+        return self._resolution_cls(status="unresolved", **kwargs)
