@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from hypothesis import given, strategies as st
 
 from attest_ref_impl import (
-    AttestMessage, AttestVerifier, load_profile,
+    AttestMessage, AttestVerifier, AuthorityResolution, load_profile,
     StaticGroundsResolver, StaticAuthorityResolver, AcceptAllSignatureVerifier,
 )
 
@@ -249,7 +249,117 @@ def test_transitive_grounds_cycle_currently_not_enforced_across_mixed_refs():
         signature_verifier=AcceptAllSignatureVerifier(),
     )
     result = v.verify(a2, known_messages=[a2, b])
-    assert result == {"hard_fail": [], "soft_flag": [], "pass_scope_limit": []}
+    assert {k: result[k] for k in ("hard_fail", "soft_flag", "pass_scope_limit")} == {
+        "hard_fail": [], "soft_flag": [], "pass_scope_limit": []
+    }
+    assert "evaluated_at" in result  # v0.3: verdicts record their instant
+
+
+def _resolver_with(resolutions):
+    class _R:
+        def resolve(self, ref):
+            return resolutions[ref]
+    return _R()
+
+
+def _delegated_commit_msg(authority_ref):
+    return AttestMessage.model_validate({
+        "frame": "COMMIT", "mode": "legible", "from": "agent:a", "to": "agent:b",
+        "parents": ["msg:root"], "ordering_anchor": ["2026-07-02T12:00:00Z", 1],
+        "action_scope": "state_change",
+        "warrant": {"type": "DERIVED", "grounds": ["msg:root"]},
+        "deontic": {"type": "DELEGATED", "authority": [authority_ref],
+                    "scope": "state_change",
+                    "binds": {"message": "PENDING", "parents": ["msg:root"]}},
+        "content": "act",
+    })
+
+
+def _verifier_for(resolutions):
+    return AttestVerifier(
+        profile=load_profile(),
+        grounds_resolver=StaticGroundsResolver({"msg:root"}),
+        authority_resolver=_resolver_with(resolutions),
+        signature_verifier=AcceptAllSignatureVerifier(),
+    )
+
+
+def _fix_binding(msg):
+    data = msg.model_dump(by_alias=True, exclude_none=True)
+    data["deontic"]["binds"]["message"] = msg.compute_core_id()
+    return AttestMessage.model_validate(data)
+
+
+def test_verify_is_evaluation_time_injectable_and_deterministic():
+    from datetime import datetime, timezone
+    msg = _fix_binding(_delegated_commit_msg("grant:agent"))
+    resolutions = {
+        "grant:agent": AuthorityResolution(
+            ref="grant:agent", status="resolved", granted_type="DELEGATED",
+            granted_scope="state_change", delegates_from=["approval:root"],
+            strength=2, expires="2026-07-02T13:00:00Z"),
+        "approval:root": AuthorityResolution(
+            ref="approval:root", status="resolved", granted_type="HUMAN_APPROVAL",
+            granted_scope="state_change", strength=3, expires="2026-07-02T13:00:00Z"),
+    }
+    v = _verifier_for(resolutions)
+    before = datetime(2026, 7, 2, 12, 30, tzinfo=timezone.utc)
+    after = datetime(2026, 7, 2, 14, 0, tzinfo=timezone.utc)
+
+    live = v.verify(msg, known_messages=[], at=before)
+    assert not any("AUTHORITY_GRANT_EXPIRED" in e for e in live["hard_fail"])
+    assert live["evaluated_at"] == before.isoformat()
+
+    stale = v.verify(msg, known_messages=[], at=after)
+    assert any(e.startswith("AUTHORITY_GRANT_EXPIRED:grant:agent") for e in stale["hard_fail"])
+    assert v.verify(msg, known_messages=[], at=before) == live
+
+
+def test_expired_intermediate_grant_fails_the_chain():
+    from datetime import datetime, timezone
+    msg = _fix_binding(_delegated_commit_msg("grant:leaf"))
+    resolutions = {
+        "grant:leaf": AuthorityResolution(
+            ref="grant:leaf", status="resolved", granted_type="DELEGATED",
+            granted_scope="state_change", delegates_from=["grant:mid"], strength=1),
+        "grant:mid": AuthorityResolution(
+            ref="grant:mid", status="resolved", granted_type="DELEGATED",
+            granted_scope="state_change", delegates_from=["approval:root"],
+            strength=2, expires="2026-07-01T00:00:00Z"),
+        "approval:root": AuthorityResolution(
+            ref="approval:root", status="resolved", granted_type="HUMAN_APPROVAL",
+            granted_scope="state_change", strength=3),
+    }
+    v = _verifier_for(resolutions)
+    at = datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc)
+    result = v.verify(msg, known_messages=[], at=at)
+    assert any(e == "AUTHORITY_GRANT_EXPIRED:grant:mid" for e in result["hard_fail"])
+
+
+def test_delegation_strength_ceiling_enforced():
+    msg = _fix_binding(_delegated_commit_msg("grant:strong-claim"))
+    resolutions = {
+        "grant:strong-claim": AuthorityResolution(
+            ref="grant:strong-claim", status="resolved", granted_type="DELEGATED",
+            granted_scope="state_change", delegates_from=["sandbox:weak-root"], strength=3),
+        "sandbox:weak-root": AuthorityResolution(
+            ref="sandbox:weak-root", status="resolved", granted_type="SANDBOX",
+            granted_scope="state_change", strength=1),
+    }
+    v = _verifier_for(resolutions)
+    result = v.verify(msg, known_messages=[])
+    assert any(e.startswith("DELEGATION_STRENGTH_EXCEEDED:sandbox:weak-root") for e in result["hard_fail"])
+
+
+def test_revoked_status_is_expressible_and_unresolved_for_authority():
+    msg = _fix_binding(_delegated_commit_msg("grant:gone"))
+    resolutions = {
+        "grant:gone": AuthorityResolution(
+            ref="grant:gone", status="revoked", detail="revoked by user:sec: incident"),
+    }
+    v = _verifier_for(resolutions)
+    result = v.verify(msg, known_messages=[])
+    assert any(e == "AUTHORITY_UNRESOLVED:grant:gone" for e in result["hard_fail"])
 
 
 # --- Retired / unknown envelope fields must be rejected, never silently ignored ---

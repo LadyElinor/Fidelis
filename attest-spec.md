@@ -304,6 +304,8 @@ The binding target is the core ID rather than the full message ID by necessity, 
 State-changing frames must declare `action_scope`, default ontology, profile-declared and extensible: `state_change`, `package_install`, `shell_exec`, `network_fetch`, `general`. The deontic warrant's `scope` must cover the message's `action_scope`. Coverage semantics: `general` is the top element of the default ontology and covers any declared `action_scope`; every other scope covers only itself. Profiles that extend the ontology must publish its partial order; absent a published order, only exact match and `general`-coverage are defined, and any other cross-scope coverage claim is non-conformant.
 
 - Hard: typed scope non-coverage, for example authority scoped `network_fetch` while the act declares `state_change`, is a well-formedness failure.
+- Hard: an expired grant at any position in a delegation chain, `AUTHORITY_GRANT_EXPIRED`, evaluated at the verification instant.
+- Hard: a delegation hop whose reported strength exceeds its parent's, `DELEGATION_STRENGTH_EXCEEDED`; effective strength is the chain minimum (§8A.2), so no hop may report more than the hop it cites.
 - Soft: whether a covering scope is substantively appropriate to the act described in `content` is a semantic judgment (§15.8).
 
 ### 8A.7 Well-formedness rules

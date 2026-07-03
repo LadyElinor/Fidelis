@@ -6,18 +6,18 @@ Status vocabulary: **OPEN** (divergence exists), **RESOLVED** (spec and impl rec
 
 ---
 
-## G-1. Delegation strength ceiling not enforced — OPEN
+## G-1. Delegation strength ceiling not enforced — RESOLVED (v0.3)
 
 - **Spec:** §8A.5 requires that the effective *scope and strength* of `DELEGATED` authority not exceed what the delegating principal held.
 - **Impl:** `_walk_delegation` enforces the scope ceiling only. `AuthorityResolution` carries no strength field, so a chain can launder a weak root into a strong effective authority without detection.
 - **Consequence:** strength-ceiling violations pass verification.
-- **Remediation:** add `granted_strength` (or grant type, mapped through the profile's authority-strength lattice, §8A.2.1) to `AuthorityResolution`; enforce minimum-of-chain per §8A.2.1; add named failure (proposed `DELEGATION_STRENGTH_EXCEEDED`).
+- **Resolution:** `AuthorityResolution.strength` reports the resolver's lattice position; `DeploymentProfile.authority_strength_lattice` publishes the §8A.2 default ordering; `_walk_delegation` enforces the ceiling hop-to-hop (each hop's strength must not exceed its parent's — the walk seeds with no claim, since effective strength is the chain minimum) and emits `DELEGATION_STRENGTH_EXCEEDED:<ref>`. First real consumer: the TrustedRuntime AuthorityGrantStore, which also enforces the ceiling independently at insertion time.
 
-## G-2. Grant-level expiry not checked along delegation chains — OPEN
+## G-2. Grant-level expiry not checked along delegation chains — RESOLVED (v0.3)
 
 - **Spec:** §8A.7.6 requires expiry to be enforced where present. An expired delegating grant cannot confer live authority.
 - **Impl:** only the top-level warrant's `expires` is checked. `AuthorityResolution` has no expiry field, so an expired intermediate grant passes.
-- **Remediation:** add `expires` to `AuthorityResolution`; check at each hop of `_walk_delegation` against the evaluation time (see G-4).
+- **Resolution:** `AuthorityResolution.expires` added; every hop of `_walk_delegation` and every directly-resolved authority is checked against the evaluation instant, emitting `AUTHORITY_GRANT_EXPIRED:<ref>`.
 
 ## G-3. Expiry hard-fails unconditionally; replay not detected — OPEN
 
@@ -25,12 +25,13 @@ Status vocabulary: **OPEN** (divergence exists), **RESOLVED** (spec and impl rec
 - **Impl:** `AUTHORITY_EXPIRED` is emitted as a hard failure unconditionally, and nonce handling checks presence only — there is no replay cache, so a replayed nonce is never detected.
 - **Consequence:** two verifiers, both plausibly "conformant", disagree on the same message: this implementation hard-fails what the spec classifies as soft in ordering-authority-free deployments. Stricter-than-spec is still an interop divergence.
 - **Remediation:** gate hard-vs-soft expiry classification on a profile flag declaring a trusted ordering authority; either implement a bounded replay cache behind the same flag or record replay detection as explicitly delegated (out of the reference verifier's scope), in the README's implemented-vs-delegated list.
+- **Note (v0.3):** now implementable — the `revoked` authority status exists and the TrustedRuntime grant store provides the stateful surface a replay cache or ordering authority would consult.
 
-## G-4. Verification is wall-clock-dependent — OPEN
+## G-4. Verification is wall-clock-dependent — RESOLVED (v0.3)
 
 - **Spec:** verification verdicts should be reproducible receipts; nothing in the spec licenses an implicit, unrecorded input.
 - **Impl:** `_authority_unexpired` calls `datetime.now(timezone.utc)` internally. The same message can verify differently on different days with no record of the evaluation time, so a verdict cannot be deterministically replayed.
-- **Remediation:** `verify()` accepts an optional `at:` timestamp (default: now), and the verdict records the evaluation time used. Expiry tests then become time-bomb-free by construction.
+- **Resolution:** `verify(..., at=None)` accepts an injectable evaluation instant (wall clock remains the default), plumbs it through deontic expiry and the delegation walk, and records `evaluated_at` in the verdict. Same message + same `at` now yields byte-identical verdicts; TrustedRuntime binds the same instant into its receipts and store digests, making replay end-to-end.
 
 ## G-5. Covering-binding clause unimplemented (conservative subset) — OPEN, documented
 

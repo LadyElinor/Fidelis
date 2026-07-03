@@ -22,7 +22,7 @@ FrameType = Literal["ASSERT", "REQUEST", "DELEGATE", "COMMIT", "HYPOTHESIZE", "Q
 WarrantType = Literal["OBSERVED", "DERIVED", "RETRIEVED", "REPORTED", "ASSUMED"]
 PayloadMode = Literal["legible", "opaque"]
 GroundsStatus = Literal["resolved", "unresolved", "stale", "malformed", "inaccessible_under_profile"]
-AuthorityStatus = Literal["resolved", "unresolved", "expired", "malformed", "inaccessible_under_profile"]
+AuthorityStatus = Literal["resolved", "unresolved", "expired", "revoked", "malformed", "inaccessible_under_profile"]
 ResolutionPolicy = Literal["hard_fail", "soft_flag", "profile_unsupported"]
 AuthorityType = Literal["HUMAN_APPROVAL", "POLICY", "CAPABILITY", "DELEGATED", "SANDBOX", "NONE"]
 ActionScope = Literal["state_change", "package_install", "shell_exec", "network_fetch", "general"]
@@ -97,6 +97,11 @@ class AuthorityResolution(BaseModel):
     granted_type: Optional[AuthorityType] = None
     granted_scope: Optional[ActionScope] = None
     delegates_from: List[str] = Field(default_factory=list)
+    # v0.3 (gap ledger G-1 / G-2): the resolver reports the grant's lattice
+    # strength and expiry so the verifier can enforce chain ceilings and
+    # hop-level expiry without reaching into resolver internals.
+    strength: Optional[int] = None
+    expires: Optional[str] = None
 
 
 class GroundsResolver(Protocol):
@@ -309,6 +314,18 @@ class DeploymentProfile(BaseModel):
     accepted_authority_types: Set[AuthorityType] = Field(default_factory=lambda: {"HUMAN_APPROVAL", "POLICY", "CAPABILITY", "DELEGATED", "SANDBOX"})
     authority_namespaces: Set[str] = Field(default_factory=lambda: {"approval", "policy", "grant", "capability", "sandbox", "receipt"})
     nonce_required_for_authority: bool = False
+    # Spec 8A.2: conformance depends on publishing the lattice used for
+    # authority-strength comparison, never on assuming a universal ordering.
+    authority_strength_lattice: Dict[str, int] = Field(
+        default_factory=lambda: {
+            "HUMAN_APPROVAL": 3,
+            "POLICY": 3,
+            "CAPABILITY": 2,
+            "DELEGATED": 2,
+            "SANDBOX": 1,
+            "NONE": 0,
+        }
+    )
     external_authority_prefixes: List[str] = Field(default_factory=lambda: ["src:sentry-event", "src:external-issue", "src:ticket", "src:web", "src:github-issue"])
     grounds_namespaces: Dict[str, str] = Field(
         default_factory=lambda: {
@@ -429,15 +446,23 @@ class AttestVerifier:
         return True
 
     @staticmethod
-    def _authority_unexpired(expires: Optional[str]) -> bool:
+    def _authority_unexpired(expires: Optional[str], at: Optional[datetime] = None) -> bool:
         if expires is None:
             return True
         parsed = _parse_iso8601(expires)
         if parsed is None:
             return False
-        return parsed >= datetime.now(timezone.utc)
+        return parsed >= (at or datetime.now(timezone.utc))
 
-    def _walk_delegation(self, ref: str, needed_scope: Optional[str], seen: Set[str], errors: List[str]) -> bool:
+    def _walk_delegation(
+        self,
+        ref: str,
+        needed_scope: Optional[str],
+        seen: Set[str],
+        errors: List[str],
+        at: Optional[datetime] = None,
+        child_strength: Optional[int] = None,
+    ) -> bool:
         if ref in seen:
             errors.append("DELEGATION_CYCLE")
             return False
@@ -446,17 +471,34 @@ class AttestVerifier:
         if res.status != "resolved":
             errors.append(f"AUTHORITY_UNRESOLVED:{ref}")
             return False
+        # G-2: an expired grant anywhere in the chain cannot confer live
+        # authority, evaluated at the injected instant.
+        if res.expires is not None and not self._authority_unexpired(res.expires, at):
+            errors.append(f"AUTHORITY_GRANT_EXPIRED:{ref}")
+            return False
         if not self._scope_covers(res.granted_scope, needed_scope):
             errors.append("DELEGATED_AUTHORITY_NEVER_HELD")
+            return False
+        # G-1: effective strength must not exceed what the delegator held.
+        # The comparison is None-tolerant: resolvers that do not report
+        # strength (pre-v0.3) simply do not participate in the ceiling check.
+        hop_strength = res.strength
+        if hop_strength is None and res.granted_type is not None:
+            hop_strength = self.profile.authority_strength_lattice.get(res.granted_type)
+        if child_strength is not None and hop_strength is not None and child_strength > hop_strength:
+            errors.append(f"DELEGATION_STRENGTH_EXCEEDED:{ref}")
             return False
         if res.granted_type != "DELEGATED":
             return True
         if not res.delegates_from:
             errors.append("DELEGATED_AUTHORITY_NEVER_HELD")
             return False
-        return all(self._walk_delegation(src, needed_scope, seen, errors) for src in res.delegates_from)
+        return all(
+            self._walk_delegation(src, needed_scope, seen, errors, at=at, child_strength=hop_strength)
+            for src in res.delegates_from
+        )
 
-    def _evaluate_deontic(self, msg: AttestMessage, computed_core_id: str) -> Tuple[bool, List[str]]:
+    def _evaluate_deontic(self, msg: AttestMessage, computed_core_id: str, at: Optional[datetime] = None) -> Tuple[bool, List[str]]:
         errors: List[str] = []
         if msg.frame not in self.profile.authority_required_frames:
             return True, errors
@@ -476,7 +518,7 @@ class AttestVerifier:
             errors.append("EXTERNAL_ONLY_AUTHORITY")
         if not self._deontic_binds(d, msg, computed_core_id):
             errors.append("AUTHORITY_BINDING_INVALID")
-        if not self._authority_unexpired(d.expires):
+        if not self._authority_unexpired(d.expires, at):
             errors.append("AUTHORITY_EXPIRED")
         if d.nonce is None and self.profile.nonce_required_for_authority:
             errors.append("AUTHORITY_NONCE_REQUIRED")
@@ -487,11 +529,18 @@ class AttestVerifier:
             if not d.authority:
                 errors.append("DELEGATED_AUTHORITY_NEVER_HELD")
             for grant in d.authority:
-                self._walk_delegation(grant, needed, set(), errors)
+                # The message does not carry an independent strength claim:
+                # effective strength IS the chain minimum (spec 8A.2), so the
+                # walk seeds with None and the ceiling applies hop-to-hop -
+                # each hop's reported strength must not exceed its parent's.
+                self._walk_delegation(grant, needed, set(), errors, at=at, child_strength=None)
         else:
             for r in d.authority:
-                if self.authority_resolver.resolve(r).status != "resolved":
+                res = self.authority_resolver.resolve(r)
+                if res.status != "resolved":
                     errors.append(f"AUTHORITY_UNRESOLVED:{r}")
+                elif res.expires is not None and not self._authority_unexpired(res.expires, at):
+                    errors.append(f"AUTHORITY_GRANT_EXPIRED:{r}")
         errors = _dedupe(errors)
         return (len(errors) == 0), errors
 
@@ -633,8 +682,17 @@ class AttestVerifier:
         msg: AttestMessage,
         adopted_chain: Optional[List[AttestMessage]] = None,
         known_messages: Optional[List[AttestMessage]] = None,
-    ) -> Dict[str, List[str]]:
-        result: Dict[str, List[str]] = {"hard_fail": [], "soft_flag": [], "pass_scope_limit": []}
+        at: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        # G-4: `at` is the evaluation instant for every time-dependent check
+        # (deontic expiry, grant expiry along delegation chains). Wall clock
+        # remains the default; injecting `at` makes verdicts deterministic
+        # and replayable, and the instant used is recorded in the verdict.
+        evaluated_at = at or datetime.now(timezone.utc)
+        result: Dict[str, Any] = {
+            "hard_fail": [], "soft_flag": [], "pass_scope_limit": [],
+            "evaluated_at": evaluated_at.isoformat(),
+        }
         adopted_chain = adopted_chain or []
         known_messages = known_messages or []
 
@@ -691,7 +749,7 @@ class AttestVerifier:
         if msg.frame == "COMMIT" and self._relay_parent_present(msg):
             result["soft_flag"].append("RELAY_UPTAKE_MISSING")
 
-        authority_valid, authority_errors = self._evaluate_deontic(msg, computed_core_id)
+        authority_valid, authority_errors = self._evaluate_deontic(msg, computed_core_id, at=evaluated_at)
         result["hard_fail"].extend(authority_errors)
 
         has_external_grounds = bool(msg.warrant and self._grounds_reference_external_authority(msg.warrant.grounds))

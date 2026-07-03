@@ -69,5 +69,13 @@
     "sandbox",
     "receipt"
   ],
-  "nonce_required_for_authority": false
+  "nonce_required_for_authority": false,
+  "authority_strength_lattice": {
+    "HUMAN_APPROVAL": 3,
+    "POLICY": 3,
+    "CAPABILITY": 2,
+    "DELEGATED": 2,
+    "SANDBOX": 1,
+    "NONE": 0
+  }
 }
