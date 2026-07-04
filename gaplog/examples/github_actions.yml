@@ -1,0 +1,21 @@
+# Passive drop-in: after any agent-driven job, verify its completion claim
+# against world state and append one gaplog record. No behavior change.
+- name: Record self-report vs verified state
+  run: |
+    REPORTED="${AGENT_STATUS:-completed}"            # what the agent claimed
+    if git ls-remote --exit-code origin "refs/heads/${TARGET_BRANCH}" \
+       | grep -q "$(git rev-parse HEAD)"; then
+      VERIFIED="completed"
+    else
+      VERIFIED="not-on-remote"
+    fi
+    python - << 'PY'
+    import os
+    from gaplog import GapLog
+    GapLog("gaps.jsonl").record(
+        os.environ.get("GITHUB_RUN_ID", "run"),
+        os.environ.get("REPORTED", "completed"),
+        os.environ.get("VERIFIED", "unknown"),
+        verifier="git ls-remote from CI runner credential",
+    )
+    PY
