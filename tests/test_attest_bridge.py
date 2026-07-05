@@ -73,6 +73,18 @@ def test_endorse_requires_adopts_and_adoption_reason():
         )
 
 
+def _valid_commit_deontic(**overrides):
+    base = {
+        "type": "HUMAN_APPROVAL",
+        "authority": ["approval:ops-9"],
+        "scope": "state_change",
+        "binds": {"message": "msg-core-001", "parents": ["msg-parent"]},
+        "nonce": "n-1",
+    }
+    base.update(overrides)
+    return base
+
+
 def test_commit_rejected_for_non_whitelisted_emitter():
     bridge = AttestBridge()
 
@@ -82,8 +94,101 @@ def test_commit_rejected_for_non_whitelisted_emitter():
             content={"execute": True},
             parents=["msg-parent"],
             action_scope="general",
-            deontic={"polarity": "permit"},
+            deontic=_valid_commit_deontic(scope="general"),
         )
+
+
+@pytest.mark.parametrize(
+    ("deontic", "message"),
+    [
+        ({"authority": ["approval:ops-9"], "scope": "state_change", "binds": {"message": "m", "parents": ["msg-parent"]}}, "COMMIT deontic requires non-empty type"),
+        ({"type": "HUMAN_APPROVAL", "authority": [], "scope": "state_change", "binds": {"message": "m", "parents": ["msg-parent"]}}, "COMMIT deontic requires non-empty authority"),
+        ({"type": "HUMAN_APPROVAL", "authority": ["approval:ops-9"], "binds": {"message": "m", "parents": ["msg-parent"]}}, "COMMIT deontic requires non-empty scope"),
+        ({"type": "HUMAN_APPROVAL", "authority": ["approval:ops-9"], "scope": "state_change", "binds": {"parents": ["msg-parent"]}}, "COMMIT deontic requires binds.message"),
+        ({"type": "HUMAN_APPROVAL", "authority": ["approval:ops-9"], "scope": "state_change", "binds": {"message": "m"}}, "COMMIT deontic requires binds.parents"),
+    ],
+)
+def test_commit_rejected_for_malformed_deontic_payloads(deontic, message):
+    bridge = AttestBridge()
+
+    with pytest.raises(ValueError, match=message):
+        bridge.wrap_runtime_commit(
+            runtime_actor="trusted-runtime:orchestrator",
+            content={"execute": True},
+            parents=["msg-parent"],
+            action_scope="state_change",
+            deontic=deontic,
+        )
+
+
+@pytest.mark.parametrize("action_scope", ["general", "state_change", "package_install", "shell_exec", "network_fetch"])
+def test_commit_rejected_for_none_deontic_type(action_scope):
+    bridge = AttestBridge()
+
+    with pytest.raises(ValueError, match="COMMIT deontic type NONE is invalid for runtime commits"):
+        bridge.wrap_runtime_commit(
+            runtime_actor="trusted-runtime:orchestrator",
+            content={"execute": True},
+            parents=["msg-parent"],
+            action_scope=action_scope,
+            deontic=_valid_commit_deontic(type="NONE", scope=action_scope),
+        )
+
+
+def test_commit_rejected_for_scope_mismatch():
+    bridge = AttestBridge()
+
+    with pytest.raises(ValueError, match="COMMIT deontic scope must match action_scope"):
+        bridge.wrap_runtime_commit(
+            runtime_actor="trusted-runtime:orchestrator",
+            content={"execute": True},
+            parents=["msg-parent"],
+            action_scope="shell_exec",
+            deontic=_valid_commit_deontic(scope="state_change"),
+        )
+
+
+def test_commit_rejected_for_parent_binding_mismatch():
+    bridge = AttestBridge()
+
+    with pytest.raises(ValueError, match="COMMIT deontic binds.parents must match message parents"):
+        bridge.wrap_runtime_commit(
+            runtime_actor="trusted-runtime:orchestrator",
+            content={"execute": True},
+            parents=["msg-parent"],
+            action_scope="state_change",
+            deontic=_valid_commit_deontic(
+                binds={"message": "msg-core-001", "parents": ["msg-other-parent"]}
+            ),
+        )
+
+
+def test_commit_rejected_for_external_authority_reference():
+    bridge = AttestBridge()
+
+    with pytest.raises(ValueError, match="COMMIT deontic authority\[\] may not use external src: references"):
+        bridge.wrap_runtime_commit(
+            runtime_actor="trusted-runtime:orchestrator",
+            content={"execute": True},
+            parents=["msg-parent"],
+            action_scope="state_change",
+            deontic=_valid_commit_deontic(authority=["src:ticket:1234"]),
+        )
+
+
+def test_commit_accepts_conservative_valid_deontic_payload():
+    bridge = AttestBridge()
+    msg = bridge.wrap_runtime_commit(
+        runtime_actor="trusted-runtime:orchestrator",
+        content={"execute": True},
+        parents=["msg-parent"],
+        action_scope="state_change",
+        deontic=_valid_commit_deontic(),
+    )
+
+    assert msg["frame"] == "COMMIT"
+    assert msg["action_scope"] == "state_change"
+    assert msg["deontic"]["type"] == "HUMAN_APPROVAL"
 
 
 def test_verification_stub_is_unverifiable_not_pass():

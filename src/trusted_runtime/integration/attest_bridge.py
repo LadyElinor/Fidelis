@@ -379,6 +379,52 @@ class AttestBridge:
             "content": content,
         }
 
+    def _validate_runtime_commit_deontic(
+        self,
+        *,
+        parents: list[str],
+        action_scope: Literal["state_change", "package_install", "shell_exec", "network_fetch", "general"],
+        deontic: dict[str, Any],
+    ) -> None:
+        if not isinstance(deontic, dict):
+            raise ValueError("COMMIT deontic must be an object")
+
+        deontic_type = deontic.get("type")
+        if not isinstance(deontic_type, str) or not deontic_type.strip():
+            raise ValueError("COMMIT deontic requires non-empty type")
+        if deontic_type == "NONE":
+            raise ValueError("COMMIT deontic type NONE is invalid for runtime commits")
+
+        authority = deontic.get("authority")
+        if not isinstance(authority, list) or not authority or not all(
+            isinstance(ref, str) and ref.strip() for ref in authority
+        ):
+            raise ValueError("COMMIT deontic requires non-empty authority[]")
+        if any(str(ref).startswith("src:") for ref in authority):
+            raise ValueError("COMMIT deontic authority[] may not use external src: references")
+
+        scope = deontic.get("scope")
+        if not isinstance(scope, str) or not scope.strip():
+            raise ValueError("COMMIT deontic requires non-empty scope")
+        if scope != action_scope:
+            raise ValueError("COMMIT deontic scope must match action_scope")
+
+        binds = deontic.get("binds")
+        if not isinstance(binds, dict):
+            raise ValueError("COMMIT deontic requires binds")
+
+        bind_message = binds.get("message")
+        if not isinstance(bind_message, str) or not bind_message.strip():
+            raise ValueError("COMMIT deontic requires binds.message")
+
+        bind_parents = binds.get("parents")
+        if not isinstance(bind_parents, list) or not all(
+            isinstance(parent, str) and parent.strip() for parent in bind_parents
+        ):
+            raise ValueError("COMMIT deontic requires binds.parents")
+        if bind_parents != parents:
+            raise ValueError("COMMIT deontic binds.parents must match message parents")
+
     def wrap_runtime_commit(
         self,
         *,
@@ -394,6 +440,11 @@ class AttestBridge:
         """
         if runtime_actor not in self.config.commit_whitelist:
             raise ValueError(f"COMMIT emitter not whitelisted: {runtime_actor}")
+        self._validate_runtime_commit_deontic(
+            parents=parents,
+            action_scope=action_scope,
+            deontic=deontic,
+        )
         return {
             "frame": "COMMIT",
             "mode": "legible",
@@ -418,14 +469,15 @@ class AttestBridge:
         resolver_inputs: AttestResolverInputs | None = None,
         evaluated_at: datetime | None = None,
     ) -> AttestVerificationState:
-        """Placeholder verification entry point.
+        """Verify an Attest-shaped message for runtime consumption.
 
-        Real implementation responsibilities:
-        - canonicalize and compute Attest message ID/hash
-        - hash active profile into `profile_hash`
-        - hash known message set into `known_message_set_hash`
-        - run AttestVerifier.verify(...)
-        - map result into PASS / REVIEW / BLOCK / UNVERIFIABLE
+        Current behavior:
+        - canonicalize and compute message/content hashes
+        - bind verification to the active profile and known-message set
+        - use the real Attest verifier path when available
+        - inject the evaluation instant when supported so receipts and authority-store state bind the same `at`
+        - degrade honestly to UNVERIFIABLE/stub when the real path is unavailable or fails
+        - surface proposer authority injection attempts as soft flags rather than consuming them
         """
         resolver_inputs = resolver_inputs or AttestResolverInputs()
         message_blob = self._stable_json(message)
