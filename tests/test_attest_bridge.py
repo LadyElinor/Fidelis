@@ -1,13 +1,16 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from trusted_runtime.authority_store import AuthorityGrantStore
 from trusted_runtime.integration.attest_bridge import (
     AttestBridge,
     AttestBridgeConfig,
     AttestResolverInputs,
     AttestReviewPacket,
     AttestVerificationState,
+    AuthorizationStateReport,
+    DelegatedLineageReceipt,
     IndependenceSignals,
 )
 from trusted_runtime.integration.availability import attest_agent_conlang_available
@@ -200,6 +203,7 @@ def test_verification_stub_is_unverifiable_not_pass():
     assert result.hard_fail == []
     assert result.grounds_resolver_name == "stub-none"
     assert result.authority_resolver_name == "stub-none"
+    assert result.authorization_states.verifier_state == "stub_only_unverifiable"
 
 
 def test_real_attest_bridge_availability_matches_import_gate():
@@ -502,6 +506,80 @@ def test_cer_receipt_fragment_includes_profile_and_known_message_hash():
     assert fragment["attest_independence"]["policy_result"] == "correlated"
 
 
+def test_known_message_set_hash_is_order_insensitive_under_canonical_sorting():
+    bridge = AttestBridge()
+    message = {"frame": "ASSERT", "content": {"x": 1}}
+    known_a = [
+        {"frame": "ASSERT", "content": {"b": 2}},
+        {"frame": "ASSERT", "content": {"a": 1}},
+    ]
+    known_b = list(reversed(known_a))
+
+    result_a = bridge.verify_for_runtime(message, known_a, evaluated_at=FIXED_TS)
+    result_b = bridge.verify_for_runtime(message, known_b, evaluated_at=FIXED_TS)
+
+    assert result_a.known_message_set_hash == result_b.known_message_set_hash
+
+
+def test_delegated_receipt_scaffold_marks_unresolved_without_store():
+    bridge = AttestBridge()
+    msg = bridge.wrap_runtime_commit(
+        runtime_actor="trusted-runtime:orchestrator",
+        content={"execute": True},
+        parents=["msg-parent"],
+        action_scope="state_change",
+        deontic={
+            "type": "DELEGATED",
+            "authority": ["capability:child", "capability:parent"],
+            "scope": "state_change",
+            "binds": {"message": "msg-core-001", "parents": ["msg-parent"]},
+        },
+    )
+
+    result = bridge.verify_for_runtime(msg, [], evaluated_at=FIXED_TS)
+
+    assert result.delegated_lineage.present is True
+    assert result.delegated_lineage.lineage_status == "unresolved"
+    assert result.delegated_lineage.unresolved_refs == ["capability:child", "capability:parent"]
+
+
+def test_delegated_receipt_fragment_includes_lineage_fields():
+    bridge = AttestBridge()
+    verification = _verification().model_copy(update={
+        "delegated_lineage": DelegatedLineageReceipt(
+            present=True,
+            deontic_type="DELEGATED",
+            root_ref="capability:parent",
+            chain_claimed=["capability:parent", "capability:child"],
+            chain_verified=["capability:parent", "capability:child"],
+            chain_verified_grant_ids=["grant-parent", "grant-child"],
+            depth=2,
+            lineage_status="verified",
+            attenuation_status="narrowed",
+            act_applicability_status="applicable",
+        )
+    })
+
+    verification = verification.model_copy(update={
+        "authorization_states": AuthorizationStateReport(
+            structure_state="valid_structure",
+            authority_state="authorized",
+            delegation_state="narrowed_delegation",
+            applicability_state="applicable_to_act",
+            verifier_state="verified_by_real_path",
+        )
+    })
+    fragment = bridge.cer_receipt_fragment(verification=verification)
+
+    assert fragment["attest_delegation_present"] is True
+    assert fragment["attest_deontic_type"] == "DELEGATED"
+    assert fragment["attest_delegation_lineage_status"] == "verified"
+    assert fragment["attest_delegation_chain_verified_grant_ids"] == ["grant-parent", "grant-child"]
+    assert fragment["attest_delegation_attenuation_status"] == "narrowed"
+    assert fragment["attest_delegation_state"] == "narrowed_delegation"
+    assert fragment["attest_verifier_state"] == "verified_by_real_path"
+
+
 def test_verified_but_same_origin_message_still_requires_review():
     bridge = AttestBridge()
     verification = _verification(decision_effect="PASS")
@@ -515,6 +593,115 @@ def test_hard_fail_maps_to_block():
     verification = _verification(decision_effect="PASS", hard_fail=["INVALID_WARRANT"])
 
     assert bridge.decision_effect(verification) == "BLOCK"
+
+
+def test_delegated_receipt_marks_verified_narrowing_against_store_chain():
+    store = AuthorityGrantStore()
+    parent = store.insert_grant(
+        ref="capability:parent",
+        granted_type="CAPABILITY",
+        scope="general",
+        channel="operator",
+        inserted_by="user:operator-1",
+        insertion_evidence="receipt:parent",
+        at=FIXED_TS - timedelta(minutes=2),
+    )
+    store.insert_grant(
+        ref="capability:child",
+        granted_type="DELEGATED",
+        scope="state_change",
+        channel="delegation",
+        inserted_by="user:operator-1",
+        insertion_evidence=parent.grant_id,
+        delegates_from=parent.grant_id,
+        at=FIXED_TS - timedelta(minutes=1),
+    )
+    bridge = AttestBridge(authority_store=store)
+    msg = bridge.wrap_runtime_commit(
+        runtime_actor="trusted-runtime:orchestrator",
+        content={"execute": True},
+        parents=["msg-parent"],
+        action_scope="state_change",
+        deontic={
+            "type": "DELEGATED",
+            "authority": ["capability:parent", "capability:child"],
+            "scope": "state_change",
+            "binds": {"message": "msg-core-001", "parents": ["msg-parent"]},
+        },
+    )
+
+    result = bridge.verify_for_runtime(msg, [], evaluated_at=FIXED_TS)
+
+    assert result.delegated_lineage.present is True
+    assert result.delegated_lineage.lineage_status == "verified"
+    assert result.delegated_lineage.chain_verified_grant_ids == [parent.grant_id, store.active_record_for_ref("capability:child", FIXED_TS).grant_id]
+    assert result.delegated_lineage.attenuation_status == "narrowed"
+    assert result.delegated_lineage.act_applicability_status == "applicable"
+    assert result.authorization_states.delegation_state == "narrowed_delegation"
+    assert result.authorization_states.applicability_state == "applicable_to_act"
+
+
+def test_delegated_receipt_breaks_on_parent_grant_continuity_mismatch():
+    store = AuthorityGrantStore()
+    root = store.insert_grant(
+        ref="capability:root",
+        granted_type="CAPABILITY",
+        scope="general",
+        channel="operator",
+        inserted_by="user:operator-1",
+        insertion_evidence="receipt:root",
+        at=FIXED_TS - timedelta(minutes=3),
+    )
+    store.insert_grant(
+        ref="capability:parent",
+        granted_type="DELEGATED",
+        scope="state_change",
+        channel="delegation",
+        inserted_by="user:operator-1",
+        insertion_evidence=root.grant_id,
+        delegates_from=root.grant_id,
+        at=FIXED_TS - timedelta(minutes=2),
+    )
+    sibling_root = store.insert_grant(
+        ref="capability:other-root",
+        granted_type="CAPABILITY",
+        scope="general",
+        channel="operator",
+        inserted_by="user:operator-1",
+        insertion_evidence="receipt:other-root",
+        at=FIXED_TS - timedelta(minutes=3),
+    )
+    store.insert_grant(
+        ref="capability:child",
+        granted_type="DELEGATED",
+        scope="state_change",
+        channel="delegation",
+        inserted_by="user:operator-1",
+        insertion_evidence=sibling_root.grant_id,
+        delegates_from=sibling_root.grant_id,
+        at=FIXED_TS - timedelta(minutes=1),
+    )
+    bridge = AttestBridge(authority_store=store)
+    msg = bridge.wrap_runtime_commit(
+        runtime_actor="trusted-runtime:orchestrator",
+        content={"execute": True},
+        parents=["msg-parent"],
+        action_scope="state_change",
+        deontic={
+            "type": "DELEGATED",
+            "authority": ["capability:parent", "capability:child"],
+            "scope": "state_change",
+            "binds": {"message": "msg-core-001", "parents": ["msg-parent"]},
+        },
+    )
+
+    result = bridge.verify_for_runtime(msg, [], evaluated_at=FIXED_TS)
+
+    assert result.delegated_lineage.present is True
+    assert result.delegated_lineage.lineage_status == "broken"
+    assert result.delegated_lineage.first_break_ref == "capability:child"
+    assert result.authorization_states.delegation_state == "broken_lineage"
+    assert result.decision_effect in {"BLOCK", "UNVERIFIABLE"}
 
 
 def test_soft_flag_maps_to_review_when_no_hard_fail():

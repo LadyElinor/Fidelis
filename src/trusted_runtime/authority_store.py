@@ -372,6 +372,10 @@ class AuthorityGrantStore:
                 return record
         return None
 
+    def active_record_for_ref(self, ref: str, at: Optional[datetime] = None) -> Optional[GrantRecord]:
+        """Public accessor for the active resolved record for a ref at `at`."""
+        return self._active_record_for_ref(ref, at or _utcnow())
+
     def _effective_strength(self, granted_type: str, ceiling: Optional[int]) -> int:
         base = self.strength_lattice[granted_type]
         return min(base, ceiling) if ceiling is not None else base

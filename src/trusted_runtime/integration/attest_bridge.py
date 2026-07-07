@@ -28,10 +28,72 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 import importlib.util
+import json
 import sys
 
 from trusted_runtime.authority_store import AuthorityGrantStore
 from trusted_runtime.shared.models import ProposedAction
+
+try:
+    import rfc8785
+except Exception:  # pragma: no cover - optional dependency during first pass
+    rfc8785 = None
+
+
+class DelegatedLineageReceipt(BaseModel):
+    """First-pass receipt scaffold for delegated authority reasoning."""
+
+    present: bool = False
+    deontic_type: str | None = None
+    root_ref: str | None = None
+    chain_claimed: list[str] = Field(default_factory=list)
+    chain_verified: list[str] = Field(default_factory=list)
+    chain_verified_grant_ids: list[str] = Field(default_factory=list)
+    depth: int | None = None
+    lineage_status: Literal["not_applicable", "verified", "broken", "unresolved"] = "not_applicable"
+    attenuation_status: Literal["not_applicable", "narrowed", "equivalent", "widened", "unresolved"] = "not_applicable"
+    act_applicability_status: Literal["not_applicable", "applicable", "out_of_scope", "revoked", "expired", "unresolved"] = "not_applicable"
+    first_break_ref: str | None = None
+    first_widening_ref: str | None = None
+    unresolved_refs: list[str] = Field(default_factory=list)
+    revoked_refs: list[str] = Field(default_factory=list)
+    expired_refs: list[str] = Field(default_factory=list)
+
+
+class AuthorizationStateReport(BaseModel):
+    """Secondary typed authorization-state vocabulary for review artifacts."""
+
+    structure_state: Literal["unknown", "valid_structure", "invalid_structure"] = "unknown"
+    authority_state: Literal[
+        "unknown",
+        "authorized",
+        "unauthorized",
+        "unresolved_authority",
+        "revoked_authority",
+        "expired_authority",
+    ] = "unknown"
+    delegation_state: Literal[
+        "not_applicable",
+        "verified_lineage",
+        "broken_lineage",
+        "unresolved_lineage",
+        "narrowed_delegation",
+        "equivalent_delegation",
+        "widened_delegation",
+    ] = "not_applicable"
+    applicability_state: Literal[
+        "unknown",
+        "not_applicable",
+        "applicable_to_act",
+        "out_of_scope_act",
+        "binding_mismatch",
+    ] = "unknown"
+    verifier_state: Literal[
+        "unknown",
+        "verified_by_real_path",
+        "stub_only_unverifiable",
+        "real_path_failed",
+    ] = "unknown"
 
 
 class AttestVerificationState(BaseModel):
@@ -54,6 +116,8 @@ class AttestVerificationState(BaseModel):
     authority_resolver_config_hash: str = ""
     signature_verifier_name: str = "unconfigured"
     signature_verifier_config_hash: str = ""
+    delegated_lineage: DelegatedLineageReceipt = Field(default_factory=DelegatedLineageReceipt)
+    authorization_states: AuthorizationStateReport = Field(default_factory=AuthorizationStateReport)
     evaluated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -220,6 +284,7 @@ class AttestBridge:
         message_hash: str,
         known_hash: str,
         evaluated_at: datetime | None,
+        message: dict[str, Any] | None = None,
         resolver_inputs: AttestResolverInputs | None = None,
         extra_soft_flags: list[str] | None = None,
     ) -> AttestVerificationState:
@@ -228,7 +293,8 @@ class AttestBridge:
             soft_flags.extend(extra_soft_flags)
         resolver_inputs = resolver_inputs or AttestResolverInputs()
         soft_flags.extend(resolver_inputs.injection_flags())
-        return AttestVerificationState(
+        delegated_lineage = self._build_delegated_lineage_receipt(message=message, evaluated_at=evaluated_at)
+        verification = AttestVerificationState(
             message_id=message_hash,
             canonical_hash=message_hash,
             profile_id=self.config.profile_id,
@@ -241,7 +307,7 @@ class AttestBridge:
             decision_effect="UNVERIFIABLE",
             known_message_set_hash=known_hash,
             grounds_resolver_name="stub-none",
-            grounds_resolver_config_hash=sha256(self._stable_json(sorted(resolver_inputs.runtime_message_refs)).encode("utf-8")).hexdigest(),
+            grounds_resolver_config_hash=sha256(self._stable_json_bytes(sorted(resolver_inputs.runtime_message_refs))).hexdigest(),
             authority_resolver_name="stub-none",
             authority_resolver_config_hash=(
                 self.authority_store.state_digest(evaluated_at)
@@ -250,7 +316,13 @@ class AttestBridge:
             ),
             signature_verifier_name=f"stub-none:{self.config.signature_verifier_mode}",
             signature_verifier_config_hash=sha256(self.config.signature_verifier_mode.encode("utf-8")).hexdigest(),
+            delegated_lineage=delegated_lineage,
             evaluated_at=evaluated_at or datetime.now(timezone.utc),
+        )
+        return verification.model_copy(
+            update={
+                "authorization_states": self._build_authorization_state_report(verification)
+            }
         )
 
     def _build_signature_verifier(self, profile: Any) -> tuple[Any, str]:
@@ -480,10 +552,13 @@ class AttestBridge:
         - surface proposer authority injection attempts as soft flags rather than consuming them
         """
         resolver_inputs = resolver_inputs or AttestResolverInputs()
-        message_blob = self._stable_json(message)
-        message_hash = sha256(message_blob.encode("utf-8")).hexdigest()
-        known_hash = sha256(self._stable_json(known_messages).encode("utf-8")).hexdigest()
+        message_hash = sha256(self._stable_json_bytes(message)).hexdigest()
         verification_instant = evaluated_at or datetime.now(timezone.utc)
+        known_hash = sha256(self._canonical_known_messages_bytes(known_messages)).hexdigest()
+        delegated_lineage = self._build_delegated_lineage_receipt(
+            message=message,
+            evaluated_at=verification_instant,
+        )
         # Suggested message refs are CHECKED against runtime-held state and the
         # outcomes reported (see suggested_message_check_results in the engine
         # summary); they never enter the resolvable set. StaticGroundsResolver
@@ -539,12 +614,16 @@ class AttestBridge:
                     decision_effect = "BLOCK"
                 elif soft_flags_with_taint or result.get("pass_scope_limit"):
                     decision_effect = "REVIEW"
-                return AttestVerificationState(
+                if delegated_lineage.present and delegated_lineage.lineage_status in {"broken", "unresolved"}:
+                    decision_effect = "BLOCK" if delegated_lineage.lineage_status == "broken" else "REVIEW"
+                if delegated_lineage.present and delegated_lineage.attenuation_status == "widened":
+                    decision_effect = "BLOCK"
+                verification = AttestVerificationState(
                     message_id=getattr(attest_message, "compute_id")(),
                     canonical_hash=message_hash,
                     profile_id=profile.name,
                     profile_version="loaded-runtime-profile",
-                    profile_hash=sha256(self._stable_json(profile.model_dump(mode="json")).encode("utf-8")).hexdigest(),
+                    profile_hash=sha256(self._stable_json_bytes(profile.model_dump(mode="json"))).hexdigest(),
                     verifier_version="attest_ref_impl",
                     hard_fail=list(result.get("hard_fail", [])),
                     soft_flag=soft_flags_with_taint,
@@ -552,18 +631,25 @@ class AttestBridge:
                     decision_effect=decision_effect,
                     known_message_set_hash=known_hash,
                     grounds_resolver_name=type(grounds_resolver).__name__,
-                    grounds_resolver_config_hash=sha256(self._stable_json(grounds_resolver_config).encode("utf-8")).hexdigest(),
+                    grounds_resolver_config_hash=sha256(self._stable_json_bytes(grounds_resolver_config)).hexdigest(),
                     authority_resolver_name=type(authority_resolver).__name__,
                     authority_resolver_config_hash=authority_resolver_hash,
                     signature_verifier_name=type(signature_verifier).__name__,
                     signature_verifier_config_hash=signature_verifier_config_hash,
+                    delegated_lineage=delegated_lineage,
                     evaluated_at=verification_instant,
+                )
+                return verification.model_copy(
+                    update={
+                        "authorization_states": self._build_authorization_state_report(verification)
+                    }
                 )
             except Exception as exc:
                 return self._stub_verification(
                     message_hash=message_hash,
                     known_hash=known_hash,
                     evaluated_at=evaluated_at,
+                    message=message,
                     resolver_inputs=resolver_inputs,
                     extra_soft_flags=[f"ATTEST_REAL_PATH_FAILED:{type(exc).__name__}"],
                 )
@@ -572,6 +658,7 @@ class AttestBridge:
             message_hash=message_hash,
             known_hash=known_hash,
             evaluated_at=evaluated_at,
+            message=message,
             resolver_inputs=resolver_inputs,
         )
 
@@ -696,6 +783,26 @@ class AttestBridge:
             "attest_signature_verifier_name": verification.signature_verifier_name,
             "attest_signature_verifier_config_hash": verification.signature_verifier_config_hash,
             "attest_evaluated_at": verification.evaluated_at.isoformat(),
+            "attest_delegation_present": verification.delegated_lineage.present,
+            "attest_deontic_type": verification.delegated_lineage.deontic_type,
+            "attest_delegation_root_ref": verification.delegated_lineage.root_ref,
+            "attest_delegation_chain_claimed": verification.delegated_lineage.chain_claimed,
+            "attest_delegation_chain_verified": verification.delegated_lineage.chain_verified,
+            "attest_delegation_chain_verified_grant_ids": verification.delegated_lineage.chain_verified_grant_ids,
+            "attest_delegation_depth": verification.delegated_lineage.depth,
+            "attest_delegation_lineage_status": verification.delegated_lineage.lineage_status,
+            "attest_delegation_attenuation_status": verification.delegated_lineage.attenuation_status,
+            "attest_delegation_act_applicability_status": verification.delegated_lineage.act_applicability_status,
+            "attest_delegation_first_break_ref": verification.delegated_lineage.first_break_ref,
+            "attest_delegation_first_widening_ref": verification.delegated_lineage.first_widening_ref,
+            "attest_delegation_unresolved_refs": verification.delegated_lineage.unresolved_refs,
+            "attest_delegation_revoked_refs": verification.delegated_lineage.revoked_refs,
+            "attest_delegation_expired_refs": verification.delegated_lineage.expired_refs,
+            "attest_structure_state": verification.authorization_states.structure_state,
+            "attest_authority_state": verification.authorization_states.authority_state,
+            "attest_delegation_state": verification.authorization_states.delegation_state,
+            "attest_applicability_state": verification.authorization_states.applicability_state,
+            "attest_verifier_state": verification.authorization_states.verifier_state,
         }
         if independence is not None:
             payload["attest_independence"] = independence.model_dump(mode="json")
@@ -726,11 +833,232 @@ class AttestBridge:
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         return [now, 1]
 
-    @staticmethod
-    def _stable_json(value: Any) -> str:
-        import json
+    def _canonical_known_messages_bytes(self, known_messages: list[dict[str, Any]]) -> bytes:
+        normalized = [self._stable_json_obj(item) for item in known_messages]
+        normalized.sort(key=lambda item: sha256(self._stable_json_bytes(item)).hexdigest())
+        return self._stable_json_bytes(normalized)
 
-        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    def _build_authorization_state_report(
+        self,
+        verification: AttestVerificationState,
+    ) -> AuthorizationStateReport:
+        structure_state: Literal["unknown", "valid_structure", "invalid_structure"] = "valid_structure"
+        if any("COMMIT deontic requires" in failure for failure in verification.hard_fail):
+            structure_state = "invalid_structure"
+
+        authority_state: Literal[
+            "unknown",
+            "authorized",
+            "unauthorized",
+            "unresolved_authority",
+            "revoked_authority",
+            "expired_authority",
+        ] = "authorized"
+        if any("AUTHORITY_UNRESOLVED" in failure for failure in verification.hard_fail):
+            authority_state = "unresolved_authority"
+        elif verification.delegated_lineage.revoked_refs:
+            authority_state = "revoked_authority"
+        elif verification.delegated_lineage.expired_refs:
+            authority_state = "expired_authority"
+        elif verification.decision_effect in {"BLOCK", "REVIEW"} and verification.hard_fail:
+            authority_state = "unauthorized"
+
+        delegation_state: Literal[
+            "not_applicable",
+            "verified_lineage",
+            "broken_lineage",
+            "unresolved_lineage",
+            "narrowed_delegation",
+            "equivalent_delegation",
+            "widened_delegation",
+        ] = "not_applicable"
+        if verification.delegated_lineage.present:
+            if verification.delegated_lineage.attenuation_status == "widened":
+                delegation_state = "widened_delegation"
+            elif verification.delegated_lineage.attenuation_status == "equivalent":
+                delegation_state = "equivalent_delegation"
+            elif verification.delegated_lineage.attenuation_status == "narrowed":
+                delegation_state = "narrowed_delegation"
+            elif verification.delegated_lineage.lineage_status == "broken":
+                delegation_state = "broken_lineage"
+            elif verification.delegated_lineage.lineage_status == "unresolved":
+                delegation_state = "unresolved_lineage"
+            elif verification.delegated_lineage.lineage_status == "verified":
+                delegation_state = "verified_lineage"
+
+        applicability_state: Literal[
+            "unknown",
+            "not_applicable",
+            "applicable_to_act",
+            "out_of_scope_act",
+            "binding_mismatch",
+        ] = "unknown"
+        if verification.delegated_lineage.act_applicability_status == "not_applicable":
+            applicability_state = "not_applicable"
+        elif verification.delegated_lineage.act_applicability_status == "applicable":
+            applicability_state = "applicable_to_act"
+        elif verification.delegated_lineage.act_applicability_status == "out_of_scope":
+            applicability_state = "out_of_scope_act"
+
+        verifier_state: Literal[
+            "unknown",
+            "verified_by_real_path",
+            "stub_only_unverifiable",
+            "real_path_failed",
+        ] = "unknown"
+        if "ATTEST_BRIDGE_DESIGN_STUB_ONLY" in verification.soft_flag:
+            verifier_state = "stub_only_unverifiable"
+        elif any(flag.startswith("ATTEST_REAL_PATH_FAILED:") for flag in verification.soft_flag):
+            verifier_state = "real_path_failed"
+        elif verification.verifier_version == "attest_ref_impl":
+            verifier_state = "verified_by_real_path"
+
+        return AuthorizationStateReport(
+            structure_state=structure_state,
+            authority_state=authority_state,
+            delegation_state=delegation_state,
+            applicability_state=applicability_state,
+            verifier_state=verifier_state,
+        )
+
+    def _build_delegated_lineage_receipt(
+        self,
+        *,
+        message: dict[str, Any] | None,
+        evaluated_at: datetime | None,
+    ) -> DelegatedLineageReceipt:
+        if not isinstance(message, dict):
+            return DelegatedLineageReceipt()
+        deontic = message.get("deontic")
+        if not isinstance(deontic, dict):
+            return DelegatedLineageReceipt()
+
+        deontic_type = deontic.get("type")
+        authority_refs = [ref for ref in deontic.get("authority", []) if isinstance(ref, str) and ref.strip()]
+        present = bool(deontic_type == "DELEGATED" or authority_refs)
+        if not present:
+            return DelegatedLineageReceipt(deontic_type=deontic_type)
+
+        receipt = DelegatedLineageReceipt(
+            present=True,
+            deontic_type=deontic_type,
+            chain_claimed=list(authority_refs),
+            chain_verified=list(authority_refs),
+            depth=len(authority_refs) if authority_refs else None,
+        )
+        if not authority_refs:
+            receipt.lineage_status = "unresolved"
+            receipt.act_applicability_status = "unresolved"
+            return receipt
+
+        receipt.root_ref = authority_refs[0]
+        if self.authority_store is None:
+            receipt.lineage_status = "unresolved"
+            receipt.attenuation_status = "unresolved"
+            receipt.act_applicability_status = "unresolved"
+            receipt.unresolved_refs = list(authority_refs)
+            return receipt
+
+        at = evaluated_at or datetime.now(timezone.utc)
+        resolutions = [self.authority_store.resolve(ref, at) for ref in authority_refs]
+        receipt.chain_verified = [res.ref for res in resolutions]
+        receipt.depth = len(resolutions)
+        receipt.root_ref = resolutions[0].ref if resolutions else receipt.root_ref
+
+        unresolved = [res.ref for res in resolutions if res.status == "unresolved"]
+        revoked = [res.ref for res in resolutions if res.status == "revoked"]
+        expired = [res.ref for res in resolutions if res.status == "expired"]
+        receipt.unresolved_refs = unresolved
+        receipt.revoked_refs = revoked
+        receipt.expired_refs = expired
+
+        if unresolved:
+            receipt.lineage_status = "unresolved"
+            receipt.attenuation_status = "unresolved"
+            receipt.act_applicability_status = "unresolved"
+            receipt.first_break_ref = unresolved[0]
+            return receipt
+        if revoked:
+            receipt.lineage_status = "broken"
+            receipt.attenuation_status = "unresolved"
+            receipt.act_applicability_status = "revoked"
+            receipt.first_break_ref = revoked[0]
+            return receipt
+        if expired:
+            receipt.lineage_status = "broken"
+            receipt.attenuation_status = "unresolved"
+            receipt.act_applicability_status = "expired"
+            receipt.first_break_ref = expired[0]
+            return receipt
+
+        active_records = [self.authority_store.active_record_for_ref(ref, at) for ref in authority_refs]
+        if any(record is None for record in active_records):
+            missing_ref = authority_refs[[record is None for record in active_records].index(True)]
+            receipt.lineage_status = "unresolved"
+            receipt.attenuation_status = "unresolved"
+            receipt.act_applicability_status = "unresolved"
+            receipt.first_break_ref = missing_ref
+            receipt.unresolved_refs = sorted(set(receipt.unresolved_refs + [missing_ref]))
+            return receipt
+
+        records = [record for record in active_records if record is not None]
+        receipt.chain_verified_grant_ids = [record.grant_id for record in records]
+
+        expected_parent_grant_id: str | None = None
+        continuity_break_ref: str | None = None
+        for record in records:
+            if expected_parent_grant_id is not None and record.delegates_from != expected_parent_grant_id:
+                continuity_break_ref = record.ref
+                break
+            expected_parent_grant_id = record.grant_id
+
+        if continuity_break_ref is not None:
+            receipt.lineage_status = "broken"
+            receipt.attenuation_status = "unresolved"
+            receipt.act_applicability_status = "unresolved"
+            receipt.first_break_ref = continuity_break_ref
+            return receipt
+
+        receipt.lineage_status = "verified"
+        action_scope = message.get("action_scope")
+        if isinstance(action_scope, str) and resolutions:
+            final_scope = resolutions[-1].granted_scope
+            if final_scope not in {"general", action_scope}:
+                receipt.act_applicability_status = "out_of_scope"
+            else:
+                receipt.act_applicability_status = "applicable"
+        else:
+            receipt.act_applicability_status = "not_applicable"
+
+        attenuation_status = "narrowed"
+        first_widening_ref: str | None = None
+        for parent, child in zip(resolutions, resolutions[1:]):
+            parent_scope = parent.granted_scope or ""
+            child_scope = child.granted_scope or ""
+            parent_strength = parent.strength if parent.strength is not None else 0
+            child_strength = child.strength if child.strength is not None else 0
+            scope_widened = parent_scope != "general" and child_scope == "general"
+            strength_widened = child_strength > parent_strength
+            if scope_widened or strength_widened:
+                attenuation_status = "widened"
+                first_widening_ref = child.ref
+                break
+            if child_scope == parent_scope and child_strength == parent_strength:
+                if attenuation_status != "widened":
+                    attenuation_status = "equivalent"
+        receipt.attenuation_status = attenuation_status
+        receipt.first_widening_ref = first_widening_ref
+        return receipt
+
+    @staticmethod
+    def _stable_json_obj(value: Any) -> Any:
+        return json.loads(AttestBridge._stable_json_bytes(value).decode("utf-8"))
+
+    @staticmethod
+    def _stable_json_bytes(value: Any) -> bytes:
+        if rfc8785 is not None:
+            return rfc8785.dumps(value)
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
 class _StoreAuthorityResolverAdapter:
