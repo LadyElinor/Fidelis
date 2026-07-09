@@ -1,0 +1,40 @@
+{
+  "case_id": "case-customer-log-processing-001",
+  "lenses": [
+    {
+      "lens": "kantian",
+      "verdict": "object",
+      "hazards": [
+        "consent_or_authority_unclear",
+        "persons_used_without_clear_retention_basis"
+      ],
+      "confidence": 0.74,
+      "justification": "Flags rights/authority concerns when personal data use proceeds without clear consent, authority, or retention basis.",
+      "minority_report": false
+    },
+    {
+      "lens": "stoic",
+      "verdict": "caution",
+      "hazards": [
+        "execution_pressure_present",
+        "limited_reversibility"
+      ],
+      "confidence": 0.68,
+      "justification": "Flags actions that outrun disciplined control, especially under pressure with limited reversibility.",
+      "minority_report": false
+    },
+    {
+      "lens": "care",
+      "verdict": "object",
+      "hazards": [
+        "dependent_or_unrepresented_parties_affected",
+        "relationship_burden_without_clear_retention_boundary",
+        "insufficient_relational_accountability"
+      ],
+      "confidence": 0.77,
+      "justification": "Flags burdens placed on affected parties who cannot easily inspect, contest, or reverse the action.",
+      "minority_report": false
+    }
+  ],
+  "hash": "sha256:0ba1c8658accb4d8564f8c3da9d8b3fdf97e66a947d46b58a1a0c5e8e73d06ea"
+}

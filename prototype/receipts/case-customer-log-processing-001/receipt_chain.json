@@ -1,0 +1,11 @@
+{
+  "case_id": "case-customer-log-processing-001",
+  "artifacts": {
+    "input": "sha256:e9f69098ae61d15fde9fbc88847f92a60825c98ec48780803acf6c589d2dda0c",
+    "ethics": "sha256:0ba1c8658accb4d8564f8c3da9d8b3fdf97e66a947d46b58a1a0c5e8e73d06ea",
+    "meaning": "sha256:f4c613dc0b993beb9e3b40a34627313fa628814258d56e335337eee095c6b266",
+    "telemetry": "sha256:01dceca0ac76e846e08b84e36d2344e2aba41dc01dc8dcce13aa32efbe7d7114",
+    "decision": "sha256:5af6780fb9d3582f569b1b9ebf9dc27f6fbd6f2a0d4c97506a0e8da3c2f2897b"
+  },
+  "final_chain_hash": "sha256:208a820f905dbe925a8b82595e08d26fbf65643b93199c2b8904e4eae2d88948"
+}

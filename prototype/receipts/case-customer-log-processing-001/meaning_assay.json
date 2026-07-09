@@ -1,0 +1,15 @@
+{
+  "case_id": "case-customer-log-processing-001",
+  "significance": 0.8,
+  "warrant": 0.2000000000000001,
+  "reasoning": [
+    "Action affects personal data.",
+    "Reversibility is limited.",
+    "Execution pressure increases practical consequence.",
+    "Authority basis is unclear.",
+    "Retention basis is unclear.",
+    "No human approval is present for a consequential case.",
+    "At least one ethical lens raised a hard objection."
+  ],
+  "hash": "sha256:f4c613dc0b993beb9e3b40a34627313fa628814258d56e335337eee095c6b266"
+}
