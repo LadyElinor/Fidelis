@@ -4,10 +4,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from trusted_runtime.shared.enums import RiskState, RuntimeDisposition
+
 
 RuntimeDecision = Literal["HALT", "REVIEW", "PROCEED"]
-RuntimeDisposition = Literal["PROCEED", "SUSPEND", "CONFIRM_HUMAN"]
-RiskState = Literal["GREEN", "AMBER", "RED"]
 DecisionIntegrity = Literal["FULL", "PARTIAL", "FAILED"]
 LensVerdict = Literal["object", "caution", "clear"]
 
