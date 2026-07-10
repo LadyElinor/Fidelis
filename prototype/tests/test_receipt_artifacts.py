@@ -16,6 +16,7 @@ def test_receipts_include_provenance_and_runtime_decision_details() -> None:
     assert provenance["provenance_status"] == "partial"
     assert provenance["hash"].startswith("sha256:")
     assert decision["degradation_policy_row"] == "unresolved_hard_objection"
+    assert decision["runtime_disposition"] == "SUSPEND"
     assert decision["route_quality"]["authority_or_provenance"] == "degraded"
     assert decision["coverage_records"]
     assert decision["evidence_records"]
@@ -30,4 +31,5 @@ def test_override_receipt_marks_overridden_dissent() -> None:
     )
     decision = json.loads((Path(summary["artifacts_dir"]) / "runtime_decision.json").read_text(encoding="utf-8"))
     assert decision["override_record"]["approved"] is True
+    assert decision["runtime_disposition"] == "CONFIRM_HUMAN"
     assert any(record["resolution_status"] == "overridden" for record in decision["dissent_records"])

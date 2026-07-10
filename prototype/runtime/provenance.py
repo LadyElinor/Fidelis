@@ -40,5 +40,6 @@ def evaluate_authority_provenance(case: CaseInput) -> dict[str, object]:
         "trusted_role": trusted_role,
         "provenance_status": provenance_status,
         "available": available,
+        "malformed": False,
         "notes": notes,
     }

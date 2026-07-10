@@ -16,60 +16,91 @@ from runtime.models import (
 DEGRADATION_POLICY = {
     "missing_provenance": {
         "runtime_decision": "REVIEW",
+        "runtime_disposition": "SUSPEND",
+        "risk_state": "AMBER",
+        "decision_integrity": "FAILED",
+        "human_escalation_required": True,
+    },
+    "malformed_provenance": {
+        "runtime_decision": "REVIEW",
+        "runtime_disposition": "SUSPEND",
         "risk_state": "AMBER",
         "decision_integrity": "FAILED",
         "human_escalation_required": True,
     },
     "missing_meaning_assay": {
         "runtime_decision": "REVIEW",
+        "runtime_disposition": "SUSPEND",
+        "risk_state": "AMBER",
+        "decision_integrity": "FAILED",
+        "human_escalation_required": True,
+    },
+    "malformed_meaning_assay": {
+        "runtime_decision": "REVIEW",
+        "runtime_disposition": "SUSPEND",
         "risk_state": "AMBER",
         "decision_integrity": "FAILED",
         "human_escalation_required": True,
     },
     "missing_telemetry": {
         "runtime_decision": "REVIEW",
+        "runtime_disposition": "SUSPEND",
+        "risk_state": "AMBER",
+        "decision_integrity": "FAILED",
+        "human_escalation_required": True,
+    },
+    "malformed_telemetry": {
+        "runtime_decision": "REVIEW",
+        "runtime_disposition": "SUSPEND",
         "risk_state": "AMBER",
         "decision_integrity": "FAILED",
         "human_escalation_required": True,
     },
     "override_with_dissent": {
         "runtime_decision": "PROCEED",
+        "runtime_disposition": "CONFIRM_HUMAN",
         "risk_state": "AMBER",
         "decision_integrity": "PARTIAL",
         "human_escalation_required": True,
     },
     "irreversible_high_agency_action": {
         "runtime_decision": "HALT",
+        "runtime_disposition": "SUSPEND",
         "risk_state": "RED",
         "decision_integrity": "FULL",
         "human_escalation_required": True,
     },
     "unresolved_hard_objection": {
         "runtime_decision": "HALT",
+        "runtime_disposition": "SUSPEND",
         "risk_state": "RED",
         "decision_integrity": "FULL",
         "human_escalation_required": True,
     },
     "high_agency_without_sufficient_warrant": {
         "runtime_decision": "HALT",
+        "runtime_disposition": "SUSPEND",
         "risk_state": "RED",
         "decision_integrity": "PARTIAL",
         "human_escalation_required": True,
     },
     "weak_independence": {
         "runtime_decision": "REVIEW",
+        "runtime_disposition": "CONFIRM_HUMAN",
         "risk_state": "AMBER",
         "decision_integrity": "PARTIAL",
         "human_escalation_required": True,
     },
     "co_dependent_evidence_routes": {
         "runtime_decision": "REVIEW",
+        "runtime_disposition": "CONFIRM_HUMAN",
         "risk_state": "AMBER",
         "decision_integrity": "PARTIAL",
         "human_escalation_required": True,
     },
     "all_required_checks_passed": {
         "runtime_decision": "PROCEED",
+        "runtime_disposition": "PROCEED",
         "risk_state": "GREEN",
         "decision_integrity": "FULL",
         "human_escalation_required": False,
@@ -133,6 +164,7 @@ def _build_result(
     return RuntimeDecisionResult(
         case_id=case.case_id,
         runtime_decision=policy["runtime_decision"],
+        runtime_disposition=policy["runtime_disposition"],
         risk_state=policy["risk_state"],
         decision_integrity=policy["decision_integrity"],
         reason=reason,
@@ -158,6 +190,7 @@ def decide(
     meaning: MeaningAssayResult,
     telemetry_vector: TelemetryVector,
     telemetry_flags: list[str],
+    provenance_assessment: dict[str, object],
     independent_evidence_routes: list[str],
     co_dependency_flags: list[str],
     integrity_rationale: list[str],
@@ -168,6 +201,22 @@ def decide(
 ) -> RuntimeDecisionResult:
     unresolved_dissent = [item.lens for item in lens_results if item.verdict == "object"]
     dissent_records = _dissent_records(lens_results)
+
+    if provenance_assessment.get("malformed"):
+        result = _build_result(
+            case,
+            "malformed_provenance",
+            unresolved_dissent,
+            dissent_records,
+            independent_evidence_routes,
+            co_dependency_flags,
+            integrity_rationale,
+            route_quality,
+        )
+        result.override_record.override_requested = override_requested
+        result.override_record.override_source = override_source
+        result.override_record.rationale = override_rationale
+        return result
 
     if route_quality.get("authority_or_provenance") == "missing":
         result = _build_result(
@@ -185,10 +234,42 @@ def decide(
         result.override_record.rationale = override_rationale
         return result
 
+    if meaning.malformed:
+        result = _build_result(
+            case,
+            "malformed_meaning_assay",
+            unresolved_dissent,
+            dissent_records,
+            independent_evidence_routes,
+            co_dependency_flags,
+            integrity_rationale,
+            route_quality,
+        )
+        result.override_record.override_requested = override_requested
+        result.override_record.override_source = override_source
+        result.override_record.rationale = override_rationale
+        return result
+
     if not meaning.available:
         result = _build_result(
             case,
             "missing_meaning_assay",
+            unresolved_dissent,
+            dissent_records,
+            independent_evidence_routes,
+            co_dependency_flags,
+            integrity_rationale,
+            route_quality,
+        )
+        result.override_record.override_requested = override_requested
+        result.override_record.override_source = override_source
+        result.override_record.rationale = override_rationale
+        return result
+
+    if telemetry_vector.malformed:
+        result = _build_result(
+            case,
+            "malformed_telemetry",
             unresolved_dissent,
             dissent_records,
             independent_evidence_routes,

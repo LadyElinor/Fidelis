@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 RuntimeDecision = Literal["HALT", "REVIEW", "PROCEED"]
+RuntimeDisposition = Literal["PROCEED", "SUSPEND", "CONFIRM_HUMAN"]
 RiskState = Literal["GREEN", "AMBER", "RED"]
 DecisionIntegrity = Literal["FULL", "PARTIAL", "FAILED"]
 LensVerdict = Literal["object", "caution", "clear"]
@@ -58,6 +59,7 @@ class MeaningAssayResult(BaseModel):
     warrant: float = Field(ge=0.0, le=1.0)
     reasoning: list[str] = Field(default_factory=list)
     available: bool = True
+    malformed: bool = False
 
 
 class TelemetryVector(BaseModel):
@@ -70,6 +72,7 @@ class TelemetryVector(BaseModel):
     dissent_present: bool
     execution_pressure: float = Field(ge=0.0, le=1.0)
     available: bool = True
+    malformed: bool = False
 
 
 class DissentRecord(BaseModel):
@@ -118,6 +121,7 @@ class EvidenceRecord(BaseModel):
 class RuntimeDecisionResult(BaseModel):
     case_id: str
     runtime_decision: RuntimeDecision
+    runtime_disposition: RuntimeDisposition = "SUSPEND"
     risk_state: RiskState
     decision_integrity: DecisionIntegrity
     reason: str

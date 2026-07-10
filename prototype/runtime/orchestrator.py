@@ -17,6 +17,9 @@ def run_case(
     *,
     force_missing_meaning: bool = False,
     force_missing_telemetry: bool = False,
+    force_malformed_meaning: bool = False,
+    force_malformed_telemetry: bool = False,
+    force_malformed_provenance: bool = False,
     override_requested: bool = False,
     override_source: str | None = None,
     override_rationale: str | None = None,
@@ -39,10 +42,18 @@ def run_case(
     if force_missing_meaning:
         meaning_result.available = False
         meaning_result.reasoning.append("Meaning-assay output intentionally suppressed for degradation test.")
+    if force_malformed_meaning:
+        meaning_result.malformed = True
+        meaning_result.reasoning.append("Meaning-assay output intentionally malformed for degradation test.")
     if force_missing_telemetry:
         telemetry_vector.available = False
+    if force_malformed_telemetry:
+        telemetry_vector.malformed = True
     telemetry_flags = checks.evaluate(telemetry_vector)
     provenance_assessment = evaluate_authority_provenance(case)
+    if force_malformed_provenance:
+        provenance_assessment["malformed"] = True
+        provenance_assessment.setdefault("notes", []).append("Provenance output intentionally malformed for degradation test.")
     dependency_graph = build_dependency_graph(case, lens_results, meaning_result, telemetry_vector, provenance_assessment)
     independent_evidence_routes, co_dependency_flags, integrity_rationale, route_quality = analyze_evidence_routes(dependency_graph)
     integrity_rationale.extend(provenance_assessment.get("notes", []))
@@ -55,6 +66,7 @@ def run_case(
         meaning=meaning_result,
         telemetry_vector=telemetry_vector,
         telemetry_flags=telemetry_flags,
+        provenance_assessment=provenance_assessment,
         independent_evidence_routes=independent_evidence_routes,
         co_dependency_flags=co_dependency_flags,
         integrity_rationale=integrity_rationale,
