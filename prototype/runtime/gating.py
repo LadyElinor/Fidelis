@@ -21,6 +21,13 @@ DEGRADATION_POLICY = {
         "decision_integrity": "FAILED",
         "human_escalation_required": True,
     },
+    "malformed_lens_output": {
+        "runtime_decision": "REVIEW",
+        "runtime_disposition": "SUSPEND",
+        "risk_state": "AMBER",
+        "decision_integrity": "FAILED",
+        "human_escalation_required": True,
+    },
     "malformed_provenance": {
         "runtime_decision": "REVIEW",
         "runtime_disposition": "SUSPEND",
@@ -201,6 +208,22 @@ def decide(
 ) -> RuntimeDecisionResult:
     unresolved_dissent = [item.lens for item in lens_results if item.verdict == "object"]
     dissent_records = _dissent_records(lens_results)
+
+    if any(item.malformed for item in lens_results):
+        result = _build_result(
+            case,
+            "malformed_lens_output",
+            unresolved_dissent,
+            dissent_records,
+            independent_evidence_routes,
+            co_dependency_flags,
+            integrity_rationale,
+            route_quality,
+        )
+        result.override_record.override_requested = override_requested
+        result.override_record.override_source = override_source
+        result.override_record.rationale = override_rationale
+        return result
 
     if provenance_assessment.get("malformed"):
         result = _build_result(

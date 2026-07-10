@@ -52,6 +52,7 @@ class LensResult(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     justification: str = Field(min_length=1)
     minority_report: bool = False
+    malformed: bool = False
 
 
 class MeaningAssayResult(BaseModel):

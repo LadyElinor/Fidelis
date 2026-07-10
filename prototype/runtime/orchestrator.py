@@ -20,6 +20,7 @@ def run_case(
     force_malformed_meaning: bool = False,
     force_malformed_telemetry: bool = False,
     force_malformed_provenance: bool = False,
+    force_malformed_lens: str | None = None,
     override_requested: bool = False,
     override_source: str | None = None,
     override_rationale: str | None = None,
@@ -36,6 +37,12 @@ def run_case(
         stoic.evaluate(case),
         care.evaluate(case),
     ]
+    if force_malformed_lens:
+        for item in lens_results:
+            if item.lens == force_malformed_lens:
+                item.malformed = True
+                item.justification = f"{item.justification} (intentionally malformed for degradation test)"
+                break
     meaning_result = assay.evaluate(case, lens_results)
     telemetry_vector = vector.compute(case, lens_results, meaning_result)
 

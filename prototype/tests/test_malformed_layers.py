@@ -27,3 +27,11 @@ def test_malformed_provenance_degrades_to_failed_review() -> None:
     assert summary["runtime_disposition"] == "SUSPEND"
     assert summary["decision_integrity"] == "FAILED"
     assert summary["degradation_policy_row"] == "malformed_provenance"
+
+
+def test_malformed_lens_output_degrades_to_failed_review() -> None:
+    summary = run_case(str(EXAMPLE_CASE), force_malformed_lens="kantian")
+    assert summary["runtime_decision"] == "REVIEW"
+    assert summary["runtime_disposition"] == "SUSPEND"
+    assert summary["decision_integrity"] == "FAILED"
+    assert summary["degradation_policy_row"] == "malformed_lens_output"
