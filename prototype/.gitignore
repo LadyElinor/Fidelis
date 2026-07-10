@@ -1,0 +1,4 @@
+receipts/
+examples/*_low_risk.json
+examples/*_degraded_authority.json
+examples/_debug_case.json

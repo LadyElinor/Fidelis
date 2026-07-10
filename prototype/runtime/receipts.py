@@ -18,6 +18,8 @@ def write_all_receipts(
     lens_results: list[dict[str, Any]],
     meaning_payload: dict[str, Any],
     telemetry_payload: dict[str, Any],
+    provenance_payload: dict[str, Any],
+    dependency_graph: dict[str, Any],
     decision: RuntimeDecisionResult,
 ) -> dict[str, str]:
     case_id = case_payload["case_id"]
@@ -40,7 +42,15 @@ def write_all_receipts(
     telemetry_body["hash"] = sha256_json(telemetry_body)
     _write_json(out_dir / "telemetry.json", telemetry_body)
 
-    parent_receipts = [input_payload["hash"], ethics_payload["hash"], meaning_body["hash"], telemetry_body["hash"]]
+    provenance_body = {"case_id": case_id, **provenance_payload}
+    provenance_body["hash"] = sha256_json(provenance_body)
+    _write_json(out_dir / "provenance.json", provenance_body)
+
+    dependency_body = {"case_id": case_id, **dependency_graph}
+    dependency_body["hash"] = sha256_json(dependency_body)
+    _write_json(out_dir / "dependency_graph.json", dependency_body)
+
+    parent_receipts = [input_payload["hash"], ethics_payload["hash"], meaning_body["hash"], telemetry_body["hash"], provenance_body["hash"], dependency_body["hash"]]
     decision_payload = decision.model_dump()
     decision_payload["parent_receipts"] = parent_receipts
     decision_payload["hash"] = sha256_json(decision_payload)
@@ -53,6 +63,8 @@ def write_all_receipts(
             "ethics": ethics_payload["hash"],
             "meaning": meaning_body["hash"],
             "telemetry": telemetry_body["hash"],
+            "provenance": provenance_body["hash"],
+            "dependency_graph": dependency_body["hash"],
             "decision": decision_payload["hash"],
         },
     }
