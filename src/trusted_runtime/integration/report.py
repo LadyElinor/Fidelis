@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from trusted_runtime.export import compact_verifier_provenance_summary
+from trusted_runtime.l4_status import l4_status_interpretation
 from trusted_runtime.shared.models import ExecutionDecision
 
 
@@ -26,6 +27,8 @@ def render_markdown_report(decision: ExecutionDecision) -> str:
     warrant_line = "unavailable"
     soph = decision.cer_bundle.sophron_validation
     cer_enrichment = getattr(decision.cer_bundle, "cer_enrichment", None)
+
+    soph_interpretation = l4_status_interpretation(soph.validation_status)
     cer_evaluated_at = getattr(cer_enrichment, "evaluated_at", None)
     cer_profile_hash = getattr(cer_enrichment, "profile_hash", None)
     cer_known_message_set_hash = getattr(cer_enrichment, "known_message_set_hash", None)
@@ -123,6 +126,7 @@ def render_markdown_report(decision: ExecutionDecision) -> str:
         "## L4 evidence",
         "### SOPHRON Validation",
         f"- Status: **{soph.validation_status}**",
+        f"- Interpretation: `{soph_interpretation}`",
         f"- Closure Summary: `{soph.closure_summary}`",
         f"- Receipt Linkage: `{'Yes' if soph.receipt_linkage else 'No'}`",
         f"- TAS Referenced: `{'Yes' if soph.tas_closure_referenced else 'No'}`",

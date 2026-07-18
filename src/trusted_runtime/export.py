@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from trusted_runtime.l4_status import l4_status_interpretation
 from trusted_runtime.shared.models import ExecutionDecision
 
 
@@ -67,13 +68,21 @@ def to_json_safe(obj: Any) -> JsonSafe:
 def export_decision_payload(decision: ExecutionDecision) -> dict[str, JsonSafe]:
     """Canonical machine-readable decision payload for smoke, CI, and future JSON surfaces."""
 
+    cer_bundle = to_json_safe(decision.cer_bundle)
+    sophron_validation = cer_bundle.get("sophron_validation", {}) if isinstance(cer_bundle, dict) else {}
+    validation_status = sophron_validation.get("validation_status", "UNAVAILABLE") if isinstance(sophron_validation, dict) else "UNAVAILABLE"
+    interpretation = l4_status_interpretation(str(validation_status))
+    if isinstance(sophron_validation, dict):
+        sophron_validation["interpretation"] = interpretation
+
     return {
         "action_id": decision.action_id,
         "risk_state": decision.risk_state.value,
         "runtime_disposition": decision.runtime_disposition.value,
         "decision_integrity": decision.decision_integrity.value,
         "integration_mode_report": to_json_safe(decision.integration_mode_report),
-        "cer_bundle": to_json_safe(decision.cer_bundle),
+        "cer_bundle": cer_bundle,
+        "l4_interpretation": interpretation,
         "vita_state": to_json_safe(decision.vita_state),
         "process_provenance": to_json_safe(decision.process_provenance),
         "adapter_provenance": to_json_safe(decision.adapter_provenance),

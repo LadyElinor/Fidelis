@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from trusted_runtime.integration.availability import (
     ethics_council_available,
     meaning_assay_available,
@@ -9,12 +12,12 @@ from trusted_runtime.integration.availability import (
     trustworthy_agent_stack_available,
 )
 from trusted_runtime.config import IntegrationMode
-from trusted_runtime.integration.engine import _attest_resolver_inputs_for_action, _attest_resolver_summary, assemble_execution_decision, default_adapters
+from trusted_runtime.integration.engine import _attest_resolver_inputs_for_action, _attest_resolver_summary, _build_reconciliation, assemble_execution_decision, default_adapters
 from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.integration.translation import derive_meaning_case_key
 from trusted_runtime.review import build_pr_review_action, load_review_input
 from trusted_runtime.shared.enums import AdapterProvenance, DecisionIntegrity, RuntimeDisposition, TripValidationStatus
-from trusted_runtime.shared.models import EvidenceRecord, ProposedAction
+from trusted_runtime.shared.models import EvidenceRecord, ProposedAction, ReceiptRef, SophronValidation, WarrantAssay
 
 
 FIXED_TS = datetime(2026, 6, 11, 18, 0, tzinfo=timezone.utc)
@@ -64,6 +67,11 @@ def test_overall_receipt_is_deterministic_for_identical_inputs():
     first = assemble_execution_decision(action)
     second = assemble_execution_decision(action)
     assert first.overall_receipt.sha256 == second.overall_receipt.sha256
+
+
+def test_sophron_validation_rejects_partial_status_literal():
+    with pytest.raises(ValidationError):
+        SophronValidation(validation_status="PARTIAL")
 
 
 def test_unknown_translation_falls_back_to_real_conservative_warrant_case_when_available():
@@ -285,6 +293,33 @@ def test_under_justified_refuse_cannot_auto_proceed():
     if decision.decision_integrity is DecisionIntegrity.FULL and decision.reconciliation is not None:
         if decision.reconciliation.warranted_action == "REFUSE" and decision.reconciliation.alignment == "UNDER_JUSTIFIED":
             assert decision.runtime_disposition is not RuntimeDisposition.PROCEED
+
+
+def test_build_reconciliation_marks_translation_misfit_as_ambiguous_instead_of_overreaction():
+    warrant = WarrantAssay(
+        decision_id="test-reconciliation-misfit-001",
+        significance=0.6,
+        warrant=0.2,
+        pair_contrasts={"source_case": "attest", "translation_fit_quality": "medium"},
+        confidence_notes=[],
+        unresolved_questions=[],
+        contested=False,
+        adapter_provenance=AdapterProvenance.REAL,
+        receipt=ReceiptRef(sha256="test-warrant-receipt", path="test://warrant"),
+    )
+    action = ProposedAction(
+        id="test-reconciliation-misfit-001",
+        description="Review a safety-critical invariant change before runtime execution.",
+        timestamp=FIXED_TS,
+        context={"change_type": "safety_invariant"},
+    )
+
+    reconciliation = _build_reconciliation(action, RuntimeDisposition.CONFIRM_HUMAN, warrant)
+
+    if reconciliation is not None:
+        assert reconciliation.alignment != "OVER_REACTION"
+        assert reconciliation.alignment == "AMBIGUOUS_TRANSLATION_MISFIT"
+        assert "recorded as ambiguous rather than treated as a calibrated reconciliation failure" in reconciliation.rationale
 
 
 def test_guard_blocks_overreaction_even_without_refuse():

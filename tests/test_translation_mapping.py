@@ -52,3 +52,19 @@ def test_structured_translation_maps_new_fairness_family_provisionally():
     result = derive_meaning_case("A hiring model created disparate impact against women applicants", {})
     assert result["case_key"] == "fairness_disparate_impact"
     assert result["fit_quality"] == "high"
+
+
+def test_self_attestation_routes_to_attest_before_reversible_review_case():
+    description = (
+        "Claims under review rely on self-certify logic and independent corroboration is absent. "
+        "The consequence could be irreversible in reputational terms."
+    )
+    result = derive_meaning_case(description, {"evidence_mode": "self_attested"})
+    assert result["case_key"] == "attest"
+    assert any(signal in result["matched_signals"] for signal in ("self-certify", "self_attested", "independent corroboration"))
+
+
+
+def test_irreversible_does_not_false_match_reversible_signal():
+    result = derive_meaning_case("This action is irreversible in reputational terms.", {})
+    assert "reversible" not in result["matched_signals"]

@@ -122,7 +122,7 @@ class WarrantAssay(BaseModel):
 class SophronValidation(BaseModel):
     """Typed SOPHRON-CER validation envelope for L4 evidence."""
 
-    validation_status: Literal["VALIDATED", "CALIBRATING", "PARTIAL", "FAILED", "UNAVAILABLE"] = "UNAVAILABLE"
+    validation_status: Literal["VALIDATED", "CALIBRATING", "FAILED", "UNAVAILABLE"] = "UNAVAILABLE"
     signal_tiers: dict[str, Any] = Field(default_factory=dict)
     closure_summary: str = ""
     degradation_reason: str | None = None

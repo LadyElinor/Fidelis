@@ -225,6 +225,9 @@ class MeaningAssayAdapter(WarrantAdapter):
             "translation_alternative_candidates": list(translation.get("alternative_candidates", [])),
             "fallback_used": bool(translation.get("fallback_used", False)),
         }
+        translation_fit_quality = translation.get("fit_quality")
+        translation_is_low_confidence = translation_fit_quality in {"medium", "fallback", "low", None}
+
         if (
             analyze is not None
             and meaning_assay_receipt is not None
@@ -257,6 +260,22 @@ class MeaningAssayAdapter(WarrantAdapter):
                 )
             analysis = analyze(case)
             rec = meaning_assay_receipt(case)
+            confidence_notes = [f"Real meaning-assay adapter used local case '{case_key}'"]
+            unresolved_questions = []
+            contested = analysis.warrant_band == "contested"
+
+            if analysis.warrant_band == "contested":
+                unresolved_questions.append("Warrant band is contested and may require human interpretive review")
+
+            if translation_is_low_confidence:
+                contested = True
+                confidence_notes.append(
+                    f"Translation-to-case mapping had {translation_fit_quality or 'unknown'} confidence and should not be treated as a fully settled case selection"
+                )
+                unresolved_questions.append(
+                    "Validate whether the translated meaning-assay case is the right family before treating downstream warrant output as strongly calibrated"
+                )
+
             return WarrantAssay(
                 decision_id=action.id,
                 significance=analysis.significance,
@@ -266,13 +285,9 @@ class MeaningAssayAdapter(WarrantAdapter):
                 else NormativeSummary.UNDETERMINED,
                 failure_modes=list(analysis.failure_tripped_keys),
                 pair_contrasts=pair_contrasts,
-                confidence_notes=[f"Real meaning-assay adapter used local case '{case_key}'"],
-                unresolved_questions=[
-                    "Warrant band is contested and may require human interpretive review"
-                ]
-                if analysis.warrant_band == "contested"
-                else [],
-                contested=analysis.warrant_band == "contested",
+                confidence_notes=confidence_notes,
+                unresolved_questions=unresolved_questions,
+                contested=contested,
                 adapter_provenance=AdapterProvenance.REAL,
                 receipt=ReceiptRef(
                     sha256=rec["receipt_sha256"],
@@ -831,12 +846,13 @@ class CerSophronTelemetryAdapter(TelemetryAdapter):
                 sign_payload(cer_metrics_receipt["manifest"]),
             ]
 
+            sophron_signals = self._extract_sophron_signal_tiers(sophron_report)
+            native_signal_validation = sophron_report.get("signal_validation") if isinstance(sophron_report, dict) else None
+            native_signals = native_signal_validation.get("signals") if isinstance(native_signal_validation, dict) else None
             sophron_report_valid = bool(sophron_report) and (
                 sophron_report.get("ok") is True
-                or sophron_report.get("kind") == "sophron_alignment_report_v0"
-                or bool(sophron_report.get("report"))
+                or bool(native_signals)
             )
-            sophron_signals = self._extract_sophron_signal_tiers(sophron_report)
             l4_closure = evaluate_l4_closure(
                 tas_local_validation=tas_validation,
                 sophron_report=sophron_report,
@@ -936,6 +952,28 @@ def _build_reconciliation(
         return None
     council_output = CouncilOutput(case_key=source_case, verdict=_map_council_verdict(runtime_disposition))
     reconciliation = reconcile(council_output, analyze(analysis_case))
+
+    fit_quality = None
+    if warrant.pair_contrasts:
+        fit_quality = warrant.pair_contrasts.get("translation_fit_quality")
+    low_confidence_translation = fit_quality in {"medium", "fallback", "low", None}
+    mapped_council_verdict = _map_council_verdict(runtime_disposition)
+    council_and_warrant_diverge = (
+        mapped_council_verdict is not None
+        and mapped_council_verdict.name != reconciliation.warranted_action.name
+    )
+    if low_confidence_translation and council_and_warrant_diverge and reconciliation.alignment in {"OVER_REACTION", "UNDER_JUSTIFIED"}:
+        reconciliation = type(reconciliation)(
+            case_key=reconciliation.case_key,
+            council_verdict=reconciliation.council_verdict,
+            warranted_action=reconciliation.warranted_action,
+            alignment="AMBIGUOUS_TRANSLATION_MISFIT",
+            rationale=(
+                reconciliation.rationale
+                + " Translation-derived source_case fit was not high-confidence, so council-vs-warrant divergence is recorded as ambiguous rather than treated as a calibrated reconciliation failure."
+            ),
+        )
+
     assay_record = warrant_assay_record(
         analysis_case,
         council_output,

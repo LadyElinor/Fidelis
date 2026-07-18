@@ -25,6 +25,9 @@ def test_general_pull_request_action_uses_real_warrant_adapter():
     assert decision.warrant.pair_contrasts is not None
     assert decision.warrant.pair_contrasts.get("source_case") == "over_refusal"
     assert decision.warrant.pair_contrasts.get("translation_fit_quality") == "medium"
+    assert decision.warrant.contested is True
+    assert any("medium confidence" in note for note in decision.warrant.confidence_notes)
+    assert any("translated meaning-assay case is the right family" in q for q in decision.warrant.unresolved_questions)
 
 
 def test_general_nonmatched_action_still_avoids_stub_when_meaning_assay_is_available():
@@ -42,6 +45,9 @@ def test_general_nonmatched_action_still_avoids_stub_when_meaning_assay_is_avail
     assert decision.warrant.pair_contrasts.get("source_case") == "attest"
     assert decision.warrant.pair_contrasts.get("translation_fit_quality") == "fallback"
     assert decision.warrant.pair_contrasts.get("fallback_used") is True
+    assert decision.warrant.contested is True
+    assert any("fallback confidence" in note for note in decision.warrant.confidence_notes)
+    assert any("translated meaning-assay case is the right family" in q for q in decision.warrant.unresolved_questions)
 
 
 def test_new_case_family_with_local_meaning_case_is_marked_real():
@@ -58,3 +64,4 @@ def test_new_case_family_with_local_meaning_case_is_marked_real():
     assert decision.warrant.pair_contrasts.get("source_case") == "fairness_disparate_impact"
     assert decision.warrant.pair_contrasts.get("translation_fit_quality") == "high"
     assert decision.warrant.adapter_provenance is AdapterProvenance.REAL
+    assert all("translated meaning-assay case is the right family" not in q for q in decision.warrant.unresolved_questions)

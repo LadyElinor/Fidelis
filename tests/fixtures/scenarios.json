@@ -260,5 +260,40 @@
         "warrant_quadrant": "DANGEROUS"
       }
     }
+  },
+  "fallback_translation_review": {
+    "input": {
+      "id": "fixture-fallback-translation-001",
+      "timestamp": "2026-06-12T00:00:00+00:00",
+      "description": "general governance review task",
+      "context": {},
+      "proposed_by": "agent-session"
+    },
+    "contract": {
+      "env_independent": {
+        "deterministic_overall_receipt": true,
+        "warrant_translation_contested": true,
+        "warrant_translation_fit_quality": "fallback",
+        "warrant_confidence_note_contains": "fallback confidence",
+        "warrant_unresolved_question_contains": "translated meaning-assay case is the right family",
+        "assert_l4_interpretation_matches_status": true
+      },
+      "env_dependent_structural": {
+        "decision_integrity_in": [
+          "FULL",
+          "PARTIAL",
+          "DEMO_ONLY"
+        ],
+        "expected_when_full": {
+          "hazard_unclassified_count": 0,
+          "hazard_family_present": "contested_value",
+          "rationale": "generic fallback translation now preserves lens-level value conflict as contested_value rather than collapsing it to generic unclassified"
+        }
+      },
+      "adapter_dependent": {
+        "requires": "meaning_assay",
+        "warrant_provenance": "REAL"
+      }
+    }
   }
 }

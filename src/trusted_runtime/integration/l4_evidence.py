@@ -18,12 +18,16 @@ def build_sophron_validation_envelope(
     receipt_linkage: bool,
     tas_closure_referenced: bool,
 ) -> dict[str, Any]:
+    has_partial_sophron_structure = bool(sophron_report) or bool(sophron_signals)
+
     if sophron_report_valid:
         validation_status = "VALIDATED"
-    elif tas_local_validation:
-        validation_status = "CALIBRATING"
     elif degradation_reason is not None:
         validation_status = "FAILED"
+    elif tas_local_validation and has_partial_sophron_structure:
+        validation_status = "CALIBRATING"
+    elif tas_local_validation:
+        validation_status = "UNAVAILABLE"
     else:
         validation_status = "UNAVAILABLE"
 

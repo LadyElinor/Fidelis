@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from trusted_runtime.export import export_decision_payload, to_json_safe
+from trusted_runtime.export import export_decision_payload, l4_status_interpretation, to_json_safe
 from trusted_runtime.integration.engine import assemble_execution_decision
 from trusted_runtime.review import load_review_input
+
+
+ALLOWED_L4_STATUSES = {"VALIDATED", "CALIBRATING", "FAILED", "UNAVAILABLE"}
 
 
 def test_to_json_safe_normalizes_path_and_nested_containers():
@@ -35,6 +38,9 @@ def test_export_decision_payload_is_machine_readable_for_live_decision():
     assert isinstance(payload["integration_mode_report"], dict) or payload["integration_mode_report"] is None
     assert isinstance(payload["cer_bundle"], dict)
     assert isinstance(payload["overall_receipt"], dict)
+    assert payload["cer_bundle"]["sophron_validation"]["validation_status"] in ALLOWED_L4_STATUSES
+    assert payload["l4_interpretation"] == l4_status_interpretation(payload["cer_bundle"]["sophron_validation"]["validation_status"])
+    assert payload["cer_bundle"]["sophron_validation"]["interpretation"] == payload["l4_interpretation"]
 
     rendered = json.dumps(payload, indent=2)
     reparsed = json.loads(rendered)

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from trusted_runtime.export import export_decision_payload
 from trusted_runtime.integration.engine import assemble_execution_decision
 from trusted_runtime.integration.report import render_markdown_report
 from trusted_runtime.shared.models import ProposedAction
@@ -18,7 +19,7 @@ def run_review_input(input_path: Path, output_dir: Path) -> ProposedAction:
     action = load_review_input(input_path)
     decision = assemble_execution_decision(action)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "decision_output.json").write_text(decision.model_dump_json(indent=2), encoding="utf-8")
+    (output_dir / "decision_output.json").write_text(json.dumps(export_decision_payload(decision), indent=2), encoding="utf-8")
     (output_dir / "decision_report.md").write_text(render_markdown_report(decision), encoding="utf-8")
     return action
 

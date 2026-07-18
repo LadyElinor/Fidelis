@@ -162,7 +162,36 @@ def test_telemetry_partial_path_surfaces_l4_closure_when_sophron_fails(monkeypat
     assert l4_closure.get("closure_complete") is False
     assert l4_closure.get("reporting_axes", {}).get("tas_local_only") is True
     assert l4_closure.get("reporting_axes", {}).get("adapter_failed") is True
+    assert bundle.sophron_validation.validation_status == "FAILED"
     assert bundle.sophron_validation.degradation_reason == "RuntimeError"
+
+
+def test_shaped_but_unsuccessful_sophron_report_does_not_count_as_valid(monkeypatch):
+    if not trustworthy_agent_stack_available():
+        pytest.skip("TrustworthyAgentStack sibling repo absent; TAS-local closure not testable on this clone")
+
+    adapter = CerSophronTelemetryAdapter()
+
+    def _fake_report(receipt_path, output_dir):
+        return {
+            "ok": False,
+            "kind": "sophron_alignment_report_v0",
+            "report": {
+                "signals": {
+                    "shift": {"score": 0.4, "evidence": [{"id": "e1"}]}
+                }
+            },
+        }, ""
+
+    monkeypatch.setattr(adapter, "_run_sophron_adapter", _fake_report)
+    bundle = adapter.collect(_action(), RuntimeDisposition.CONFIRM_HUMAN.value)
+
+    assert isinstance(bundle.sophron_validation, SophronValidation)
+    assert bundle.sophron_validation.passed is False
+    assert bundle.sophron_validation.validation_status == "CALIBRATING"
+    assert bundle.sophron_validation.l4_closure.get("closure_complete") is False
+    assert bundle.sophron_validation.l4_closure.get("reporting_axes", {}).get("sophron_validated") is False
+    assert bundle.adapter_provenance is AdapterProvenance.PARTIAL
 
 
 def test_golden_decision_surfaces_l2_to_l4_closure_chain():

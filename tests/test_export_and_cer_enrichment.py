@@ -30,6 +30,9 @@ def test_export_decision_payload_includes_cer_enrichment():
 
     assert "cer_bundle" in payload
     assert "cer_enrichment" in payload["cer_bundle"]
+    assert "sophron_validation" in payload["cer_bundle"]
+    assert "interpretation" in payload["cer_bundle"]["sophron_validation"]
+    assert payload["l4_interpretation"] == payload["cer_bundle"]["sophron_validation"]["interpretation"]
     assert enrichment["evaluated_at"] is not None
     assert enrichment["profile_hash"] == verification["attest_profile_hash"]
     assert enrichment["known_message_set_hash"] == verification["attest_known_message_set_hash"]

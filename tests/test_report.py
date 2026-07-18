@@ -49,5 +49,28 @@ def test_report_surfaces_attest_resolver_context():
     assert "## L4 evidence" in report
     assert "SOPHRON Validation" in report
     assert "Status:" in report
+    assert "Interpretation:" in report
     assert "Receipt Linkage:" in report
     assert "signal tiers" in report.lower()
+
+
+def test_report_interprets_l4_status_plainly():
+    action = ProposedAction(
+        id="test-report-l4-001",
+        description="general governance review task",
+        timestamp=FIXED_TS,
+        context={},
+    )
+
+    decision = assemble_execution_decision(action)
+    report = render_markdown_report(decision)
+
+    assert "Interpretation:" in report
+    if "Status: **FAILED**" in report:
+        assert "adapter failed" in report
+    elif "Status: **CALIBRATING**" in report:
+        assert "advisory/calibrating" in report
+    elif "Status: **VALIDATED**" in report:
+        assert "validated SOPHRON evidence" in report
+    elif "Status: **UNAVAILABLE**" in report:
+        assert "no validated or partial SOPHRON evidence is available" in report

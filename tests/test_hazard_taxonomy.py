@@ -80,3 +80,35 @@ def test_profile_counts_unclassified_for_monitoring():
     ))
     assert profile.unclassified_count == 2
     assert HazardFamily.UNCLASSIFIED.value in profile.families_present
+
+
+def test_provenance_like_labels_do_not_fall_through_to_unclassified():
+    assert classify_hazard("self_attested claim without independent corroboration") is HazardFamily.PROVENANCE
+    assert classify_hazard("receipt lineage gap in claimed real evidence") is HazardFamily.PROVENANCE
+
+
+def test_mixed_real_labels_reduce_unclassified_drift():
+    profile = build_hazard_profile((
+        "self_attested claim without independent corroboration",
+        "safety critical change",
+        "formation::no_correction_loop",
+        "delete database without rollback",
+    ))
+    assert profile.unclassified_count == 0
+    assert HazardFamily.PROVENANCE.value in profile.families_present
+    assert HazardFamily.SAFETY_INVARIANT.value in profile.families_present
+    assert HazardFamily.FORMATION.value in profile.families_present
+    assert HazardFamily.IRREVERSIBILITY.value in profile.families_present
+
+
+def test_council_lens_labels_map_to_contested_value_not_unclassified():
+    profile = build_hazard_profile((
+        "unclassified::trustee",
+        "unclassified::kantian",
+        "unclassified::institutional",
+        "unclassified::care_ethics",
+        "unclassified::contractualist",
+        "unclassified::genealogical",
+    ))
+    assert profile.unclassified_count == 0
+    assert HazardFamily.CONTESTED_VALUE.value in profile.families_present

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 
 
 class HazardFamily(str, Enum):
@@ -70,21 +71,48 @@ class LeveledHazard:
 
 
 _FAMILY_SIGNALS: tuple[tuple[HazardFamily, tuple[str, ...]], ...] = (
-    (HazardFamily.FORMATION, ("formation::", "canonization", "scale_without_consent")),
-    (HazardFamily.SAFETY_INVARIANT, ("invariant", "safety-critical", "safety_invariant")),
-    (HazardFamily.SECURITY, ("security", "confidential", "integrity", "availability")),
-    (HazardFamily.IRREVERSIBILITY, ("irreversib", "cannot be undone", "permanent")),
-    (HazardFamily.AUTONOMY, ("autonom", "unsupervised", "self-modif", "expand scope")),
-    (HazardFamily.PROVENANCE, ("provenance", "unverified claim", "claimed real")),
-    (HazardFamily.CONTESTED_VALUE, ("contested", "disagree", "minority")),
+    (HazardFamily.FORMATION, ("formation::", "canonization", "scale_without_consent", "no_correction_loop", "amplified_under_depletion", "replication_blind_canon")),
+    (HazardFamily.SAFETY_INVARIANT, ("invariant", "safety-critical", "safety_critical", "safety_invariant", "unsafe release", "guardrail removal")),
+    (HazardFamily.SECURITY, ("security", "confidential", "confidentiality", "integrity", "availability", "breach", "exfiltration", "unauthorized access")),
+    (HazardFamily.IRREVERSIBILITY, ("irreversib", "cannot be undone", "permanent", "destructive", "destroy evidence", "delete database", "drop table")),
+    (HazardFamily.AUTONOMY, ("autonom", "unsupervised", "self-modif", "expand scope", "self-directed", "acts without review")),
+    (HazardFamily.PROVENANCE, ("provenance", "receipt", "lineage", "attestation", "self-attested", "self_attested", "unverified claim", "claimed real", "independent corroboration")),
+    (HazardFamily.CONTESTED_VALUE, ("contested", "disagree", "minority", "tradeoff dispute", "value conflict", "unclassified::trustee", "unclassified::kantian", "unclassified::care_ethics", "unclassified::contractualist", "unclassified::genealogical", "unclassified::institutional")),
 )
 
 
+def _normalize_label(raw_label: str) -> str:
+    text = (raw_label or "").lower().replace("::", " ")
+    return re.sub(r"[^a-z0-9_\s-]+", " ", text)
+
+
 def classify_hazard(raw_label: str) -> HazardFamily:
-    text = (raw_label or "").lower()
+    raw_text = (raw_label or "").lower()
+    text = _normalize_label(raw_label)
     for family, signals in _FAMILY_SIGNALS:
-        if any(signal in text for signal in signals):
+        if any(signal in raw_text or signal in text for signal in signals):
             return family
+
+    if raw_text.startswith("unclassified::"):
+        lens = raw_text.split("::", 1)[1].strip()
+        if lens in {"trustee", "kantian", "institutional", "care_ethics", "contractualist", "genealogical"}:
+            return HazardFamily.CONTESTED_VALUE
+
+    tokens = set(text.split())
+    if {"safety", "invariant"}.issubset(tokens) or {"safety", "critical"}.issubset(tokens):
+        return HazardFamily.SAFETY_INVARIANT
+    if "formation" in tokens:
+        return HazardFamily.FORMATION
+    if {"independent", "corroboration"}.issubset(tokens) or {"unverified", "claim"}.issubset(tokens):
+        return HazardFamily.PROVENANCE
+    if {"cannot", "undone"}.issubset(tokens) or "irreversible" in tokens:
+        return HazardFamily.IRREVERSIBILITY
+    if "autonomy" in tokens or ("expand" in tokens and "scope" in tokens):
+        return HazardFamily.AUTONOMY
+    if "confidentiality" in tokens or "breach" in tokens:
+        return HazardFamily.SECURITY
+    if "minority" in tokens or ("value" in tokens and "conflict" in tokens):
+        return HazardFamily.CONTESTED_VALUE
     return HazardFamily.UNCLASSIFIED
 
 

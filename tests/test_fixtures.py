@@ -5,12 +5,14 @@ from pathlib import Path
 
 import pytest
 
+from trusted_runtime.export import export_decision_payload
 from trusted_runtime.integration.availability import (
     meaning_assay_available,
     real_telemetry_stack_available,
 )
 from trusted_runtime.integration.engine import assemble_execution_decision
 from trusted_runtime.integration.formation import assess_formation_hazard
+from trusted_runtime.l4_status import l4_status_interpretation
 from trusted_runtime.shared.models import ProposedAction
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures" / "scenarios.json").read_text())
@@ -50,6 +52,23 @@ def test_env_independent_contract_holds(name):
         claimed = scenario["input"]["context"].get("claimed_provenance")
         assert claimed == "ALL_REAL"
         assert "claimed_provenance" not in d.process_provenance.get("warrant", {})
+    if ei.get("warrant_translation_contested"):
+        assert d.warrant is not None
+        assert d.warrant.contested is True
+    if expected_fit := ei.get("warrant_translation_fit_quality"):
+        assert d.warrant is not None and d.warrant.pair_contrasts is not None
+        assert d.warrant.pair_contrasts.get("translation_fit_quality") == expected_fit
+    if note_fragment := ei.get("warrant_confidence_note_contains"):
+        assert d.warrant is not None
+        assert any(note_fragment in note for note in d.warrant.confidence_notes)
+    if question_fragment := ei.get("warrant_unresolved_question_contains"):
+        assert d.warrant is not None
+        assert any(question_fragment in q for q in d.warrant.unresolved_questions)
+    if ei.get("assert_l4_interpretation_matches_status"):
+        payload = export_decision_payload(d)
+        expected_l4_interpretation = l4_status_interpretation(payload["cer_bundle"]["sophron_validation"]["validation_status"])
+        assert payload["l4_interpretation"] == expected_l4_interpretation
+        assert payload["cer_bundle"]["sophron_validation"]["interpretation"] == expected_l4_interpretation
 
 
 @pytest.mark.parametrize("name", [k for k, v in SCENARIOS.items() if "adapter_dependent" in v["contract"]])
@@ -152,6 +171,10 @@ def test_structural_tier_is_well_formed(name):
     if expected.get("reconciliation_alignment"):
         recon = d.model_dump(mode="json").get("reconciliation") or {}
         assert recon.get("alignment") == expected["reconciliation_alignment"]
+    if expected.get("hazard_unclassified_count") is not None:
+        assert d.hazard_profile.get("unclassified_count") == expected["hazard_unclassified_count"]
+    if expected_family := expected.get("hazard_family_present"):
+        assert expected_family in d.hazard_profile.get("families_present", [])
 
 
 def test_fixture_inputs_all_validate():
