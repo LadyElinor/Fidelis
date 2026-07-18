@@ -14,7 +14,7 @@ if [[ -z "$ROOT" ]]; then
 fi
 cd "$ROOT"
 
-if ! git help -a 2>/dev/null | grep -Eq "^[[:space:]]+subtree([[:space:]]|$)"; then
+if ! git subtree >/dev/null 2>&1; then
   echo "git subtree is required but was not found." >&2
   exit 1
 fi
