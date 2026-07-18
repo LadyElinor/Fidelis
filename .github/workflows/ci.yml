@@ -1,0 +1,53 @@
+name: Fidelis CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  architecture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/verify_sources.py
+      - run: python scripts/verify_boundaries.py
+      - run: python -m pip install pytest
+      - run: python -m pytest -q integration/tests packages/fidelis-contracts/tests
+
+  component-matrix:
+    if: ${{ hashFiles('provenance/imported-sources.tsv') != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: aconstellation
+            path: packages/aconstellation
+            command: python -m pytest -q
+          - name: trusted-runtime
+            path: packages/trusted-runtime
+            command: python -m pytest -q
+          - name: meaning-assay
+            path: packages/meaning-assay
+            command: python -m pytest -q
+          - name: attest-agent-conlang
+            path: packages/attest-agent-conlang
+            command: python -m pytest -q
+          - name: trustworthy-agent-stack
+            path: packages/trustworthy-agent-stack
+            command: python -m pytest -q tests
+          - name: ethics-council
+            path: packages/ethics-council
+            command: python -m pytest -q
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install pytest
+      - name: Run ${{ matrix.name }} tests
+        working-directory: ${{ matrix.path }}
+        run: ${{ matrix.command }}

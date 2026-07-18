@@ -1,0 +1,8 @@
+{
+  "profile": "minimal",
+  "schema_version": "1.0",
+  "required_components": ["fidelis-contracts"],
+  "require_imported_source_manifest": false,
+  "allow_stubbed_adapters": true,
+  "allow_derived_advisory": true
+}

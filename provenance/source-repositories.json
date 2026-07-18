@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "destination": {
+    "name": "Fidelis",
+    "url": "https://github.com/LadyElinor/Fidelis",
+    "branch": "main"
+  },
+  "sources": [
+    {
+      "name": "TrustedRuntime",
+      "slug": "trusted-runtime",
+      "url": "https://github.com/LadyElinor/TrustedRuntime",
+      "branch": "main",
+      "prefix": "packages/trusted-runtime",
+      "role": "orchestration"
+    },
+    {
+      "name": "AConstellation",
+      "slug": "aconstellation",
+      "url": "https://github.com/LadyElinor/AConstellation",
+      "branch": "main",
+      "prefix": "packages/aconstellation",
+      "role": "legacy integration architecture and migration source"
+    },
+    {
+      "name": "AttestAgentConlang",
+      "slug": "attest-agent-conlang",
+      "url": "https://github.com/LadyElinor/AttestAgentConlang",
+      "branch": "main",
+      "prefix": "packages/attest-agent-conlang",
+      "role": "message protocol"
+    },
+    {
+      "name": "meaning-assay",
+      "slug": "meaning-assay",
+      "url": "https://github.com/LadyElinor/meaning-assay",
+      "branch": "master",
+      "prefix": "packages/meaning-assay",
+      "role": "warrant and significance"
+    },
+    {
+      "name": "SOPHRON-CER",
+      "slug": "sophron-cer",
+      "url": "https://github.com/LadyElinor/SOPHRON-CER",
+      "branch": "main",
+      "prefix": "packages/sophron-cer",
+      "role": "receipt validation"
+    },
+    {
+      "name": "CER-Telemetry",
+      "slug": "cer-telemetry",
+      "url": "https://github.com/LadyElinor/CER-Telemetry",
+      "branch": "main",
+      "prefix": "packages/cer-telemetry",
+      "role": "telemetry"
+    },
+    {
+      "name": "TrustworthyAgentStack",
+      "slug": "trustworthy-agent-stack",
+      "url": "https://github.com/LadyElinor/TrustworthyAgentStack",
+      "branch": "main",
+      "prefix": "packages/trustworthy-agent-stack",
+      "role": "enforcement"
+    },
+    {
+      "name": "EthicsCouncil",
+      "slug": "ethics-council",
+      "url": "https://github.com/LadyElinor/EthicsCouncil",
+      "branch": "master",
+      "prefix": "packages/ethics-council",
+      "role": "hazard deliberation"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fidelis-contracts"
+version = "0.1.0"
+description = "Neutral shared contracts for Fidelis"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fidelis_contracts"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

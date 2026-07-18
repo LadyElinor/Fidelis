@@ -1,0 +1,3 @@
+packages:
+  - "packages/cer-telemetry"
+  - "packages/sophron-cer"

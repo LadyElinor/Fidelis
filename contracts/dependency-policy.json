@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "principle": "Physical consolidation must not collapse epistemic authority.",
+  "components": {
+    "fidelis-contracts": {
+      "may_depend_on": [],
+      "role": "neutral shared serialization and identity contracts"
+    },
+    "aconstellation": {
+      "may_depend_on": [
+        "fidelis-contracts"
+      ],
+      "role": "legacy integration architecture retained for reconciliation; no final authority"
+    },
+    "meaning-assay": {
+      "may_depend_on": [
+        "fidelis-contracts"
+      ],
+      "role": "significance, warrant, and BELARION candidate qualification"
+    },
+    "ethics-council": {
+      "may_depend_on": [
+        "fidelis-contracts"
+      ],
+      "role": "prospective hazard review under uncertainty"
+    },
+    "trustworthy-agent-stack": {
+      "may_depend_on": [
+        "fidelis-contracts",
+        "ethics-council"
+      ],
+      "role": "runtime gating and enforcement"
+    },
+    "attest-agent-conlang": {
+      "may_depend_on": [
+        "fidelis-contracts"
+      ],
+      "role": "typed inter-agent envelope and verification seam"
+    },
+    "cer-telemetry": {
+      "may_depend_on": [
+        "fidelis-contracts"
+      ],
+      "role": "telemetry collection and analysis"
+    },
+    "sophron-cer": {
+      "may_depend_on": [
+        "fidelis-contracts",
+        "cer-telemetry"
+      ],
+      "role": "receipt and evidence validation"
+    },
+    "trusted-runtime": {
+      "may_depend_on": [
+        "fidelis-contracts",
+        "meaning-assay",
+        "ethics-council",
+        "trustworthy-agent-stack",
+        "attest-agent-conlang",
+        "cer-telemetry",
+        "sophron-cer"
+      ],
+      "role": "thin orchestration and final synthesis"
+    }
+  },
+  "forbidden_authority_collapses": [
+    "meaning-assay importing trusted-runtime policy",
+    "ethics-council importing trusted-runtime policy",
+    "receipt validators importing substantive ethical or warrant scoring",
+    "enforcement redefining upstream ethical or warrant findings",
+    "attest verification upgrading adapter provenance without independent evidence"
+  ]
+}
