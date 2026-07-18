@@ -14,7 +14,8 @@ if [[ -z "$ROOT" ]]; then
 fi
 cd "$ROOT"
 
-if ! git subtree >/dev/null 2>&1; then
+subtree_probe="$(git subtree 2>&1 || true)"
+if echo "$subtree_probe" | grep -q "is not a git command"; then
   echo "git subtree is required but was not found." >&2
   exit 1
 fi
@@ -26,9 +27,8 @@ fi
 
 mkdir -p packages provenance
 MANIFEST="provenance/imported-sources.tsv"
-if [[ "$MODE" == "import" ]]; then
-  printf "name\tprefix\tbranch\tcommit\turl\timported_at_utc\n" > "$MANIFEST"
-fi
+MANIFEST_TMP="${MANIFEST}.tmp"
+printf "name\tprefix\tbranch\tcommit\turl\timported_at_utc\n" > "$MANIFEST_TMP"
 
 # name|prefix|branch|url
 COMPONENTS=(
@@ -71,8 +71,10 @@ for item in "${COMPONENTS[@]}"; do
 
   printf "%s\t%s\t%s\t%s\t%s\t%s\n" \
     "$name" "$prefix" "$branch" "$commit" "$url" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    >> "$MANIFEST"
+    >> "$MANIFEST_TMP"
 done
+
+mv "$MANIFEST_TMP" "$MANIFEST"
 
 # Commit the refreshed manifest separately because subtree commands commit as they run.
 git add "$MANIFEST"

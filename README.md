@@ -74,4 +74,4 @@ See:
 
 ## Current seed status
 
-This seed establishes the monorepo architecture, import/update automation, shared BELARION contracts, provenance manifest, package-boundary checks, CI, and integration tests. Component source code is populated by the subtree import script so that the authoritative Git histories remain intact.
+This seed establishes the monorepo architecture, import/update automation, shared BELARION contracts, provenance manifest, dependency-policy declaration checks, CI, and integration tests. Component source code is populated by the subtree import script so that the authoritative Git histories remain intact.
