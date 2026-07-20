@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import shutil
 import subprocess
@@ -10,6 +11,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+PROFILE_PATHS = {
+    "minimal": ROOT / "profiles/minimal.json",
+    "all-real": ROOT / "profiles/all-real.json",
+}
+HARD_FAIL_STATUSES_BY_PROFILE = {
+    "minimal": {"failed"},
+    "all-real": {"failed", "unexpectedly_missing", "blocked"},
+}
 
 
 @dataclass
@@ -18,19 +27,38 @@ class Result:
     command: list[str]
     status: str
     returncode: int | None
+    classification: str
 
 
-def run(component: str, cwd: Path, command: list[str]) -> Result:
+def _load_profile(name: str) -> dict[str, object]:
+    return json.loads(PROFILE_PATHS[name].read_text(encoding="utf-8"))
+
+
+def run(component: str, cwd: Path, command: list[str], required_components: set[str]) -> Result:
     if not cwd.exists():
-        return Result(component, command, "not_imported", None)
+        status = "unexpectedly_missing" if component in required_components else "expected_not_applicable"
+        return Result(component, command, status, None, "presence")
     executable = command[0]
     if shutil.which(executable) is None:
-        return Result(component, command, f"missing_executable:{executable}", None)
+        status = "blocked" if component in required_components else f"expected_not_applicable"
+        return Result(component, command, status, None, "tooling")
     completed = subprocess.run(command, cwd=cwd, check=False)
-    return Result(component, command, "passed" if completed.returncode == 0 else "failed", completed.returncode)
+    return Result(
+        component,
+        command,
+        "passed" if completed.returncode == 0 else "failed",
+        completed.returncode,
+        "execution",
+    )
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", choices=sorted(PROFILE_PATHS), default="minimal")
+    args = parser.parse_args()
+
+    profile = _load_profile(args.profile)
+    required_components = set(profile["required_components"])
     commands: list[tuple[str, Path, list[str]]] = [
         ("fidelis-contracts", ROOT / "packages/fidelis-contracts", [sys.executable, "-m", "pytest", "-q"]),
         ("aconstellation", ROOT / "packages/aconstellation", [sys.executable, "-m", "pytest", "-q"]),
@@ -42,18 +70,22 @@ def main() -> int:
         ("cer-telemetry", ROOT / "packages/cer-telemetry", ["npm", "test"]),
         ("sophron-cer", ROOT / "packages/sophron-cer", ["npm", "test"]),
     ]
-    results = [run(*entry) for entry in commands]
+    results = [run(*entry, required_components) for entry in commands]
     reports = ROOT / "reports"
     reports.mkdir(exist_ok=True)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "profile": args.profile,
+        "required_components": sorted(required_components),
         "results": [asdict(result) for result in results],
     }
     (reports / "component-tests.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     for result in results:
         print(f"{result.status.upper():<30} {result.component}")
-    return 1 if any(result.status == "failed" for result in results) else 0
+
+    hard_fail_statuses = HARD_FAIL_STATUSES_BY_PROFILE[args.profile]
+    return 1 if any(result.status in hard_fail_statuses for result in results) else 0
 
 
 if __name__ == "__main__":

@@ -5,42 +5,21 @@ on:
   pull_request:
 
 jobs:
-  architecture:
+  seed-integrity:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - run: python -m pip install pytest
       - run: python scripts/verify_sources.py
       - run: python scripts/verify_boundaries.py
-      - run: python -m pip install pytest
+      - run: python scripts/run_component_tests.py --profile minimal
       - run: python -m pytest -q integration/tests packages/fidelis-contracts/tests
 
-  component-matrix:
+  all-real-integration:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: aconstellation
-            path: packages/aconstellation
-            command: python -m pytest -q
-          - name: trusted-runtime
-            path: packages/trusted-runtime
-            command: python -m pytest -q
-          - name: meaning-assay
-            path: packages/meaning-assay
-            command: python -m pytest -q
-          - name: attest-agent-conlang
-            path: packages/attest-agent-conlang
-            command: python -m pytest -q
-          - name: trustworthy-agent-stack
-            path: packages/trustworthy-agent-stack
-            command: python -m pytest -q tests
-          - name: ethics-council
-            path: packages/ethics-council
-            command: python -m pytest -q
     steps:
       - uses: actions/checkout@v4
       - name: Detect imported source manifest
@@ -52,13 +31,16 @@ jobs:
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Require imported source manifest for all-real integration
+        if: steps.imported.outputs.present != 'true'
+        run: |
+          echo "all-real-integration requires provenance/imported-sources.tsv" >&2
+          exit 1
       - uses: actions/setup-python@v5
-        if: steps.imported.outputs.present == 'true'
         with:
           python-version: "3.11"
       - run: python -m pip install pytest
-        if: steps.imported.outputs.present == 'true'
-      - name: Run ${{ matrix.name }} tests
-        if: steps.imported.outputs.present == 'true'
-        working-directory: ${{ matrix.path }}
-        run: ${{ matrix.command }}
+      - name: Run all-real component tests
+        run: python scripts/run_component_tests.py --profile all-real
+      - name: Verify all-real profile
+        run: python scripts/verify_profile.py all-real
