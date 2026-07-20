@@ -16,11 +16,17 @@
       "may_depend_on": [
         "fidelis-contracts"
       ],
+      "test_may_depend_on": [
+        "trusted-runtime"
+      ],
       "role": "significance, warrant, and BELARION candidate qualification"
     },
     "ethics-council": {
       "may_depend_on": [
         "fidelis-contracts"
+      ],
+      "test_may_depend_on": [
+        "trusted-runtime"
       ],
       "role": "prospective hazard review under uncertainty"
     },

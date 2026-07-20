@@ -55,6 +55,14 @@ python scripts/verify_boundaries.py
 python scripts/run_component_tests.py
 ```
 
+`verify_boundaries.py` currently validates:
+- declared component dependency policy shape and acyclicity
+- observed Python `src` imports against production policy
+- observed Python `tests` imports against explicit test policy
+- observed JS/TS `src` imports against production policy when local Node package roots exist
+- observed JS/TS `tests` imports against explicit test policy when local Node test roots exist
+- observed Node `package.json` dependency fields (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) against production policy when local Node packages exist
+
 Or run the standard local checks:
 
 ```bash
@@ -74,4 +82,13 @@ See:
 
 ## Current seed status
 
-This seed establishes the monorepo architecture, import/update automation, shared BELARION contracts, provenance manifest, dependency-policy declaration checks, CI, and integration tests. Component source code is populated by the subtree import script so that the authoritative Git histories remain intact.
+This seed establishes the monorepo architecture, import/update automation, shared BELARION contracts, provenance manifest, dependency-policy declaration checks, observed-edge boundary enforcement, CI, and integration tests.
+
+Current boundary enforcement status:
+- Python `src` imports are checked against declared production policy when local package roots are present.
+- Python `tests` imports are checked against explicit `test_may_depend_on` policy when local test roots are present.
+- JS/TS `src` imports are checked against declared production policy when local Node package roots are present.
+- JS/TS `tests` imports are checked against explicit test policy when local Node test roots are present.
+- Node `package.json` dependency fields are checked against declared production policy when local Node packages are present.
+
+The seed remains careful about applicability. When a language/runtime surface is not physically present in the local workspace, the validator reports that the check was not applicable rather than overstating coverage. Component source code is still populated by the subtree import script so that the authoritative Git histories remain intact.
