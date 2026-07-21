@@ -71,11 +71,17 @@ def main() -> int:
         ("sophron-cer", ROOT / "packages/sophron-cer", ["npm", "test"]),
     ]
     results = [run(*entry, required_components) for entry in commands]
+    hard_fail_statuses = HARD_FAIL_STATUSES_BY_PROFILE[args.profile]
+    production_cleared = args.profile == "all-real" and not any(result.status in hard_fail_statuses for result in results)
+
     reports = ROOT / "reports"
     reports.mkdir(exist_ok=True)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "profile": args.profile,
+        "production_cleared": production_cleared,
+        "substantive_ethics_tested": args.profile == "all-real",
+        "side_effects_allowed": False,
         "required_components": sorted(required_components),
         "results": [asdict(result) for result in results],
     }
@@ -83,8 +89,10 @@ def main() -> int:
 
     for result in results:
         print(f"{result.status.upper():<30} {result.component}")
-
-    hard_fail_statuses = HARD_FAIL_STATUSES_BY_PROFILE[args.profile]
+    print(
+        f"PROFILE={args.profile} PRODUCTION_CLEARED={str(production_cleared).lower()} "
+        f"SIDE_EFFECTS_ALLOWED=false SUBSTANTIVE_ETHICS_TESTED={str(args.profile == 'all-real').lower()}"
+    )
     return 1 if any(result.status in hard_fail_statuses for result in results) else 0
 
 

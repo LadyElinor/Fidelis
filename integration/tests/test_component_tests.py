@@ -73,8 +73,12 @@ def test_run_component_tests_minimal_tolerates_absent_optional_components(tmp_pa
     )
 
     assert completed.returncode == 0
+    assert "PROFILE=minimal PRODUCTION_CLEARED=false SIDE_EFFECTS_ALLOWED=false SUBSTANTIVE_ETHICS_TESTED=false" in completed.stdout
     payload = json.loads((repo / "reports" / "component-tests.json").read_text(encoding="utf-8"))
     assert payload["profile"] == "minimal"
+    assert payload["production_cleared"] is False
+    assert payload["side_effects_allowed"] is False
+    assert payload["substantive_ethics_tested"] is False
     results = {row["component"]: row for row in payload["results"]}
     assert results["aconstellation"]["status"] == "expected_not_applicable"
 
@@ -93,8 +97,12 @@ def test_run_component_tests_all_real_fails_when_required_components_are_absent(
     )
 
     assert completed.returncode == 1
+    assert "PROFILE=all-real PRODUCTION_CLEARED=false SIDE_EFFECTS_ALLOWED=false SUBSTANTIVE_ETHICS_TESTED=true" in completed.stdout
     payload = json.loads((repo / "reports" / "component-tests.json").read_text(encoding="utf-8"))
     assert payload["profile"] == "all-real"
+    assert payload["production_cleared"] is False
+    assert payload["side_effects_allowed"] is False
+    assert payload["substantive_ethics_tested"] is True
     results = {row["component"]: row for row in payload["results"]}
     assert results["aconstellation"]["status"] == "unexpectedly_missing"
 
@@ -125,8 +133,12 @@ def test_run_runtime_health_minimal_emits_bound_receipt_fields(tmp_path: Path) -
     )
 
     assert completed.returncode == 0
+    assert "PROFILE=minimal PRODUCTION_CLEARED=false SIDE_EFFECTS_ALLOWED=false SUBSTANTIVE_ETHICS_TESTED=false" in completed.stdout
     payload = json.loads((repo / "reports" / "runtime-health.json").read_text(encoding="utf-8"))
     assert payload["profile"] == "minimal"
+    assert payload["production_cleared"] is False
+    assert payload["side_effects_allowed"] is False
+    assert payload["substantive_ethics_tested"] is False
     assert payload["fidelis_commit"] == subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
     assert payload["profile_digest"] == sha256_hex_bytes((repo / "profiles" / "minimal.json").read_bytes())
     assert payload["dependency_policy_digest"] == sha256_hex_bytes((repo / "contracts" / "dependency-policy.json").read_bytes())
@@ -162,8 +174,12 @@ def test_run_runtime_health_all_real_marks_missing_required_components_unavailab
         env=env,
     )
     assert completed.returncode == 0
+    assert "PROFILE=all-real PRODUCTION_CLEARED=false SIDE_EFFECTS_ALLOWED=false SUBSTANTIVE_ETHICS_TESTED=true" in completed.stdout
 
     payload = json.loads((repo / "reports" / "runtime-health.json").read_text(encoding="utf-8"))
+    assert payload["production_cleared"] is False
+    assert payload["side_effects_allowed"] is False
+    assert payload["substantive_ethics_tested"] is True
     results = {row["component"]: row for row in payload["components"]}
     assert results["fidelis-contracts"]["adapter_provenance"] == "native"
     assert results["aconstellation"]["adapter_provenance"] == "unavailable"

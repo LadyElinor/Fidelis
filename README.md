@@ -35,6 +35,13 @@ No component may silently certify itself.
 
 ## Bootstrap
 
+**Important:** seed/bootstrap checks are not production authorization.
+
+Until the declared authorities are materially imported and the `all-real` profile verifies cleanly, treat this repository as:
+- `PRODUCTION_CLEARED=false`
+- `SIDE_EFFECTS_ALLOWED=false`
+- `SUBSTANTIVE_ETHICS_TESTED=false`
+
 Apply this seed to a clean clone of `LadyElinor/Fidelis`, commit it, then inspect the required materialization plan:
 
 ```bash
@@ -95,6 +102,8 @@ Or run the standard local checks:
 make check
 ```
 
+A green `make check` or minimal-profile run means seed/dev integrity only. It must not be described as all-real validation, ethical clearance, or authorization for consequential side effects.
+
 ## BELARION
 
 BELARION is integrated first as a neutral contract and advisory profile. Substantive qualification logic belongs in `meaning-assay`; policy consumption belongs in `TrustedRuntime`; durable candidate, gate, dissent, and outcome receipts belong in CER/SOPHRON.
@@ -109,6 +118,12 @@ See:
 ## Current seed status
 
 This seed establishes the monorepo architecture, import/update automation, import planning visibility, shared BELARION contracts, provenance manifest, dependency-policy declaration checks, observed-edge boundary enforcement, CI, and integration tests.
+
+Current authorization posture:
+- seed / minimal profile: development-safe, not production-cleared
+- side effects: not authorized
+- substantive ethics performance: not yet demonstrated in the seed alone
+- all-real profile: required for materially complete runtime verification
 
 Current boundary enforcement status:
 - Python `src` imports are checked against declared production policy when local package roots are present.

@@ -59,6 +59,10 @@ def main() -> int:
     summary = {
         "schema_version": "1.0",
         "mode": "bootstrap-check-summary",
+        "profile": "bootstrap-materialization",
+        "production_cleared": not failures,
+        "substantive_ethics_tested": False,
+        "side_effects_allowed": False,
         "total_components": len(components),
         "ready_components": ready_components,
         "failing_components": len(components) - ready_components,
@@ -72,7 +76,9 @@ def main() -> int:
 
     print(
         f"Bootstrap status: ready={summary['ready_components']}/{summary['total_components']} "
-        f"failing_components={summary['failing_components']} failure_count={summary['failure_count']}"
+        f"failing_components={summary['failing_components']} failure_count={summary['failure_count']} "
+        f"production_cleared={str(summary['production_cleared']).lower()} "
+        f"substantive_ethics_tested={str(summary['substantive_ethics_tested']).lower()}"
     )
 
     if failures:

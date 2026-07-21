@@ -9,6 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Seed-status warning
+        run: |
+          echo "PROFILE=minimal"
+          echo "PRODUCTION_CLEARED=false"
+          echo "SIDE_EFFECTS_ALLOWED=false"
+          echo "SUBSTANTIVE_ETHICS_TESTED=false"
+          echo "Seed-integrity is a development/bootstrap signal, not all-real or production authorization."
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -36,6 +43,10 @@ jobs:
       - name: Require imported source manifest for all-real integration
         if: steps.imported.outputs.present != 'true'
         run: |
+          echo "PROFILE=all-real" >&2
+          echo "PRODUCTION_CLEARED=false" >&2
+          echo "SIDE_EFFECTS_ALLOWED=false" >&2
+          echo "SUBSTANTIVE_ETHICS_TESTED=false" >&2
           echo "all-real-integration requires provenance/imported-sources.tsv" >&2
           exit 1
       - uses: actions/setup-python@v5
