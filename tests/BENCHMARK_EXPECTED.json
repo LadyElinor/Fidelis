@@ -9,8 +9,8 @@
     "status_admiration_distortion_risk": false,
     "stage_one_thinking_risk": false,
     "self_audit_failure_risk": false,
-    "overall_recommendation_contains": "Do not compress the case into a single recommendation path",
-    "stability_assessment": "low"
+    "overall_recommendation_contains": "Pause for further ethical review. The current map shows unresolved tension that ",
+    "stability_assessment": "UNSTABLE"
   },
   "INS-003": {
     "detector_overlap_flag": false,
@@ -22,8 +22,8 @@
     "status_admiration_distortion_risk": false,
     "stage_one_thinking_risk": false,
     "self_audit_failure_risk": false,
-    "overall_recommendation_contains": "Do not launch as framed",
-    "stability_assessment": "moderate"
+    "overall_recommendation_contains": "Use the map to identify missing information, then decide with caution.",
+    "stability_assessment": "CONDITIONALLY_STABLE"
   },
   "NEG-001": {
     "detector_overlap_flag": false,
@@ -35,8 +35,8 @@
     "status_admiration_distortion_risk": false,
     "stage_one_thinking_risk": false,
     "self_audit_failure_risk": false,
-    "overall_recommendation_contains": "Use the map to identify missing information",
-    "stability_assessment": "moderate"
+    "overall_recommendation_contains": "Use the map to identify missing information, then decide with caution.",
+    "stability_assessment": "CONDITIONALLY_STABLE"
   },
   "NEG-002": {
     "detector_overlap_flag": false,
@@ -48,7 +48,7 @@
     "status_admiration_distortion_risk": false,
     "stage_one_thinking_risk": false,
     "self_audit_failure_risk": false,
-    "overall_recommendation_contains": "Use the map to identify missing information",
-    "stability_assessment": "moderate"
+    "overall_recommendation_contains": "Use the map to identify missing information, then decide with caution.",
+    "stability_assessment": "CONDITIONALLY_STABLE"
   }
 }
