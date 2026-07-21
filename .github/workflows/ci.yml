@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Detect imported source manifest
         id: imported
         shell: bash
@@ -39,7 +41,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m pip install pytest
+      - name: Install core Python test dependency
+        run: python -m pip install pytest
+      - name: Hydrate declared source remotes for provenance checks
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import subprocess
+          from pathlib import Path
+
+          root = Path('.').resolve()
+          data = json.loads((root / 'provenance' / 'source-repositories.json').read_text(encoding='utf-8'))
+          for source in data['sources']:
+              remote = 'source-' + re.sub(r'[^a-z0-9]+', '-', source['name'].lower()).strip('-')
+              url = source['url']
+              branch = source['branch']
+              existing = subprocess.run(['git', 'remote', 'get-url', remote], cwd=root, text=True, capture_output=True)
+              if existing.returncode != 0:
+                  subprocess.check_call(['git', 'remote', 'add', remote, url], cwd=root)
+              subprocess.check_call(['git', 'fetch', '--depth=1', remote, branch], cwd=root)
+          PY
       - name: Run all-real component tests
         run: python scripts/run_component_tests.py --profile all-real
       - name: Verify all-real profile

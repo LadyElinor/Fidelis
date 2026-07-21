@@ -35,7 +35,33 @@ No component may silently certify itself.
 
 ## Bootstrap
 
-Apply this seed to a clean clone of `LadyElinor/Fidelis`, commit it, then import all eight source histories:
+Apply this seed to a clean clone of `LadyElinor/Fidelis`, commit it, then inspect the required materialization plan:
+
+```bash
+./scripts/sync_components.sh plan
+```
+
+For machine-readable bootstrap planning, emit JSON instead:
+
+```bash
+./scripts/sync_components.sh plan-json
+```
+
+To fail fast when the workspace is not yet materially complete for all-real bootstrap:
+
+```bash
+python scripts/check_bootstrap.py
+# or
+make bootstrap-check
+```
+
+For a compact machine-readable bootstrap summary:
+
+```bash
+python scripts/check_bootstrap.py --summary-json
+```
+
+Then import all eight source histories:
 
 ```bash
 ./scripts/sync_components.sh import
@@ -82,7 +108,7 @@ See:
 
 ## Current seed status
 
-This seed establishes the monorepo architecture, import/update automation, shared BELARION contracts, provenance manifest, dependency-policy declaration checks, observed-edge boundary enforcement, CI, and integration tests.
+This seed establishes the monorepo architecture, import/update automation, import planning visibility, shared BELARION contracts, provenance manifest, dependency-policy declaration checks, observed-edge boundary enforcement, CI, and integration tests.
 
 Current boundary enforcement status:
 - Python `src` imports are checked against declared production policy when local package roots are present.

@@ -21,6 +21,13 @@ def sha256_hex_text(text: str) -> str:
     return sha256_hex_bytes(text.encode("utf-8"))
 
 
+def canonicalize_github_url(url: str) -> str:
+    normalized = url.strip()
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    return normalized.rstrip("/")
+
+
 def manifest_rows(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")

@@ -1,6 +1,9 @@
-.PHONY: check verify test-python test-node import pull
+.PHONY: check verify test-python test-node import pull bootstrap-check
 
 check: verify test-python
+
+bootstrap-check:
+	python scripts/check_bootstrap.py
 
 verify:
 	python scripts/verify_sources.py

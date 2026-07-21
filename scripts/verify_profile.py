@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
 
-from provenance_utils import canonical_json_bytes, manifest_rows, sha256_hex_bytes
+from provenance_utils import canonical_json_bytes, canonicalize_github_url, manifest_rows, sha256_hex_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
 PATHS = {
@@ -25,7 +26,9 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 TREE_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_REPOSITORIES = ROOT / "provenance" / "source-repositories.json"
+DEPENDENCY_POLICY = ROOT / "contracts" / "dependency-policy.json"
 COMPONENT_TEST_REPORT = ROOT / "reports" / "component-tests.json"
+RUNTIME_HEALTH_REPORT = ROOT / "reports" / "runtime-health.json"
 IMPORT_RECEIPTS = ROOT / "provenance" / "import-receipts"
 
 
@@ -82,11 +85,12 @@ def _component_remote_name(name: str) -> str:
 
 def _upstream_reachability_status(name: str, branch: str, commit: str) -> tuple[str, str | None]:
     override_path = ROOT / "provenance" / "test-reachability-overrides.json"
-    if override_path.exists():
+    if override_path.exists() and os.environ.get("FIDELIS_ALLOW_TEST_REACHABILITY_OVERRIDES") == "1":
         overrides = json.loads(override_path.read_text(encoding="utf-8"))
         key = f"{name}|{branch}|{commit}"
         if key in overrides:
-            status = overrides[key]
+            raw = overrides[key]
+            status = raw.get("status") if isinstance(raw, dict) else raw
             if status == "reachable":
                 return "reachable", None
             if status == "unavailable":
@@ -95,6 +99,8 @@ def _upstream_reachability_status(name: str, branch: str, commit: str) -> tuple[
                 return "invalid", f"upstream commit not present locally for {name}: {commit}"
             if status == "unreachable":
                 return "unreachable", f"upstream commit not reachable from declared branch for {name}: {commit} not ancestor of declared branch"
+    elif override_path.exists():
+        return "invalid", "test reachability override file must not be present outside test mode"
 
     remote = _component_remote_name(name)
     try:
@@ -112,6 +118,22 @@ def _upstream_reachability_status(name: str, branch: str, commit: str) -> tuple[
     except subprocess.CalledProcessError:
         return "unreachable", f"upstream commit not reachable from declared branch for {name}: {commit} not ancestor of {remote}/{branch}"
     return "reachable", None
+
+
+def _upstream_tree_hash(name: str, branch: str, commit: str) -> tuple[str | None, str | None]:
+    override_path = ROOT / "provenance" / "test-reachability-overrides.json"
+    if override_path.exists() and os.environ.get("FIDELIS_ALLOW_TEST_REACHABILITY_OVERRIDES") == "1":
+        overrides = json.loads(override_path.read_text(encoding="utf-8"))
+        key = f"{name}|{branch}|{commit}"
+        value = overrides.get(key)
+        if isinstance(value, dict) and isinstance(value.get("tree"), str):
+            tree = value["tree"]
+            return (tree, None) if TREE_RE.fullmatch(tree) else (None, f"override upstream tree is invalid for {name}: {tree!r}")
+    try:
+        tree = _git("rev-parse", f"{commit}^{{tree}}")
+    except subprocess.CalledProcessError:
+        return None, f"unable to resolve upstream tree for {name} at commit {commit}"
+    return tree if TREE_RE.fullmatch(tree) else None, None
 
 
 def _receipt_name(prefix: str) -> str:
@@ -140,7 +162,7 @@ def _validate_import_receipt(component: str, row: dict[str, str]) -> list[str]:
         failures.append(f"import receipt commit mismatch for {component}")
     if payload.get("imported_tree") != row["tree"]:
         failures.append(f"import receipt tree mismatch for {component}")
-    if payload.get("upstream_url") != row["url"]:
+    if canonicalize_github_url(str(payload.get("upstream_url", ""))) != canonicalize_github_url(row["url"]):
         failures.append(f"import receipt URL mismatch for {component}")
     previous_digest = payload.get("previous_receipt_digest")
     if previous_digest is not None and not DIGEST_RE.fullmatch(previous_digest):
@@ -175,12 +197,51 @@ def _load_component_test_report(required_components: list[str]) -> list[str]:
     return failures
 
 
+def _load_runtime_health_report(required_components: list[str], profile: dict[str, object], profile_path: Path) -> list[str]:
+    failures: list[str] = []
+    if not RUNTIME_HEALTH_REPORT.exists():
+        return ["runtime health receipt is required for all-real profile"]
+    payload = json.loads(RUNTIME_HEALTH_REPORT.read_text(encoding="utf-8"))
+    if payload.get("profile") != "all-real":
+        failures.append("runtime health receipt must be generated with profile 'all-real'")
+    expected_fidelis_commit = _git("rev-parse", "HEAD")
+    if payload.get("fidelis_commit") != expected_fidelis_commit:
+        failures.append(f"runtime health receipt Fidelis commit mismatch: expected {expected_fidelis_commit!r}, got {payload.get('fidelis_commit')!r}")
+    expected_profile_digest = sha256_hex_bytes(profile_path.read_bytes())
+    if payload.get("profile_digest") != expected_profile_digest:
+        failures.append("runtime health receipt profile digest mismatch")
+    expected_policy_digest = sha256_hex_bytes(DEPENDENCY_POLICY.read_bytes())
+    if payload.get("dependency_policy_digest") != expected_policy_digest:
+        failures.append("runtime health receipt dependency policy digest mismatch")
+    components = payload.get("components")
+    if not isinstance(components, list):
+        failures.append("runtime health receipt has invalid components payload")
+        return failures
+    by_component = {row.get("component"): row for row in components if isinstance(row, dict)}
+    for component in required_components:
+        row = by_component.get(component)
+        if row is None:
+            failures.append(f"runtime health receipt missing required component: {component}")
+            continue
+        provenance = row.get("adapter_provenance")
+        derived_advisory = row.get("derived_advisory")
+        expected_tree = _live_tree_hash(PATHS[component])
+        if row.get("component_tree") != expected_tree:
+            failures.append(f"runtime health receipt component tree mismatch for {component}: expected {expected_tree!r}, got {row.get('component_tree')!r}")
+        if profile.get("allow_stubbed_adapters") is False and provenance != "native":
+            failures.append(f"runtime health requires native adapter provenance for {component}, got {provenance!r}")
+        if profile.get("allow_derived_advisory") is False and derived_advisory is not False:
+            failures.append(f"runtime health requires non-derived advisory status for {component}, got {derived_advisory!r}")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("profile", choices=("minimal", "all-real"))
     args = parser.parse_args()
 
-    profile = json.loads((ROOT / "profiles" / f"{args.profile}.json").read_text())
+    profile_path = ROOT / "profiles" / f"{args.profile}.json"
+    profile = json.loads(profile_path.read_text())
     failures: list[str] = []
     for component in profile["required_components"]:
         path = ROOT / PATHS[component]
@@ -209,11 +270,16 @@ def main() -> int:
                 failures.append(f"imported source manifest name mismatch for {component}: expected {expected['name']!r}, got {row['name']!r}")
             if row["branch"] != expected["branch"]:
                 failures.append(f"imported source manifest branch mismatch for {component}: expected {expected['branch']!r}, got {row['branch']!r}")
-            if row["url"] != expected["url"]:
+            if canonicalize_github_url(row["url"]) != canonicalize_github_url(expected["url"]):
                 failures.append(f"imported source manifest URL mismatch for {component}: expected {expected['url']!r}, got {row['url']!r}")
             reachability_status, reachability_failure = _upstream_reachability_status(row["name"], row["branch"], row["commit"])
             if reachability_status != "reachable" and reachability_failure:
                 failures.append(reachability_failure)
+            upstream_tree, upstream_tree_failure = _upstream_tree_hash(row["name"], row["branch"], row["commit"])
+            if upstream_tree_failure:
+                failures.append(upstream_tree_failure)
+            elif upstream_tree != row["tree"]:
+                failures.append(f"imported source manifest upstream tree mismatch for {component}: expected upstream tree {upstream_tree!r}, got {row['tree']!r}")
             live_tree = _live_tree_hash(expected_prefix)
             if live_tree is None:
                 failures.append(f"unable to resolve live tree hash for required component: {component} ({expected_prefix})")
@@ -231,10 +297,7 @@ def main() -> int:
 
     if args.profile == "all-real":
         failures.extend(_load_component_test_report(profile["required_components"]))
-        if profile.get("allow_stubbed_adapters") is False:
-            failures.append("semantic adapter provenance must still be checked by runtime health receipts before all-real can pass")
-        if profile.get("allow_derived_advisory") is False:
-            failures.append("derived advisory status must still be checked by runtime health receipts before all-real can pass")
+        failures.extend(_load_runtime_health_report(profile["required_components"], profile, profile_path))
 
     if failures:
         for failure in failures:
@@ -242,7 +305,7 @@ def main() -> int:
         return 1
 
     if args.profile == "all-real":
-        print(f"Profile {args.profile!r} has all required physical components, manifest receipts, and component test receipts.")
+        print(f"Profile {args.profile!r} has all required physical components, manifest receipts, component test receipts, and runtime health receipts.")
     else:
         print(f"Profile {args.profile!r} has all required physical components.")
     return 0

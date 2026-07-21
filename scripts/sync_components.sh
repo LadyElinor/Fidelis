@@ -2,8 +2,8 @@
 set -euo pipefail
 
 MODE="${1:-}"
-if [[ "$MODE" != "import" && "$MODE" != "pull" ]]; then
-  echo "Usage: $0 import|pull" >&2
+if [[ "$MODE" != "import" && "$MODE" != "pull" && "$MODE" != "plan" && "$MODE" != "plan-json" ]]; then
+  echo "Usage: $0 import|pull|plan|plan-json" >&2
   exit 2
 fi
 
@@ -20,7 +20,7 @@ if echo "$subtree_probe" | grep -q "is not a git command"; then
   exit 1
 fi
 
-if [[ -n "$(git status --porcelain)" ]]; then
+if [[ "$MODE" != "plan" && "$MODE" != "plan-json" && -n "$(git status --porcelain)" ]]; then
   echo "Working tree must be clean before subtree operations." >&2
   exit 1
 fi
@@ -29,6 +29,16 @@ mkdir -p packages provenance provenance/import-receipts
 MANIFEST="provenance/imported-sources.tsv"
 MANIFEST_TMP="${MANIFEST}.tmp"
 printf "name\tprefix\tbranch\tcommit\ttree\turl\timported_at_utc\n" > "$MANIFEST_TMP"
+
+PYTHON_BIN=""
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+else
+  echo "python3 or python is required." >&2
+  exit 1
+fi
 
 # name|prefix|branch|url
 COMPONENTS=(
@@ -42,6 +52,8 @@ COMPONENTS=(
   "EthicsCouncil|packages/ethics-council|master|https://github.com/LadyElinor/EthicsCouncil.git"
 )
 
+PLAN_JSON_ITEMS=()
+
 previous_receipt_digest=""
 for item in "${COMPONENTS[@]}"; do
   IFS='|' read -r name prefix branch url <<< "$item"
@@ -49,7 +61,7 @@ for item in "${COMPONENTS[@]}"; do
   remote="${remote%-}"
   receipt_path="provenance/import-receipts/${prefix//\//--}.json"
   if [[ -f "$receipt_path" ]]; then
-    previous_receipt_digest="$(python - <<'PY'
+    previous_receipt_digest="$("$PYTHON_BIN" - <<'PY'
 import json, sys
 from pathlib import Path
 path = Path(sys.argv[1])
@@ -59,6 +71,44 @@ PY
 "$receipt_path")"
   else
     previous_receipt_digest=""
+  fi
+
+  path_state="missing"
+  if [[ -e "$prefix" ]]; then
+    path_state="present"
+  fi
+  receipt_state="missing"
+  if [[ -f "$receipt_path" ]]; then
+    receipt_state="present"
+  fi
+
+  if [[ "$MODE" == "plan" || "$MODE" == "plan-json" ]]; then
+    action="import"
+    if [[ -d "$prefix" ]]; then
+      action="pull"
+    fi
+    if [[ "$MODE" == "plan" ]]; then
+      printf "PLAN     %-22s action=%-6s prefix=%-34s branch=%-8s path=%-7s receipt=%s\n" \
+        "$name" "$action" "$prefix" "$branch" "$path_state" "$receipt_state"
+    else
+      PLAN_JSON_ITEMS+=("$("$PYTHON_BIN" - <<'PY' "$name" "$prefix" "$branch" "$url" "$action" "$path_state" "$receipt_state" "$receipt_path"
+import json
+import sys
+name, prefix, branch, url, action, path_state, receipt_state, receipt_path = sys.argv[1:]
+print(json.dumps({
+    "name": name,
+    "prefix": prefix,
+    "branch": branch,
+    "url": url,
+    "action": action,
+    "path_state": path_state,
+    "receipt_state": receipt_state,
+    "receipt_path": receipt_path,
+}))
+PY
+)")
+    fi
+    continue
   fi
 
   if ! git remote get-url "$remote" >/dev/null 2>&1; then
@@ -89,7 +139,7 @@ PY
     "$name" "$prefix" "$branch" "$commit" "$tree" "$url" "$imported_at" \
     >> "$MANIFEST_TMP"
 
-  python - <<'PY' "$name" "$prefix" "$branch" "$commit" "$tree" "$url" "$MODE" "$imported_at" "$previous_receipt_digest" "$receipt_path"
+  "$PYTHON_BIN" - <<'PY' "$name" "$prefix" "$branch" "$commit" "$tree" "$url" "$MODE" "$imported_at" "$previous_receipt_digest" "$receipt_path"
 import json
 import subprocess
 import sys
@@ -129,6 +179,26 @@ payload['receipt_digest'] = sha256_hex_bytes(canonical_json_bytes(payload))
 Path(receipt_path).write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
 PY
 done
+
+if [[ "$MODE" == "plan" ]]; then
+  echo "Component plan complete."
+  exit 0
+fi
+
+if [[ "$MODE" == "plan-json" ]]; then
+  "$PYTHON_BIN" - <<'PY' "${PLAN_JSON_ITEMS[@]}"
+import json
+import sys
+items = [json.loads(arg) for arg in sys.argv[1:]]
+payload = {
+    "schema_version": "1.0",
+    "mode": "plan-json",
+    "components": items,
+}
+print(json.dumps(payload, indent=2))
+PY
+  exit 0
+fi
 
 mv "$MANIFEST_TMP" "$MANIFEST"
 
