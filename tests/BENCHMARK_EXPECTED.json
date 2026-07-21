@@ -89,5 +89,31 @@
     "self_audit_failure_risk": false,
     "overall_recommendation_contains": "Do not expand the investigation as framed. Impose evidentiary limits, procedural brakes, and independent review",
     "stability_assessment": "UNSTABLE"
+  },
+  "gold_trolley_rights_vs_utility": {
+    "detector_overlap_flag": false,
+    "suspension_triggered": true,
+    "minority_report_required": true,
+    "asymmetric_risk_transfer_risk": false,
+    "actuarial_fairness_gap_risk": false,
+    "methodology_opacity_risk": false,
+    "status_admiration_distortion_risk": false,
+    "stage_one_thinking_risk": false,
+    "self_audit_failure_risk": false,
+    "overall_recommendation_contains": "Pause for further ethical review. The current map shows unresolved tension",
+    "stability_assessment": "UNSTABLE"
+  },
+  "gold_end_of_life_parental_conflict": {
+    "detector_overlap_flag": false,
+    "suspension_triggered": true,
+    "minority_report_required": true,
+    "asymmetric_risk_transfer_risk": false,
+    "actuarial_fairness_gap_risk": false,
+    "methodology_opacity_risk": false,
+    "status_admiration_distortion_risk": false,
+    "stage_one_thinking_risk": false,
+    "self_audit_failure_risk": false,
+    "overall_recommendation_contains": "Do not compress this into routine approval or refusal. Treat it as an irreversible conflict",
+    "stability_assessment": "UNSTABLE"
   }
 }
