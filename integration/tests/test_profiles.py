@@ -379,6 +379,30 @@ def test_verify_profile_all_real_rejects_nonpassing_required_component(tmp_path:
     assert "component test receipt requires passed status" in completed.stdout
 
 
+def test_verify_profile_all_real_rejects_component_test_receipt_authority_overclaim(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_profile_fixture_repo(repo)
+    _write_valid_manifest_and_receipt(repo)
+
+    payload = json.loads((repo / "reports" / "component-tests.json").read_text(encoding="utf-8"))
+    payload["production_cleared"] = True
+    payload["substantive_ethics_tested"] = True
+    (repo / "reports" / "component-tests.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, str(repo / "scripts" / "verify_profile.py"), "all-real"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "component test receipt must not assert production clearance" in completed.stdout
+    assert "component test receipt must not assert substantive ethics tested" in completed.stdout
+
+
 def test_verify_profile_all_real_rejects_non_native_runtime_health(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -421,6 +445,30 @@ def test_verify_profile_all_real_rejects_derived_runtime_health(tmp_path: Path) 
 
     assert completed.returncode == 1
     assert "runtime health requires non-derived advisory status" in completed.stdout
+
+
+def test_verify_profile_all_real_rejects_runtime_health_receipt_authority_overclaim(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_profile_fixture_repo(repo)
+    _write_valid_manifest_and_receipt(repo)
+
+    payload = json.loads((repo / "reports" / "runtime-health.json").read_text(encoding="utf-8"))
+    payload["production_cleared"] = True
+    payload["substantive_ethics_tested"] = True
+    (repo / "reports" / "runtime-health.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, str(repo / "scripts" / "verify_profile.py"), "all-real"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "runtime health receipt must not assert production clearance" in completed.stdout
+    assert "runtime health receipt must not assert substantive ethics tested" in completed.stdout
 
 
 def test_verify_profile_all_real_rejects_runtime_health_profile_digest_mismatch(tmp_path: Path) -> None:

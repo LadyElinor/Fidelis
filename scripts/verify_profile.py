@@ -181,6 +181,10 @@ def _load_component_test_report(required_components: list[str]) -> list[str]:
     payload = json.loads(COMPONENT_TEST_REPORT.read_text(encoding="utf-8"))
     if payload.get("profile") != "all-real":
         failures.append("component test receipt must be generated with profile 'all-real'")
+    if payload.get("production_cleared") is not False:
+        failures.append("component test receipt must not assert production clearance")
+    if payload.get("substantive_ethics_tested") is not False:
+        failures.append("component test receipt must not assert substantive ethics tested")
     results = payload.get("results")
     if not isinstance(results, list):
         failures.append("component test receipt has invalid results payload")
@@ -204,6 +208,10 @@ def _load_runtime_health_report(required_components: list[str], profile: dict[st
     payload = json.loads(RUNTIME_HEALTH_REPORT.read_text(encoding="utf-8"))
     if payload.get("profile") != "all-real":
         failures.append("runtime health receipt must be generated with profile 'all-real'")
+    if payload.get("production_cleared") is not False:
+        failures.append("runtime health receipt must not assert production clearance")
+    if payload.get("substantive_ethics_tested") is not False:
+        failures.append("runtime health receipt must not assert substantive ethics tested")
     expected_fidelis_commit = _git("rev-parse", "HEAD")
     if payload.get("fidelis_commit") != expected_fidelis_commit:
         failures.append(f"runtime health receipt Fidelis commit mismatch: expected {expected_fidelis_commit!r}, got {payload.get('fidelis_commit')!r}")
