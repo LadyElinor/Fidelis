@@ -30,6 +30,7 @@ def test_check_bootstrap_summary_json_emits_nonproduction_flags(tmp_path: Path) 
         encoding="utf-8",
         newline="\n",
     )
+    (repo / "scripts" / "sync_components.sh").chmod(0o755)
 
     completed = subprocess.run(
         [sys.executable, str(repo / "scripts" / "check_bootstrap.py"), "--summary-json"],
@@ -70,6 +71,7 @@ def test_check_bootstrap_human_output_emits_nonproduction_flags(tmp_path: Path) 
         encoding="utf-8",
         newline="\n",
     )
+    (repo / "scripts" / "sync_components.sh").chmod(0o755)
 
     completed = subprocess.run(
         [sys.executable, str(repo / "scripts" / "check_bootstrap.py")],
