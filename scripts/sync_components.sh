@@ -25,11 +25,6 @@ if [[ "$MODE" != "plan" && "$MODE" != "plan-json" && -n "$(git status --porcelai
   exit 1
 fi
 
-mkdir -p packages provenance provenance/import-receipts
-MANIFEST="provenance/imported-sources.tsv"
-MANIFEST_TMP="${MANIFEST}.tmp"
-printf "name\tprefix\tbranch\tcommit\ttree\turl\timported_at_utc\n" > "$MANIFEST_TMP"
-
 PYTHON_BIN=""
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN="python3"
@@ -39,6 +34,39 @@ else
   echo "python3 or python is required." >&2
   exit 1
 fi
+
+git_name="$(git config --local --get user.name || true)"
+git_email="$(git config --local --get user.email || true)"
+if [[ "$MODE" != "plan" && "$MODE" != "plan-json" && ( -z "$git_name" || -z "$git_email" ) ]]; then
+  echo "Repository-local Git user.name and user.email are required before subtree operations." >&2
+  echo "Set them with: git config --local user.name \"Your Name\" && git config --local user.email \"you@example.com\"" >&2
+  exit 1
+fi
+
+mkdir -p packages provenance provenance/import-receipts
+MANIFEST="provenance/imported-sources.tsv"
+MANIFEST_TMP="${MANIFEST}.tmp"
+TMP_RECEIPT_DIR="provenance/.import-receipts.tmp"
+mkdir -p "$TMP_RECEIPT_DIR"
+printf "name\tprefix\tbranch\tcommit\ttree\turl\timported_at_utc\n" > "$MANIFEST_TMP"
+
+current_component=""
+cleanup() {
+  rm -f "$MANIFEST_TMP"
+  rm -rf "$TMP_RECEIPT_DIR"
+}
+
+on_error() {
+  status=$?
+  cleanup
+  if [[ -n "$current_component" ]]; then
+    echo "Component $MODE failed while processing: $current_component" >&2
+  fi
+  exit "$status"
+}
+
+trap on_error ERR
+trap cleanup EXIT
 
 # name|prefix|branch|url
 COMPONENTS=(
@@ -57,18 +85,20 @@ PLAN_JSON_ITEMS=()
 previous_receipt_digest=""
 for item in "${COMPONENTS[@]}"; do
   IFS='|' read -r name prefix branch url <<< "$item"
+  current_component="$name"
   remote="source-$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
   remote="${remote%-}"
   receipt_path="provenance/import-receipts/${prefix//\//--}.json"
+  receipt_tmp_path="$TMP_RECEIPT_DIR/${prefix//\//--}.json"
   if [[ -f "$receipt_path" ]]; then
-    previous_receipt_digest="$("$PYTHON_BIN" - <<'PY'
+    previous_receipt_digest="$("$PYTHON_BIN" - "$receipt_path" <<'PY'
 import json, sys
 from pathlib import Path
 path = Path(sys.argv[1])
 payload = json.loads(path.read_text(encoding='utf-8'))
 print(payload.get('receipt_digest', ''))
 PY
-"$receipt_path")"
+)"
   else
     previous_receipt_digest=""
   fi
@@ -139,7 +169,7 @@ PY
     "$name" "$prefix" "$branch" "$commit" "$tree" "$url" "$imported_at" \
     >> "$MANIFEST_TMP"
 
-  "$PYTHON_BIN" - <<'PY' "$name" "$prefix" "$branch" "$commit" "$tree" "$url" "$MODE" "$imported_at" "$previous_receipt_digest" "$receipt_path"
+  "$PYTHON_BIN" - "$name" "$prefix" "$branch" "$commit" "$tree" "$url" "$MODE" "$imported_at" "$previous_receipt_digest" "$receipt_tmp_path" <<'PY'
 import json
 import subprocess
 import sys
@@ -179,6 +209,7 @@ payload['receipt_digest'] = sha256_hex_bytes(canonical_json_bytes(payload))
 Path(receipt_path).write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
 PY
 done
+current_component=""
 
 if [[ "$MODE" == "plan" ]]; then
   echo "Component plan complete."
@@ -201,6 +232,9 @@ PY
 fi
 
 mv "$MANIFEST_TMP" "$MANIFEST"
+rm -rf provenance/import-receipts
+mkdir -p provenance/import-receipts
+cp "$TMP_RECEIPT_DIR"/*.json provenance/import-receipts/
 
 # Commit the refreshed manifest and receipts separately because subtree commands commit as they run.
 git add "$MANIFEST" provenance/import-receipts

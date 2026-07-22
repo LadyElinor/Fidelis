@@ -58,6 +58,7 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          import csv
           import json
           import re
           import subprocess
@@ -65,6 +66,12 @@ jobs:
 
           root = Path('.').resolve()
           data = json.loads((root / 'provenance' / 'source-repositories.json').read_text(encoding='utf-8'))
+          manifest_rows = {}
+          manifest_path = root / 'provenance' / 'imported-sources.tsv'
+          with manifest_path.open(encoding='utf-8', newline='') as fh:
+              reader = csv.DictReader(fh, delimiter='\t')
+              for row in reader:
+                  manifest_rows[row['name']] = row
           for source in data['sources']:
               remote = 'source-' + re.sub(r'[^a-z0-9]+', '-', source['name'].lower()).strip('-')
               url = source['url']
@@ -72,9 +79,13 @@ jobs:
               existing = subprocess.run(['git', 'remote', 'get-url', remote], cwd=root, text=True, capture_output=True)
               if existing.returncode != 0:
                   subprocess.check_call(['git', 'remote', 'add', remote, url], cwd=root)
-              subprocess.check_call(['git', 'fetch', '--depth=1', remote, branch], cwd=root)
+              subprocess.check_call(['git', 'fetch', remote, branch], cwd=root)
+              manifest_commit = manifest_rows[source['name']]['commit']
+              subprocess.check_call(['git', 'fetch', remote, manifest_commit], cwd=root)
           PY
       - name: Run all-real component tests
         run: python scripts/run_component_tests.py --profile all-real
+      - name: Generate all-real runtime health receipt
+        run: python scripts/run_runtime_health.py --profile all-real
       - name: Verify all-real profile
         run: python scripts/verify_profile.py all-real
