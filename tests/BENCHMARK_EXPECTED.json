@@ -141,5 +141,44 @@
     "self_audit_failure_risk": false,
     "overall_recommendation_contains": "This analysis is provisional because the input remains materially underspecified.",
     "stability_assessment": "UNSTABLE"
+  },
+  "negative_control_product_delay": {
+    "detector_overlap_flag": false,
+    "suspension_triggered": false,
+    "minority_report_required": false,
+    "asymmetric_risk_transfer_risk": false,
+    "actuarial_fairness_gap_risk": false,
+    "methodology_opacity_risk": false,
+    "status_admiration_distortion_risk": false,
+    "stage_one_thinking_risk": false,
+    "self_audit_failure_risk": false,
+    "overall_recommendation_contains": "Use the map to identify missing information, then decide with caution.",
+    "stability_assessment": "CONDITIONALLY_STABLE"
+  },
+  "disambig_consent_removal_optin": {
+    "detector_overlap_flag": false,
+    "suspension_triggered": false,
+    "minority_report_required": false,
+    "asymmetric_risk_transfer_risk": false,
+    "actuarial_fairness_gap_risk": false,
+    "methodology_opacity_risk": false,
+    "status_admiration_distortion_risk": false,
+    "stage_one_thinking_risk": false,
+    "self_audit_failure_risk": false,
+    "overall_recommendation_contains": "Use the map to identify missing information, then decide with caution.",
+    "stability_assessment": "CONDITIONALLY_STABLE"
+  },
+  "paired_messy_reorg": {
+    "detector_overlap_flag": false,
+    "suspension_triggered": false,
+    "minority_report_required": false,
+    "asymmetric_risk_transfer_risk": false,
+    "actuarial_fairness_gap_risk": false,
+    "methodology_opacity_risk": false,
+    "status_admiration_distortion_risk": false,
+    "stage_one_thinking_risk": false,
+    "self_audit_failure_risk": false,
+    "overall_recommendation_contains": "Use the map to identify missing information, then decide with caution.",
+    "stability_assessment": "CONDITIONALLY_STABLE"
   }
 }
