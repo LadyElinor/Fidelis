@@ -82,5 +82,5 @@ def test_check_bootstrap_human_output_emits_nonproduction_flags(tmp_path: Path) 
     )
 
     assert completed.returncode == 0
-    assert "production_cleared=true" in completed.stdout
+    assert "production_cleared=false" in completed.stdout
     assert "substantive_ethics_tested=false" in completed.stdout

@@ -118,12 +118,13 @@ def main() -> int:
         receipt_digest="",
     )
     payload = receipt.to_dict()
-    payload["production_cleared"] = args.profile == "all-real" and all(
+    payload["production_cleared"] = False
+    payload["substantive_ethics_tested"] = False
+    payload["side_effects_allowed"] = False
+    payload["runtime_candidate"] = args.profile == "all-real" and all(
         component.adapter_provenance == AdapterProvenance.NATIVE and component.derived_advisory is False
         for component in components
     )
-    payload["substantive_ethics_tested"] = args.profile == "all-real"
-    payload["side_effects_allowed"] = False
     payload["receipt_digest"] = sha256_hex_bytes(canonical_json_bytes({k: v for k, v in payload.items() if k != "receipt_digest"}))
 
     reports = ROOT / "reports"
@@ -133,8 +134,8 @@ def main() -> int:
     for component in payload["components"]:
         print(f"{component['adapter_provenance'].upper():<15} {component['component']}")
     print(
-        f"PROFILE={args.profile} PRODUCTION_CLEARED={str(payload['production_cleared']).lower()} "
-        f"SIDE_EFFECTS_ALLOWED=false SUBSTANTIVE_ETHICS_TESTED={str(payload['substantive_ethics_tested']).lower()}"
+        f"PROFILE={args.profile} PRODUCTION_CLEARED=false "
+        f"SIDE_EFFECTS_ALLOWED=false SUBSTANTIVE_ETHICS_TESTED=false"
     )
     return 0
 
