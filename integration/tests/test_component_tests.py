@@ -165,6 +165,33 @@ def test_run_component_tests_resolves_npm_cmd_on_windows() -> None:
     assert resolved[1:] == ["test"]
 
 
+def test_prepare_component_is_noop_for_non_sophron_components(tmp_path: Path) -> None:
+    from scripts.run_component_tests import _prepare_component
+
+    ok, returncode = _prepare_component("meaning-assay", tmp_path, ["npm", "test"])
+    assert ok is True
+    assert returncode is None
+
+
+def test_prepare_component_blocks_sophron_when_npm_missing(monkeypatch, tmp_path: Path) -> None:
+    from scripts.run_component_tests import _prepare_component
+
+    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr("scripts.run_component_tests._resolved_command", lambda command: (command, False))
+
+    ok, returncode = _prepare_component("sophron-cer", tmp_path, ["npm", "test"])
+    assert ok is False
+    assert returncode is None
+
+
+def test_prepare_component_blocks_cer_telemetry_without_package_metadata(tmp_path: Path) -> None:
+    from scripts.run_component_tests import _prepare_component
+
+    ok, returncode = _prepare_component("cer-telemetry", tmp_path, ["npm", "test"])
+    assert ok is False
+    assert returncode is None
+
+
 def test_run_runtime_health_all_real_marks_missing_required_components_unavailable(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
