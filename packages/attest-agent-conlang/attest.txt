@@ -1,0 +1,94 @@
+Attest is a typed, auditable inter-agent message protocol for preserving warrant, lineage, and trust-boundary semantics across model and tool hops.
+
+Its core idea is simple:
+
+**Compress the said; never compress the warrant.**
+
+Attest is not a magic truth machine, a universal semantic code, or a guarantee against hidden prompt injection inside a model. It does something narrower and more defensible: it makes the trust envelope around communication explicit enough for a third party to inspect.
+
+That means a verifier can often check:
+- what kind of communicative act occurred
+- whether the sender claimed warrant and what kind
+- what grounds were cited
+- which messages or artifacts the claim depends on
+- whether a relay boundary was crossed explicitly
+- whether visible dissent or retract history was dropped from a visible source set
+- whether a message was altered or misattributed relative to signed canonical content
+
+It does **not** mean the verifier can automatically prove:
+- that the claim is true
+- that all relevant unseen history was present
+- that apparently distinct grounds are genuinely independent in the strongest sense
+- that an opaque payload is semantically legible
+- that a model never internally used relayed content before later emitting an explicit uptake
+
+## Message structure
+
+An Attest message has two parts:
+1. a standardized envelope
+2. a codec-agnostic payload
+
+The envelope carries:
+- frame type
+- sender and recipient context
+- warrant
+- grounds
+- lineage
+- ordering anchor
+- integrity or signature material
+- optional authority receipts
+
+The payload may be:
+- natural language
+- structured notation
+- domain-specific code
+- opaque model-native content
+
+Attest standardizes the envelope, not the payload language.
+
+## What makes it useful
+
+### 1. Use/mention is explicit
+`RELAY` is a first-class frame. A relay transports content without vouching for its truth or normative force.
+
+### 2. Warrant-bearing acts need grounds
+Evidential warrant without grounds is malformed.
+
+### 3. Lineage is preserved
+Parent references and ordering anchors make declared ancestry machine-visible.
+
+### 4. Dissent is a protocol primitive
+Unresolved dissent should remain visible in downstream aggregates.
+
+### 5. Hard and soft checks are separated
+Some properties are structural and artifact-local. Others remain semantic, visibility-dependent, or policy-dependent.
+
+## Design ceiling
+
+Attest is strongest on:
+- well-formedness
+- tamper evidence
+- sender binding when signatures verify
+- explicit lineage overlap
+- visible relay and retract structure
+
+Attest is weaker on:
+- semantic faithfulness of summaries
+- hidden common-cause dependence
+- completeness of unseen branches
+- interpretation of opaque payload content
+
+That ceiling is not a flaw in presentation. It is part of the protocol's honest scope.
+
+## v0.2 direction
+
+The most important next steps are:
+1. normative canonicalization
+2. first-class deployment profile artifacts
+3. first-class grounds namespace and resolver contract
+4. tighter authority receipt binding
+5. real signed test vectors
+6. clearer dissent-layer split between presence and faithfulness
+7. pitch and documentation reconciliation
+
+Attest should become more interoperable, more explicit about deployment policy, and more honest about what remains soft.
