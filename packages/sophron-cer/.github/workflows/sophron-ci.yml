@@ -1,0 +1,56 @@
+name: sophron-ci
+
+on:
+  push:
+    branches: ["main", "feat/**", "sophron-safety-case-v1"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sophron-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  js-tests:
+    name: js tests + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - name: lint
+        run: npm run lint
+      - name: node --test suite
+        run: npm test
+
+  sophron-checks:
+    name: sophron checker gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install validator deps
+        run: pip install --quiet jsonschema pyyaml
+      - name: run checker registry
+        run: python ci/run_sophron_checks.py
+
+  determinism:
+    name: determinism (normalized eval receipt stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - name: normalized output determinism
+        run: python ci/check_alignment_eval_determinism.py
