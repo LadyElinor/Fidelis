@@ -14,18 +14,30 @@ if [[ -z "$ROOT" ]]; then
 fi
 cd "$ROOT"
 
-subtree_probe="$(git subtree 2>&1 || true)"
+GIT_BIN="git"
+if [[ "$(uname -s 2>/dev/null || true)" == "Linux" ]] && grep -qi microsoft /proc/version 2>/dev/null; then
+  win_git="/mnt/c/Program Files/Git/cmd/git.exe"
+  if [[ -x "$win_git" ]]; then
+    GIT_BIN="$win_git"
+  fi
+fi
+
+git_cmd() {
+  "$GIT_BIN" "$@"
+}
+
+subtree_probe="$(git_cmd subtree 2>&1 || true)"
 if echo "$subtree_probe" | grep -q "is not a git command"; then
   echo "git subtree is required but was not found." >&2
   exit 1
 fi
 
 if [[ "$MODE" != "plan" && "$MODE" != "plan-json" ]]; then
-  if ! git diff --quiet --ignore-submodules -- && ! git diff --quiet --ignore-submodules --exit-code; then
+  if ! git_cmd diff --quiet --ignore-submodules --; then
     echo "Working tree must be clean before subtree operations." >&2
     exit 1
   fi
-  if ! git diff --cached --quiet --ignore-submodules --; then
+  if ! git_cmd diff --cached --quiet --ignore-submodules --; then
     echo "Working tree must be clean before subtree operations." >&2
     exit 1
   fi
@@ -41,11 +53,11 @@ else
   exit 1
 fi
 
-git_name="$(git config --local --get user.name || true)"
-git_email="$(git config --local --get user.email || true)"
+git_name="$(git_cmd config --local --get user.name || true)"
+git_email="$(git_cmd config --local --get user.email || true)"
 if [[ "$MODE" != "plan" && "$MODE" != "plan-json" && ( -z "$git_name" || -z "$git_email" ) ]]; then
   echo "Repository-local Git user.name and user.email are required before subtree operations." >&2
-  echo "Set them with: git config --local user.name \"Your Name\" && git config --local user.email \"you@example.com\"" >&2
+  echo "Set them with: $GIT_BIN config --local user.name \"Your Name\" && $GIT_BIN config --local user.email \"you@example.com\"" >&2
   exit 1
 fi
 
@@ -147,45 +159,44 @@ PY
     continue
   fi
 
-  if ! git remote get-url "$remote" >/dev/null 2>&1; then
-    git remote add "$remote" "$url"
+  if ! git_cmd remote get-url "$remote" >/dev/null 2>&1; then
+    git_cmd remote add "$remote" "$url"
   fi
-  git fetch "$remote" "$branch" --tags
-  commit="$(git rev-parse "$remote/$branch")"
+  git_cmd fetch "$remote" "$branch" --tags
+  commit="$(git_cmd rev-parse "$remote/$branch")"
 
   if [[ "$MODE" == "import" ]]; then
     if [[ -e "$prefix" ]]; then
       echo "Refusing to import $name: $prefix already exists." >&2
       exit 1
     fi
-    git subtree add --prefix="$prefix" "$remote" "$branch" \
+    git_cmd subtree add --prefix="$prefix" "$remote" "$branch" \
       -m "Import $name at $commit"
   else
     if [[ ! -d "$prefix" ]]; then
       echo "Refusing to pull $name: $prefix is absent. Run import first." >&2
       exit 1
     fi
-    git subtree pull --prefix="$prefix" "$remote" "$branch" \
+    git_cmd subtree pull --prefix="$prefix" "$remote" "$branch" \
       -m "Update $name to $commit"
   fi
 
-  tree="$(git rev-parse HEAD:"$prefix")"
+  tree="$(git_cmd rev-parse HEAD:"$prefix")"
   imported_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
     "$name" "$prefix" "$branch" "$commit" "$tree" "$url" "$imported_at" \
     >> "$MANIFEST_TMP"
 
-  "$PYTHON_BIN" - "$name" "$prefix" "$branch" "$commit" "$tree" "$url" "$MODE" "$imported_at" "$previous_receipt_digest" "$receipt_tmp_path" <<'PY'
+  fidelis_commit="$(git_cmd rev-parse HEAD)"
+  "$PYTHON_BIN" - "$name" "$prefix" "$branch" "$commit" "$tree" "$url" "$MODE" "$imported_at" "$previous_receipt_digest" "$receipt_tmp_path" "$fidelis_commit" <<'PY'
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path('scripts').resolve()))
 from provenance_utils import canonical_json_bytes, sha256_hex_bytes
 
-name, prefix, branch, commit, tree, url, mode, imported_at, previous_digest, receipt_path = sys.argv[1:]
-fidelis_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+name, prefix, branch, commit, tree, url, mode, imported_at, previous_digest, receipt_path, fidelis_commit = sys.argv[1:]
 row = {
     'name': name,
     'prefix': prefix,
@@ -243,9 +254,9 @@ mkdir -p provenance/import-receipts
 cp "$TMP_RECEIPT_DIR"/*.json provenance/import-receipts/
 
 # Commit the refreshed manifest and receipts separately because subtree commands commit as they run.
-git add "$MANIFEST" provenance/import-receipts
-if ! git diff --cached --quiet; then
-  git commit -m "Record component source revisions"
+git_cmd add "$MANIFEST" provenance/import-receipts
+if ! git_cmd diff --cached --quiet; then
+  git_cmd commit -m "Record component source revisions"
 fi
 
 echo "Component $MODE complete."

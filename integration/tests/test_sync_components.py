@@ -44,3 +44,40 @@ def test_sync_components_plan_succeeds_under_git_bash_with_autocrlf_enabled(tmp_
 
     assert completed.returncode == 0
     assert '"mode": "plan-json"' in completed.stdout
+
+
+def test_sync_components_uses_native_windows_git_when_running_under_wsl(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    for relative in [
+        ".gitattributes",
+        "scripts/sync_components.sh",
+        "scripts/provenance_utils.py",
+        "provenance/source-repositories.json",
+    ]:
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((ROOT / relative).read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+
+    (repo / "scripts" / "sync_components.sh").chmod(0o755)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "fixture"], cwd=repo, check=True, capture_output=True, text=True)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            "function uname(){ echo Linux; }\n"
+            "function grep(){ if [ \"$1\" = \"-qi\" ] && [ \"$2\" = \"microsoft\" ] && [ \"$3\" = \"/proc/version\" ]; then return 0; fi; command grep \"$@\"; }\n"
+            "./scripts/sync_components.sh plan-json",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert '"mode": "plan-json"' in completed.stdout
