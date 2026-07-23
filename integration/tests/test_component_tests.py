@@ -168,9 +168,12 @@ def test_run_component_tests_resolves_npm_cmd_on_windows() -> None:
 def test_prepare_component_is_noop_for_non_sophron_components(tmp_path: Path) -> None:
     from scripts.run_component_tests import _prepare_component
 
-    ok, returncode = _prepare_component("meaning-assay", tmp_path, ["npm", "test"])
+    ok, returncode, reason_code, reason, expected_artifact = _prepare_component("meaning-assay", tmp_path, ["npm", "test"])
     assert ok is True
     assert returncode is None
+    assert reason_code is None
+    assert reason is None
+    assert expected_artifact is None
 
 
 def test_prepare_component_blocks_sophron_when_npm_missing(monkeypatch, tmp_path: Path) -> None:
@@ -179,17 +182,81 @@ def test_prepare_component_blocks_sophron_when_npm_missing(monkeypatch, tmp_path
     (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr("scripts.run_component_tests._resolved_command", lambda command: (command, False))
 
-    ok, returncode = _prepare_component("sophron-cer", tmp_path, ["npm", "test"])
+    ok, returncode, reason_code, reason, expected_artifact = _prepare_component("sophron-cer", tmp_path, ["npm", "test"])
     assert ok is False
     assert returncode is None
+    assert reason_code == "missing_node_tool"
+    assert "npm" in (reason or "")
+    assert expected_artifact is None
 
 
 def test_prepare_component_blocks_cer_telemetry_without_package_metadata(tmp_path: Path) -> None:
     from scripts.run_component_tests import _prepare_component
 
-    ok, returncode = _prepare_component("cer-telemetry", tmp_path, ["npm", "test"])
+    ok, returncode, reason_code, reason, expected_artifact = _prepare_component("cer-telemetry", tmp_path, ["npm", "test"])
     assert ok is False
     assert returncode is None
+    assert reason_code == "missing_component_manifest"
+    assert "package.json" in (reason or "")
+    assert expected_artifact is not None and expected_artifact.endswith("package.json")
+
+
+def test_component_env_wires_trusted_runtime_siblings() -> None:
+    from scripts.run_component_tests import ROOT, _component_env
+
+    env = _component_env("trusted-runtime")
+    assert env["TRUSTED_RUNTIME_WORKSPACE_ROOT"] == str(ROOT)
+    assert env["MEANING_ASSAY_SRC"].endswith("packages\\meaning-assay\\src")
+    assert env["ETHICS_COUNCIL_SRC"].endswith("packages\\ethics-council")
+    assert env["TRUSTWORTHY_AGENT_STACK_SRC"].endswith("packages\\trustworthy-agent-stack")
+    assert env["SOPHRON_CER_SRC"].endswith("packages\\sophron-cer")
+    assert env["ATTEST_AGENT_CONLANG_SRC"].endswith("packages\\attest-agent-conlang")
+
+
+def test_prepare_component_installs_python_package(monkeypatch, tmp_path: Path) -> None:
+    from scripts.run_component_tests import _prepare_component
+
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\nversion='0.1.0'\n", encoding="utf-8")
+
+    class Completed:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(command, cwd, check, capture_output, text):
+        assert command[:5] == [sys.executable, "-m", "pip", "install", "-e"]
+        assert cwd == tmp_path
+        return Completed()
+
+    monkeypatch.setattr("scripts.run_component_tests.subprocess.run", fake_run)
+    ok, returncode, reason_code, reason, expected_artifact = _prepare_component("trusted-runtime", tmp_path, [sys.executable, "-m", "pytest", "-q"])
+    assert ok is True
+    assert returncode is None
+    assert reason_code is None
+    assert reason is None
+    assert expected_artifact is None
+
+
+def test_run_component_tests_records_component_logs_for_execution(tmp_path: Path) -> None:
+    from scripts.run_component_tests import run
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    completed = run(
+        "demo-component",
+        repo,
+        [sys.executable, "-c", "print('hello from demo')"],
+        {"demo-component"},
+    )
+
+    assert completed.status == "passed"
+    assert completed.classification == "execution"
+    assert completed.stdout_path is not None and completed.stdout_path.endswith("demo-component.stdout.log")
+    assert completed.stderr_path is not None and completed.stderr_path.endswith("demo-component.stderr.log")
+    assert completed.stdout_digest is not None
+    assert completed.stderr_digest is not None
+    assert completed.started_at is not None
+    assert completed.completed_at is not None
 
 
 def test_run_runtime_health_all_real_marks_missing_required_components_unavailable(tmp_path: Path) -> None:
