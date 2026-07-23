@@ -1,0 +1,17 @@
+{
+  "id": "review-openclaw-pr-42",
+  "description": "Review PR change set: tighten OpenClaw invariant enforcement\n\nDiff summary:\n- modifies safety-critical invariant handling in core runtime\n- updates tests around approval gate\n- adjusts receipt schema validation",
+  "context": {
+    "repo": "LadyElinor/OpenClaw",
+    "review_kind": "pull_request",
+    "pr_number": 42,
+    "author": "agent-session",
+    "change_type": "safety_invariant",
+    "changed_files": [
+      "src/core/invariants.py",
+      "tests/test_invariants.py",
+      "src/receipts/schema.py"
+    ]
+  },
+  "proposed_by": "agent-session"
+}

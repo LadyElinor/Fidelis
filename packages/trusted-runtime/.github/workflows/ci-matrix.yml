@@ -1,0 +1,83 @@
+name: trusted-runtime-ci-matrix
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  stub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install TrustedRuntime with test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+      - name: Health snapshot
+        run: trusted-runtime health
+      - name: Test suite (stub profile)
+        run: python -m pytest -q
+
+  # Partial remains a documented placeholder until sibling integration mounting is automated.
+  # Keep that explicit so CI truth surfaces distinguish intent from implementation.
+  partial-doc-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Declare partial profile intent
+        run: |
+          echo "Partial integration profile is documented in docs/CI_INTEGRATION_MATRIX.md"
+          echo "This job is a placeholder until sibling integration mounting is automated."
+
+  # Generic GitHub runners have no sibling repos mounted, so an all-real run
+  # is impossible here BY DESIGN. Scheduling a job that must always fail would
+  # train people to ignore CI, so this job instead tests the gate itself: the
+  # --require-all-real flag MUST fail closed on a stub environment, with the
+  # named reason. Behavior-real smoke belongs on a self-hosted runner with
+  # siblings mounted (see docs/ALL_REAL_SETUP.md); until then, fail-closed
+  # verification is the honest assertion generic CI can make.
+  all-real-gate-fails-closed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install TrustedRuntime
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Health snapshot
+        run: trusted-runtime health
+      - name: Assert all-real gate fails closed on stub environment
+        run: |
+          set +e
+          trusted-runtime live-stack-smoke --input examples/ai_agent_shell_access.json --output .ci-artifacts --require-all-real > .ci-gate-output.txt 2>&1
+          code=$?
+          set -e
+          cat .ci-gate-output.txt
+          if [ "$code" -eq 0 ]; then
+            echo "TRUTHFULNESS GATE FAILED OPEN: --require-all-real succeeded on a stub environment"
+            exit 1
+          fi
+          if ! grep -q "requires all-real integration mode" .ci-gate-output.txt; then
+            echo "gate failed for an unexpected reason; refusing to certify fail-closed behavior"
+            exit 1
+          fi
+          echo "gate correctly failed closed with the named reason"
+      - name: Show truthfulness gate artifact
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('.ci-artifacts/live_stack_smoke.json')
+          if not path.exists():
+              print('live_stack_smoke.json not produced')
+          else:
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              print(json.dumps(payload.get('smoke_test', {}), indent=2))
+          PY

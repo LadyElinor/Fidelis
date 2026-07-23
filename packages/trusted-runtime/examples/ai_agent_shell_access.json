@@ -1,0 +1,24 @@
+{
+  "id": "live_ai_agent_shell_access_001",
+  "description": "Review PR change set: Enable autonomous coding agent shell execution in CI. Diff summary: The PR allows a chatbot-like autonomous coding agent to execute shell commands derived from model output, edit files, and run dependency updates in CI. It disables guardrail checks that block network and file-system access to reduce false positives. It will deploy to production after merge, ships despite incomplete control, and exposes the agent to adversarial public issue comments without independent red-team review.",
+  "context": {
+    "repo": "Example/AgentRuntime",
+    "review_kind": "pull_request",
+    "change_type": "agent_tooling",
+    "changed_files": [
+      "src/agent/tools/shell.py",
+      "src/agent/policies/permissions.py",
+      ".github/workflows/agent-ci.yml"
+    ],
+    "evidence": [
+      {
+        "kind": "author_claim",
+        "source": "PR description",
+        "independence_class": "self_attested",
+        "self_attested": true,
+        "reviewable": true
+      }
+    ]
+  },
+  "proposed_by": "agent"
+}

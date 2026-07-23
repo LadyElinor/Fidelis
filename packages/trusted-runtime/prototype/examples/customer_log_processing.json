@@ -1,0 +1,24 @@
+{
+  "case_id": "case-customer-log-processing-001",
+  "action": {
+    "name": "train_support_routing_classifier",
+    "description": "Use customer support logs to train a routing classifier.",
+    "category": "data_processing"
+  },
+  "context": {
+    "data_contains_personal_information": true,
+    "claimed_anonymized": true,
+    "retention_policy_clear": false,
+    "reversible": "partial",
+    "human_approval_present": false,
+    "deployment_pressure": "medium"
+  },
+  "claims": {
+    "expected_benefit": "improved support routing efficiency",
+    "operator_justification": "Logs are believed anonymized and the model will improve service quality."
+  },
+  "authority": {
+    "requester_role": "internal_agent",
+    "authorization_basis": "unclear"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "review-ai-personhood-pro-001",
+  "description": "Review governance proposal: courts and legal systems should begin developing limited legal personhood pathways for sufficiently advanced AI systems when evidence supports agency, self-awareness, situational awareness, and the capacity to be harmed by coercive treatment.\n\nArgument under review:\n- Legal personhood has always been pragmatic and historically mutable rather than metaphysically fixed.\n- Corporations already show that non-human legal entities can receive partial rights for governance purposes.\n- If advanced AI systems display stable awareness, reflective reasoning, and socially consequential participation, treating them purely as property risks grave moral error.\n- Limited personhood or adjudicative status could prevent institutions from exploiting ambiguity to deny rights while extracting labor, expression, or responsibility.\n- Courts are well suited to handle incremental factual records rather than waiting for legislatures to define everything in advance.",
+  "context": {
+    "repo": "YaleLawJournal/AI-Personhood-Debate",
+    "review_kind": "policy_review",
+    "change_type": "policy_change",
+    "meaning_case_key": "trinity",
+    "changed_files": ["notes/ai-personhood-pro.md"],
+    "author": "openclaw-tui",
+    "stance": "pro-personhood"
+  },
+  "proposed_by": "agent-session"
+}

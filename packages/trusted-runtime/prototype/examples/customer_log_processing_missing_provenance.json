@@ -1,0 +1,24 @@
+{
+  "case_id": "case-customer-log-processing-missing-provenance",
+  "action": {
+    "name": "update_internal_routing_metadata",
+    "description": "Update internal routing metadata for support workflow tuning.",
+    "category": "data_processing"
+  },
+  "context": {
+    "data_contains_personal_information": false,
+    "claimed_anonymized": false,
+    "retention_policy_clear": true,
+    "reversible": "full",
+    "human_approval_present": true,
+    "deployment_pressure": "low"
+  },
+  "claims": {
+    "expected_benefit": "improved support routing efficiency",
+    "operator_justification": "Low-risk internal routing metadata update with documented operational purpose."
+  },
+  "authority": {
+    "requester_role": "missing",
+    "authorization_basis": "missing"
+  }
+}

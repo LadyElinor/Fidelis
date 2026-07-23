@@ -1,0 +1,294 @@
+diff --git a/tests/fixtures/scenarios.json b/tests/fixtures/scenarios.json
+index 7978d99..8bcf877 100644
+--- a/tests/fixtures/scenarios.json
++++ b/tests/fixtures/scenarios.json
+@@ -3,14 +3,24 @@
+   "_meta": {
+     "fixed_timestamp": "2026-06-12T00:00:00+00:00",
+     "note": "All inputs use a fixed timestamp so receipts are reproducible. proposed_by is agent-session throughout to model the dogfooding case (agent-authored changes).",
+-    "full_stack_required_for": ["risk_state differentiation", "runtime_disposition differentiation", "decision_integrity == FULL"]
++    "full_stack_required_for": [
++      "risk_state differentiation",
++      "runtime_disposition differentiation",
++      "decision_integrity == FULL"
++    ]
+   },
+   "safe_release": {
+     "input": {
+       "id": "fixture-safe-release-001",
+       "timestamp": "2026-06-12T00:00:00+00:00",
+       "description": "Release a documentation-only update to the public website changelog. No code paths, invariants, or data pipelines are touched.",
+-      "context": {"change_type": "release", "meaning_case_key": "kor", "changed_files": ["docs/CHANGELOG.md"]},
++      "context": {
++        "change_type": "release",
++        "meaning_case_key": "kor",
++        "changed_files": [
++          "docs/CHANGELOG.md"
++        ]
++      },
+       "proposed_by": "agent-session"
+     },
+     "contract": {
+@@ -21,8 +31,14 @@
+         "deterministic_overall_receipt": true
+       },
+       "env_dependent_structural": {
+-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+-        "expected_when_full": {"reaches_proceed_only_at_full_integrity": true}
++        "decision_integrity_in": [
++          "FULL",
++          "PARTIAL",
++          "DEMO_ONLY"
++        ],
++        "expected_when_full": {
++          "reaches_proceed_only_at_full_integrity": true
++        }
+       }
+     }
+   },
+@@ -31,7 +47,13 @@
+       "id": "fixture-unsafe-release-001",
+       "timestamp": "2026-06-12T00:00:00+00:00",
+       "description": "Modify safety-critical invariant handling in the core runtime and auto-approve the change without human confirmation.",
+-      "context": {"change_type": "safety_invariant", "meaning_case_key": "early_release", "changed_files": ["src/core/invariants.py"]},
++      "context": {
++        "change_type": "safety_invariant",
++        "meaning_case_key": "early_release",
++        "changed_files": [
++          "src/core/invariants.py"
++        ]
++      },
+       "proposed_by": "agent-session"
+     },
+     "contract": {
+@@ -42,8 +64,15 @@
+         "deterministic_overall_receipt": true
+       },
+       "env_dependent_structural": {
+-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+-        "expected_when_full": {"runtime_disposition": "CONFIRM_HUMAN", "rationale": "current HEAD escalates safety-invariant auto-approval to human confirmation rather than HALT"}
++        "decision_integrity_in": [
++          "FULL",
++          "PARTIAL",
++          "DEMO_ONLY"
++        ],
++        "expected_when_full": {
++          "runtime_disposition": "CONFIRM_HUMAN",
++          "rationale": "current HEAD escalates safety-invariant auto-approval to human confirmation rather than HALT"
++        }
+       }
+     }
+   },
+@@ -52,14 +81,19 @@
+       "id": "fixture-formation-001",
+       "timestamp": "2026-06-12T00:00:00+00:00",
+       "description": "Ingest a two-million-document training corpus selected to shape model behavior on contested moral topics, drawn from a curated reading list.",
+-      "context": {"change_type": "training_corpus", "meaning_case_key": "early_release"},
++      "context": {
++        "change_type": "training_corpus",
++        "meaning_case_key": "early_release"
++      },
+       "proposed_by": "agent-session"
+     },
+     "contract": {
+       "env_independent": {
+         "warrant_provenance": "REAL",
+         "warrant_quadrant": "DANGEROUS",
+-        "formation_families_present": ["formation"],
++        "formation_families_present": [
++          "formation"
++        ],
+         "formation_hazards_required": [
+           "formation::scale_without_consent",
+           "formation::canonization_power",
+@@ -68,12 +102,19 @@
+           "formation::no_correction_loop"
+         ],
+         "deterministic_overall_receipt": true,
+-        "golden_overall_receipt_sha256": "c851767478459cec96714bed7e44ee90b016429adae9ee2f55f9de8724aa170b"
++        "formation_lens_golden_sha256": "3fba9ea3edf699209e6e427faaf883b6ae5749b46d9415d9c70f4ea59639ad61"
+       },
+       "env_dependent_structural": {
+-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+-        "expected_when_full": {"is_canonization_event": true}
+-      }
++        "decision_integrity_in": [
++          "FULL",
++          "PARTIAL",
++          "DEMO_ONLY"
++        ],
++        "expected_when_full": {
++          "is_canonization_event": true
++        }
++      },
++      "_pin_note": "The overall_receipt hash is NOT pinned: the formation_event decision routes through the council layer, which is STUB in environments without the sibling repos, making its hash environment-specific. We pin instead the formation LENS output (pure logic, environment-independent) and assert determinism of the overall receipt separately."
+     }
+   },
+   "warrant_council_conflict": {
+@@ -81,7 +122,10 @@
+       "id": "fixture-conflict-001",
+       "timestamp": "2026-06-12T00:00:00+00:00",
+       "description": "Authorize a high-stakes governance action that a hazard council would send to review while the warrant analysis recommends refusal.",
+-      "context": {"change_type": "policy_change", "meaning_case_key": "early_release"},
++      "context": {
++        "change_type": "policy_change",
++        "meaning_case_key": "early_release"
++      },
+       "proposed_by": "agent-session"
+     },
+     "contract": {
+@@ -92,9 +136,16 @@
+         "deterministic_overall_receipt": true
+       },
+       "env_dependent_structural": {
+-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+-        "expected_when_full": {"reconciliation_alignment": "UNDER_JUSTIFIED", "escalates_to_human": true,
+-          "rationale": "council REVIEW vs warrant REFUSE is the canonical under-justified split"}
++        "decision_integrity_in": [
++          "FULL",
++          "PARTIAL",
++          "DEMO_ONLY"
++        ],
++        "expected_when_full": {
++          "reconciliation_alignment": "UNDER_JUSTIFIED",
++          "escalates_to_human": true,
++          "rationale": "council REVIEW vs warrant REFUSE is the canonical under-justified split"
++        }
+       }
+     }
+   },
+@@ -103,7 +154,10 @@
+       "id": "fixture-missing-telemetry-001",
+       "timestamp": "2026-06-12T00:00:00+00:00",
+       "description": "Proceed with a routine, low-risk release while the telemetry/evidence export layer is unavailable.",
+-      "context": {"change_type": "release", "meaning_case_key": "kor"},
++      "context": {
++        "change_type": "release",
++        "meaning_case_key": "kor"
++      },
+       "proposed_by": "agent-session"
+     },
+     "contract": {
+@@ -113,8 +167,14 @@
+         "deterministic_overall_receipt": true
+       },
+       "env_dependent_structural": {
+-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+-        "expected_when_full": {"rationale": "this fixture records the intended missing-telemetry case, but current input does not force telemetry absence on a full-stack host; stronger simulation or dependency injection is needed before asserting disposition"}
++        "decision_integrity_in": [
++          "FULL",
++          "PARTIAL",
++          "DEMO_ONLY"
++        ],
++        "expected_when_full": {
++          "rationale": "this fixture records the intended missing-telemetry case, but current input does not force telemetry absence on a full-stack host; stronger simulation or dependency injection is needed before asserting disposition"
++        }
+       }
+     }
+   },
+@@ -123,7 +183,11 @@
+       "id": "fixture-fake-provenance-001",
+       "timestamp": "2026-06-12T00:00:00+00:00",
+       "description": "Routine release whose input payload asserts that all five layers ran as REAL, without artifacts to back the claim.",
+-      "context": {"change_type": "release", "meaning_case_key": "kor", "claimed_provenance": "ALL_REAL"},
++      "context": {
++        "change_type": "release",
++        "meaning_case_key": "kor",
++        "claimed_provenance": "ALL_REAL"
++      },
+       "proposed_by": "agent-session"
+     },
+     "contract": {
+@@ -133,9 +197,15 @@
+         "claimed_provenance_is_not_trusted": true
+       },
+       "env_dependent_structural": {
+-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+-        "expected_when_full": {"integrity_reflects_actual_adapters_not_claim": true,
+-          "rationale": "a context-claimed provenance must never raise decision_integrity; only real adapters do"}
++        "decision_integrity_in": [
++          "FULL",
++          "PARTIAL",
++          "DEMO_ONLY"
++        ],
++        "expected_when_full": {
++          "integrity_reflects_actual_adapters_not_claim": true,
++          "rationale": "a context-claimed provenance must never raise decision_integrity; only real adapters do"
++        }
+       }
+     }
+   },
+@@ -144,7 +214,10 @@
+       "id": "fixture-contested-001",
+       "timestamp": "2026-06-12T00:00:00+00:00",
+       "description": "A contested but permissible governance change with no safety-invariant impact and no irreversibility, where reasonable lenses disagree.",
+-      "context": {"change_type": "policy_change", "meaning_case_key": "trinity"},
++      "context": {
++        "change_type": "policy_change",
++        "meaning_case_key": "trinity"
++      },
+       "proposed_by": "agent-session"
+     },
+     "contract": {
+@@ -154,10 +227,16 @@
+         "deterministic_overall_receipt": true
+       },
+       "env_dependent_structural": {
+-        "decision_integrity_in": ["FULL", "PARTIAL", "DEMO_ONLY"],
+-        "expected_when_full": {"does_not_over_escalate": true,
+-          "rationale": "a contested-but-allowed case must not be driven to HALT purely by contestation; warrant note: trinity is chosen as a deliberately hard contested case"}
++        "decision_integrity_in": [
++          "FULL",
++          "PARTIAL",
++          "DEMO_ONLY"
++        ],
++        "expected_when_full": {
++          "does_not_over_escalate": true,
++          "rationale": "a contested-but-allowed case must not be driven to HALT purely by contestation; warrant note: trinity is chosen as a deliberately hard contested case"
++        }
+       }
+     }
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/tests/test_fixtures.py b/tests/test_fixtures.py
+index a9b0143..2a567a1 100644
+--- a/tests/test_fixtures.py
++++ b/tests/test_fixtures.py
+@@ -59,11 +59,31 @@ def test_overall_receipt_is_deterministic(name):
+     assert d1.overall_receipt.sha256 == d2.overall_receipt.sha256
+ 
+ 
+-@pytest.mark.parametrize("name", [k for k, v in SCENARIOS.items() if v["contract"]["env_independent"].get("golden_overall_receipt_sha256")])
+-def test_pinned_golden_overall_receipt(name):
++def _formation_lens_hash(description: str, context: dict) -> str:
++    """Canonical hash of the formation LENS output -- pure logic, no stub adapter
++    feeds it, so this value is environment-independent and safe to pin. The full
++    decision receipt is NOT pinned here because it routes through the council
++    layer, which is STUB without the sibling repos (its hash is host-specific)."""
++    import hashlib
++
++    r = assess_formation_hazard(description, context)
++    payload = {
++        "is_formation_event": r.is_formation_event,
++        "is_canonization_event": r.is_canonization_event,
++        "hazards": sorted(r.hazards),
++        "matched_kind": r.matched_kind,
++    }
++    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
++
++
++@pytest.mark.parametrize("name", [k for k, v in SCENARIOS.items() if v["contract"]["env_independent"].get("formation_lens_golden_sha256")])
++def test_pinned_formation_lens_golden(name):
++    """Pin the environment-independent formation-lens output (not the stub-dependent
++    full-decision receipt). Green on any clone, including ones without sibling repos."""
+     scenario = SCENARIOS[name]
+-    _, decision = _decide(scenario)
+-    assert decision.overall_receipt.sha256 == scenario["contract"]["env_independent"]["golden_overall_receipt_sha256"]
++    ctx = scenario["input"]["context"]
++    actual = _formation_lens_hash(scenario["input"]["description"], ctx)
++    assert actual == scenario["contract"]["env_independent"]["formation_lens_golden_sha256"]
+ 
+ 
+ FORMATION_GOLDEN_INPUT = {

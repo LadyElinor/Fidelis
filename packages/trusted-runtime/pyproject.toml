@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trusted-runtime"
+version = "0.1.0"
+description = "Receipts-first orchestration layer integrating ethical hazard review, runtime gating, warrant assay, and evidence telemetry."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.0",
+  "rich>=13.0",
+]
+
+[project.scripts]
+trusted-runtime = "trusted_runtime.cli:main"
+
+[project.optional-dependencies]
+# The exact dependency set the test suite needs; CI installs `.[test]`.
+# pynacl is required at collection time by the Ed25519 profile seam test.
+test = [
+  "pytest>=8.0",
+  "pynacl>=1.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
