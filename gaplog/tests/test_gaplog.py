@@ -112,10 +112,9 @@ def test_prereg_strictly_postdating_first_record_is_invalid(tmp_path, capsys):
 
 def test_prereg_postdating_data_is_invalid(tmp_path, capsys):
     g = tmp_path / "g.jsonl"
-    GapLog(g).record("a", "done", "done", "v")
     pre = tmp_path / "pre.json"
-    cli(["preregister", str(pre), "--min-n", "1", "--rate", "0.01"])
-    capsys.readouterr()
+    _write_rec(g, "2026-07-04T10:00:00+00:00")
+    _write_prereg(pre, "2026-07-04T10:00:01+00:00", min_n=1, rate=0.01)
     code = cli(["summarize", str(g), "--prereg", str(pre)])
     assert code == 2
     assert "INVALID" in capsys.readouterr().out
