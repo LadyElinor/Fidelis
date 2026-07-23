@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EFAS Weight Update Log Entry",
+  "type": "object",
+  "required": [
+    "timestamp",
+    "case_id",
+    "layer",
+    "prior_weight",
+    "evidence_scores",
+    "update_rationale",
+    "recommended_action",
+    "review_status"
+  ],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "description": "ISO-8601 timestamp for the log entry"
+    },
+    "case_id": {
+      "type": "string",
+      "description": "Corpus case identifier"
+    },
+    "layer": {
+      "type": "string",
+      "description": "Detector layer being evaluated"
+    },
+    "prior_weight": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence_scores": {
+      "type": "object",
+      "required": [
+        "independent_signal",
+        "early_warning_utility",
+        "false_positive_false_negative_profile",
+        "adversarial_robustness",
+        "cross_context_transfer"
+      ],
+      "properties": {
+        "independent_signal": { "type": "number", "minimum": 0, "maximum": 1 },
+        "early_warning_utility": { "type": "number", "minimum": 0, "maximum": 1 },
+        "false_positive_false_negative_profile": { "type": "number", "minimum": 0, "maximum": 1 },
+        "adversarial_robustness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cross_context_transfer": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "negative_evidence": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional notes on consensus mimicry, missed hazards, false positives, or post-hoc rationalization"
+    },
+    "update_rationale": {
+      "type": "string",
+      "description": "Human-readable justification for the recommendation"
+    },
+    "recommended_action": {
+      "type": "string",
+      "enum": ["up_weight", "down_weight", "hold", "defer"]
+    },
+    "proposed_multiplier": {
+      "type": "number",
+      "description": "Optional multiplicative adjustment proposal",
+      "minimum": 0
+    },
+    "posterior_weight_placeholder": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Optional placeholder field for future live tuning"
+    },
+    "review_status": {
+      "type": "string",
+      "enum": ["draft", "reviewed", "approved", "rejected"]
+    },
+    "reviewer": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

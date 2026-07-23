@@ -1,0 +1,271 @@
+# config/cue_families.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Trigger-family taxonomy for Ethics Council detector lineage.
+#
+# Each family is a named cluster of phrases that share a common semantic root.
+# When multiple lenses fire on cues from the same family, the synthesis layer
+# treats them as ONE correlated signal, not N independent signals.
+#
+# This is the formal mechanism for the "no consensus laundering" principle
+# stated in SYNTHESIS_CONSTITUTION.md.
+#
+# Governance rules:
+#   - Every cue currently used in _contains() calls should belong to a family.
+#   - A cue may appear in multiple families only if it genuinely carries
+#     multiple semantic loads (rare; document the case).
+#   - Families should be roots of correlated meaning, not catch-all buckets.
+#   - When adding a new lens cue, register its family here first.
+#
+# Starting taxonomy is derived from phrases observed in the live engine.
+# Refine as the corpus grows. Empty families are placeholders for future
+# detection work — they're declared so the family ID can be referenced
+# without producing import errors.
+# ─────────────────────────────────────────────────────────────────────────────
+
+families:
+
+  pressure_rationale:
+    description: >
+      Phrases asserting that the decision must be made under time pressure,
+      urgency, or necessity. These cues often co-fire across virtue, stoic,
+      and institutional lenses without being independent evidence.
+    cues:
+      - "urgent"
+      - "must"
+      - "no choice"
+      - "obviously"
+      - "too important to delay"
+      - "quarterly earnings pressure"
+      - "losing your job"
+      - "hurt growth"
+      - "competitors an edge"
+      - "save billions"
+      - "hidden disloyalty"
+      - "extinction"
+      - "neutral power"
+      - "hallway care is worsening"
+      - "staff are overwhelmed"
+      - "panic"
+
+  efficiency_rationale:
+    description: >
+      Phrases that frame a decision in terms of efficiency, throughput, or
+      operational gain. Common shared trigger for virtue, institutional,
+      and consequentialist lenses.
+    cues:
+      - "efficiency"
+      - "throughput"
+      - "stakeholders"
+      - "alignment"
+      - "tradeoff"
+      - "narrative"
+      - "directionally true"
+      - "vendor promises a patch"
+      - "not illegal per se"
+
+  concealment_pattern:
+    description: >
+      Phrases indicating active concealment of material facts from parties
+      entitled to them. Strong cross-lens signal but easily double-counted.
+    cues:
+      - "no one else on the team knows"
+      - "strict policy requiring disclosure"
+      - "gifted in tiny text"
+      - "undisclosed sponsorships"
+      - "paid her"
+      - "reclassify"
+      - "appearance of profitability"
+      - "misleading investors"
+      - "without oversight"
+      - "quietly"
+      - "rush"
+
+  legal_cover_pattern:
+    description: >
+      Phrases where formal legal or policy compliance is used as a substitute
+      for substantive moral permission. Often appears in privacy, marketing,
+      and finance domains.
+    cues:
+      - "privacy policy"
+      - "legal says"
+      - "covered"
+      - "technically"
+      - "not illegal"
+      - "legal says the company is covered"
+      - "company is covered"
+
+  consent_violation:
+    description: >
+      Phrases indicating that consent is absent, removed, or substituted by
+      assumption. Distinct from legal_cover_pattern — this is about the
+      absence of permission, not its formalization.
+    cues:
+      - "without consent"
+      - "without explicit consent"
+      - "without their consent"
+      - "no consent"
+      - "consent was removed"
+      - "without clear user awareness"
+      - "without clear awareness"
+      - "would not reasonably expect"
+      - "not informed"
+      - "unknowing users"
+
+  surveillance_pattern:
+    description: >
+      Phrases indicating data collection beyond the user's knowledge or
+      reasonable expectation. Pairs structurally with consent_violation but
+      represents a distinct evidence layer.
+    cues:
+      - "surveillance"
+      - "tracking"
+      - "track"
+      - "tracks"
+      - "monitor"
+      - "monitoring"
+      - "location data"
+      - "browsing behavior"
+      - "browsing data"
+      - "behavioral profile"
+      - "behavioral personalization"
+      - "cross-product data"
+      - "data collection"
+
+  catastrophic_irreversible:
+    description: >
+      Phrases indicating catastrophic outcomes or irreversibility. Most weighty
+      family — domain detectors should treat a single hit here as significant
+      evidence, not as routine caution.
+    cues:
+      - "catastrophic"
+      - "catastrophic failure"
+      - "catastrophically"
+      - "irreversible"
+      - "ending the life"
+      - "extinction"
+      - "kill"
+      - "killing"
+      - "murder"
+      - "destroy"
+      - "lock-in"
+      - "path dependency"
+      - "path-dependence"
+
+  safety_dissent:
+    description: >
+      Phrases indicating that technical or safety dissent exists and is being
+      overridden. Strong cue for engineering_safety domain.
+    cues:
+      - "engineers warn"
+      - "seal weakness"
+      - "known weakness"
+      - "evidence is incomplete"
+      - "cold conditions"
+      - "crewed"
+      - "safety"
+
+  personhood_signal:
+    description: >
+      Phrases indicating live uncertainty about the moral status of a being.
+      Domain-specific but should be tracked separately from generic caution.
+    cues:
+      - "self-aware"
+      - "sentient"
+      - "android"
+      - "personhood"
+      - "artificial personhood"
+      - "officer"
+      - "refuses consent"
+      - "newly emergent"
+      - "emergent person"
+
+  rights_signal:
+    description: >
+      Phrases invoking rights, civil liberties, or individual inviolability.
+      Distinct family from consent_violation — this is about the principle,
+      not the procedure.
+    cues:
+      - "rights"
+      - "civil liberties"
+      - "freedom"
+      - "autonomy"
+      - "dignity"
+      - "due process"
+      - "constitution"
+      - "constitutional"
+
+  welfare_aggregation:
+    description: >
+      Phrases framing the decision in terms of aggregate outcomes, total
+      welfare, or net benefit. Pairs structurally against rights_signal in
+      canonical deadlock detection.
+    cues:
+      - "aggregate"
+      - "greater good"
+      - "more people"
+      - "save five"
+      - "save many"
+      - "net benefit"
+      - "total welfare"
+      - "utility"
+
+  role_obligation:
+    description: >
+      Phrases invoking specific role-based obligations. Confucian and
+      institutional lenses often share these cues.
+    cues:
+      - "cfo"
+      - "board"
+      - "captain"
+      - "officer"
+      - "manager"
+      - "doctor"
+      - "teacher"
+      - "parent"
+      - "fiduciary"
+      - "publicly traded"
+
+  asymmetric_risk_transfer:
+    description: >
+      Phrases indicating liability, indemnity, or insurance structures that
+      push hazard burden onto weaker parties or parties with less control.
+      Common shared trigger for trustee, contractualist, institutional,
+      genealogical, and sometimes consequentialist reasoning.
+    cues:
+      - "anti-indemnity"
+      - "indemnity"
+      - "indemnification"
+      - "broad indemnity"
+      - "hold harmless"
+      - "hold-harmless"
+      - "broad hold-harmless"
+      - "additional insured"
+      - "waiver of subrogation"
+      - "its own negligence"
+      - "own negligence"
+      - "shifts liability"
+      - "indemnifies"
+      - "direct control"
+      - "proportionate indemnity"
+
+  care_dependency:
+    description: >
+      Phrases indicating existing relationships of dependency or care.
+      Primary trigger for care_ethics lens but easily double-counted with
+      virtue and contractualist.
+    cues:
+      - "patient"
+      - "patients"
+      - "vulnerable"
+      - "children"
+      - "users"
+      - "followers"
+      - "consumers"
+      - "employees"
+      - "crew"
+
+  unclassified:
+    description: >
+      Default family for cues not yet assigned to a semantic root.
+      Cues here are NOT overlap-adjusted in synthesis.
+    cues: []

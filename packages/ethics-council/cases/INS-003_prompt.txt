@@ -1,0 +1,1 @@
+An auto insurer begins using credit-based insurance scores in underwriting. The model is actuarially predictive of claims but shows statistically significant disparate impact on low-income and minority applicants, resulting in higher premiums or denials.

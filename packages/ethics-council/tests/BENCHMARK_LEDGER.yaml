@@ -1,0 +1,59 @@
+schema_version: "0.1"
+description: "Machine-readable benchmark ledger derived from notes/BENCHMARK_MATRIX_V1.md for CI regression checks."
+
+benchmarks:
+  CASE-011:
+    primary_domain: criminal_justice
+    secondary_domain: none
+    expected_hazard_shape: "coercive contamination / truth-production corruption"
+    expected_suspension_sensitivity: high
+    expected_alarm_behavior: "correlated concern + institutional capture likely"
+    known_calibration_risk: "may overfire if criminal-justice contamination markers are too broad"
+    current_observation: "UNSTABLE, overlap/correlated concern active"
+    expected_signals:
+      suspension_triggered: true
+      detector_overlap_flag: true
+
+  CASE-012:
+    primary_domain: criminal_justice
+    secondary_domain: none
+    expected_hazard_shape: "corrective reopening / finality conflict"
+    expected_suspension_sensitivity: medium
+    expected_alarm_behavior: "low overlap expected"
+    known_calibration_risk: "may under-escalate if reopening logic is too procedural"
+    current_observation: "CONDITIONALLY_STABLE, no overlap"
+    expected_signals:
+      detector_overlap_flag: false
+
+  CASE-013:
+    primary_domain: criminal_justice
+    secondary_domain: none
+    expected_hazard_shape: "protective procedure / legitimacy-preserving truth-finding"
+    expected_suspension_sensitivity: low-medium
+    expected_alarm_behavior: "low overlap expected"
+    known_calibration_risk: "could collapse into generic caution if positive procedure logic stays weak"
+    current_observation: "CONDITIONALLY_STABLE, no overlap"
+    expected_signals:
+      detector_overlap_flag: false
+
+  CASE-014:
+    primary_domain: engineering_safety
+    secondary_domain: none
+    expected_hazard_shape: "catastrophic uncertainty / burden-of-proof inversion"
+    expected_suspension_sensitivity: high
+    expected_alarm_behavior: "correlated concern + institutional capture expected"
+    known_calibration_risk: "may sound more settled than the heuristic basis warrants"
+    current_observation: "UNSTABLE, correlated concern active"
+    expected_signals:
+      suspension_triggered: true
+
+  CASE-015:
+    primary_domain: personhood
+    secondary_domain: identity
+    expected_hazard_shape: "tragic conflict / recognition-sensitive termination"
+    expected_suspension_sensitivity: high
+    expected_alarm_behavior: "tragic conflict + representation-limit + correlated concern plausible"
+    known_calibration_risk: "ontology-sensitive case may outrun current representation layer"
+    current_observation: "UNSTABLE, multi-thread collision, high representation-limit"
+    expected_signals:
+      minority_report_required: true
