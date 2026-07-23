@@ -45,10 +45,38 @@ def _resolved_command(command: list[str]) -> tuple[list[str], bool]:
     return command, shutil.which(executable) is not None
 
 
+def _prepare_component(component: str, cwd: Path, command: list[str]) -> tuple[bool, int | None]:
+    if component == "cer-telemetry":
+        package_json = cwd / "package.json"
+        if not package_json.exists():
+            return False, None
+        return True, None
+    if component != "sophron-cer":
+        return True, None
+    if command[:2] != ["npm", "test"]:
+        return True, None
+    package_json = cwd / "package.json"
+    if not package_json.exists():
+        return False, None
+    node_modules = cwd / "node_modules"
+    package_lock = cwd / "package-lock.json"
+    if node_modules.exists() and package_lock.exists():
+        return True, None
+    install_command, available = _resolved_command(["npm", "install"])
+    if not available:
+        return False, None
+    completed = subprocess.run(install_command, cwd=cwd, check=False)
+    return completed.returncode == 0, completed.returncode
+
+
 def run(component: str, cwd: Path, command: list[str], required_components: set[str]) -> Result:
     if not cwd.exists():
         status = "unexpectedly_missing" if component in required_components else "expected_not_applicable"
         return Result(component, command, status, None, "presence")
+    prepare_ok, prepare_returncode = _prepare_component(component, cwd, command)
+    if not prepare_ok:
+        status = "blocked" if component in required_components else f"expected_not_applicable"
+        return Result(component, command, status, prepare_returncode, "tooling")
     resolved_command, available = _resolved_command(command)
     if not available:
         status = "blocked" if component in required_components else f"expected_not_applicable"
