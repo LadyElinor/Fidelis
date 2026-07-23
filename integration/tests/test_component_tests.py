@@ -205,12 +205,12 @@ def test_component_env_wires_trusted_runtime_siblings() -> None:
     from scripts.run_component_tests import ROOT, _component_env
 
     env = _component_env("trusted-runtime")
-    assert env["TRUSTED_RUNTIME_WORKSPACE_ROOT"] == str(ROOT)
-    assert env["MEANING_ASSAY_SRC"].endswith("packages\\meaning-assay\\src")
-    assert env["ETHICS_COUNCIL_SRC"].endswith("packages\\ethics-council")
-    assert env["TRUSTWORTHY_AGENT_STACK_SRC"].endswith("packages\\trustworthy-agent-stack")
-    assert env["SOPHRON_CER_SRC"].endswith("packages\\sophron-cer")
-    assert env["ATTEST_AGENT_CONLANG_SRC"].endswith("packages\\attest-agent-conlang")
+    assert Path(env["TRUSTED_RUNTIME_WORKSPACE_ROOT"]) == ROOT
+    assert Path(env["MEANING_ASSAY_SRC"]) == ROOT / "packages" / "meaning-assay" / "src"
+    assert Path(env["ETHICS_COUNCIL_SRC"]) == ROOT / "packages" / "ethics-council"
+    assert Path(env["TRUSTWORTHY_AGENT_STACK_SRC"]) == ROOT / "packages" / "trustworthy-agent-stack"
+    assert Path(env["SOPHRON_CER_SRC"]) == ROOT / "packages" / "sophron-cer"
+    assert Path(env["ATTEST_AGENT_CONLANG_SRC"]) == ROOT / "packages" / "attest-agent-conlang"
 
 
 def test_prepare_component_installs_python_package(monkeypatch, tmp_path: Path) -> None:
