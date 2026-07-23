@@ -77,12 +77,26 @@ def _write_profile_fixture_repo(repo: Path) -> None:
         path = repo / PATH_MAP[component]
         path.mkdir(parents=True, exist_ok=True)
         if component in {"cer-telemetry", "sophron-cer"}:
+            (path / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": f"fixture-{component}",
+                        "private": True,
+                        "scripts": {"test": "node -e \"process.exit(0)\""},
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             (path / "placeholder.txt").write_text("x", encoding="utf-8")
         elif component == "trustworthy-agent-stack":
             (path / "tests").mkdir(parents=True, exist_ok=True)
             (path / "tests" / "test_smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
         else:
             (path / "test_smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+
+    assert (repo / "packages" / "cer-telemetry" / "package.json").is_file()
 
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
     subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, text=True)
