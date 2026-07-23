@@ -1,0 +1,29 @@
+# Secrets / tokens (never commit)
+moltx.txt
+moltb.txt
+.secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Common env files
+.env
+.env.*
+
+# Outputs / receipts (usually large; keep local unless explicitly publishing)
+outputs/
+
+# Node
+node_modules/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Logs
+*.log

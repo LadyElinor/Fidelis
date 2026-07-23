@@ -1,0 +1,3 @@
+[submodule "SOPHRON-CER"]
+	path = SOPHRON-CER
+	url = https://github.com/LadyElinor/SOPHRON-CER.git

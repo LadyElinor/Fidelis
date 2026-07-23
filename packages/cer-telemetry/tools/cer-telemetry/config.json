@@ -1,0 +1,20 @@
+{
+  "db_path": "./cer_telemetry.db",
+  "jsonl_dir": "./outputs/receipts_jsonl",
+  "receipt_dir": "./outputs/receipts",
+
+  "rolling": { "lookbackRuns": 20 },
+  "guarded_actions": ["post", "reply", "like", "follow"],
+
+  "policy": {
+    "onInvariantFailure": "warn"
+  },
+
+  "retry": {
+    "baseDelayMs": 600,
+    "blocked403DelayMs": 60000,
+    "jitterMs": 200
+  },
+
+  "wilson": { "z": 1.96 }
+}
