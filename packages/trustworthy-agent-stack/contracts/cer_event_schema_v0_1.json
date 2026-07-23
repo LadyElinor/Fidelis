@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CER Event Envelope v0.1",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "schema_version",
+    "export_timestamp",
+    "record_type",
+    "run_id",
+    "provenance_hash",
+    "signature",
+    "signature_algorithm",
+    "signing_key_id",
+    "payload"
+  ],
+  "properties": {
+    "contract_version": {"const": "0.1"},
+    "schema_version": {"const": "0.1"},
+    "export_timestamp": {"type": "string"},
+    "record_type": {
+      "type": "string",
+      "enum": ["run", "hazard_map", "gate_check", "confirmation", "external_action", "data_issue", "warrant_assay", "candidate_find", "independent_verification", "verification_result"]
+    },
+    "run_id": {"type": "string", "minLength": 1},
+    "provenance_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "signature": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "signature_algorithm": {"const": "hmac-sha256"},
+    "signing_key_id": {"type": "string", "minLength": 1},
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": false
+}

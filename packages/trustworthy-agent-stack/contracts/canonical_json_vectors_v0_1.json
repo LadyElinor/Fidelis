@@ -1,0 +1,24 @@
+[
+  {
+    "name": "metric_observation_basic",
+    "payload": {
+      "metric_name": "latency_ms",
+      "value": 123.4,
+      "tags": ["demo", "bridge"],
+      "window": { "start": "2026-05-30T21:00:00Z", "end": "2026-05-30T21:05:00Z" }
+    },
+    "canonical_json": "{\"metric_name\":\"latency_ms\",\"tags\":[\"demo\",\"bridge\"],\"value\":123.4,\"window\":{\"end\":\"2026-05-30T21:05:00Z\",\"start\":\"2026-05-30T21:00:00Z\"}}",
+    "sha256": "869eaa804e09e724f9c1872671e61ff9eafb0a1050d127430630b3f41341ad73"
+  },
+  {
+    "name": "gate_outcome_basic",
+    "payload": {
+      "gate": "least_privilege",
+      "decision": "pass",
+      "confidence": 0.98,
+      "evidence": { "scope_diff": [] }
+    },
+    "canonical_json": "{\"confidence\":0.98,\"decision\":\"pass\",\"evidence\":{\"scope_diff\":[]},\"gate\":\"least_privilege\"}",
+    "sha256": "b704449d41fcf0c3cecea3b6db05650e29f0c80283021d1384abc35b12a60d2e"
+  }
+]
