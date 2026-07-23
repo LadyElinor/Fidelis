@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,6 +59,19 @@ def _resolved_command(command: list[str]) -> tuple[list[str], bool]:
     return command, shutil.which(executable) is not None
 
 
+def _should_editable_install(pyproject: Path) -> bool:
+    if not pyproject.exists():
+        return False
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    if "project" not in data and "build-system" not in data:
+        return False
+    src_dir = pyproject.parent / "src"
+    if src_dir.exists():
+        return True
+    setuptools_config = data.get("tool", {}).get("setuptools", {}) if isinstance(data.get("tool"), dict) else {}
+    return bool(setuptools_config.get("packages") or setuptools_config.get("py-modules") or setuptools_config.get("package-dir"))
+
+
 def _prepare_component(component: str, cwd: Path, command: list[str]) -> tuple[bool, int | None, str | None, str | None, str | None]:
     if component == "cer-telemetry":
         package_json = cwd / "package.json"
@@ -65,7 +79,7 @@ def _prepare_component(component: str, cwd: Path, command: list[str]) -> tuple[b
             return False, None, "missing_component_manifest", f"No package.json exists at {package_json}", str(package_json)
         return True, None, None, None, None
     pyproject = cwd / "pyproject.toml"
-    if pyproject.exists() and command[:3] == [sys.executable, "-m", "pytest"]:
+    if _should_editable_install(pyproject) and command[:3] == [sys.executable, "-m", "pytest"]:
         install_command = [sys.executable, "-m", "pip", "install", "-e", "."]
         completed = subprocess.run(install_command, cwd=cwd, check=False, capture_output=True, text=True)
         if completed.returncode != 0:

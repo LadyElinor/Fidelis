@@ -217,6 +217,8 @@ def test_prepare_component_installs_python_package(monkeypatch, tmp_path: Path) 
     from scripts.run_component_tests import _prepare_component
 
     (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\nversion='0.1.0'\n", encoding="utf-8")
+    (tmp_path / "src" / "demo").mkdir(parents=True)
+    (tmp_path / "src" / "demo" / "__init__.py").write_text("", encoding="utf-8")
 
     class Completed:
         returncode = 0
@@ -230,6 +232,25 @@ def test_prepare_component_installs_python_package(monkeypatch, tmp_path: Path) 
 
     monkeypatch.setattr("scripts.run_component_tests.subprocess.run", fake_run)
     ok, returncode, reason_code, reason, expected_artifact = _prepare_component("trusted-runtime", tmp_path, [sys.executable, "-m", "pytest", "-q"])
+    assert ok is True
+    assert returncode is None
+    assert reason_code is None
+    assert reason is None
+    assert expected_artifact is None
+
+
+def test_prepare_component_skips_editable_install_for_non_package_pyproject(monkeypatch, tmp_path: Path) -> None:
+    from scripts.run_component_tests import _prepare_component
+
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\nversion='0.1.0'\n", encoding="utf-8")
+    (tmp_path / "examples").mkdir()
+    (tmp_path / "examples" / "__init__.py").write_text("", encoding="utf-8")
+
+    def fail_run(*args, **kwargs):
+        raise AssertionError("editable install should not run")
+
+    monkeypatch.setattr("scripts.run_component_tests.subprocess.run", fail_run)
+    ok, returncode, reason_code, reason, expected_artifact = _prepare_component("trustworthy-agent-stack", tmp_path, [sys.executable, "-m", "pytest", "-q", "tests"])
     assert ok is True
     assert returncode is None
     assert reason_code is None
