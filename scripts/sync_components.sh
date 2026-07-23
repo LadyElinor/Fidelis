@@ -20,9 +20,15 @@ if echo "$subtree_probe" | grep -q "is not a git command"; then
   exit 1
 fi
 
-if [[ "$MODE" != "plan" && "$MODE" != "plan-json" && -n "$(git status --porcelain)" ]]; then
-  echo "Working tree must be clean before subtree operations." >&2
-  exit 1
+if [[ "$MODE" != "plan" && "$MODE" != "plan-json" ]]; then
+  if ! git diff --quiet --ignore-submodules -- && ! git diff --quiet --ignore-submodules --exit-code; then
+    echo "Working tree must be clean before subtree operations." >&2
+    exit 1
+  fi
+  if ! git diff --cached --quiet --ignore-submodules --; then
+    echo "Working tree must be clean before subtree operations." >&2
+    exit 1
+  fi
 fi
 
 PYTHON_BIN=""
