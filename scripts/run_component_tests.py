@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -34,15 +35,25 @@ def _load_profile(name: str) -> dict[str, object]:
     return json.loads(PROFILE_PATHS[name].read_text(encoding="utf-8"))
 
 
+def _resolved_command(command: list[str]) -> tuple[list[str], bool]:
+    executable = command[0]
+    if os.name == "nt" and executable in {"npm", "npx"}:
+        resolved = shutil.which(f"{executable}.cmd") or shutil.which(executable)
+        if resolved is not None:
+            return [resolved, *command[1:]], True
+        return command, False
+    return command, shutil.which(executable) is not None
+
+
 def run(component: str, cwd: Path, command: list[str], required_components: set[str]) -> Result:
     if not cwd.exists():
         status = "unexpectedly_missing" if component in required_components else "expected_not_applicable"
         return Result(component, command, status, None, "presence")
-    executable = command[0]
-    if shutil.which(executable) is None:
+    resolved_command, available = _resolved_command(command)
+    if not available:
         status = "blocked" if component in required_components else f"expected_not_applicable"
         return Result(component, command, status, None, "tooling")
-    completed = subprocess.run(command, cwd=cwd, check=False)
+    completed = subprocess.run(resolved_command, cwd=cwd, check=False)
     return Result(
         component,
         command,

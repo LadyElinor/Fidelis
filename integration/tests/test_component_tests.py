@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -150,6 +151,18 @@ def test_run_runtime_health_minimal_emits_bound_receipt_fields(tmp_path: Path) -
     assert results["fidelis-contracts"]["component_tree"] == subprocess.check_output(
         ["git", "rev-parse", "HEAD:packages/fidelis-contracts"], cwd=repo, text=True
     ).strip()
+
+
+def test_run_component_tests_resolves_npm_cmd_on_windows() -> None:
+    from scripts.run_component_tests import _resolved_command
+
+    if os.name != "nt":
+        return
+
+    resolved, available = _resolved_command(["npm", "test"])
+    assert available is True
+    assert resolved[0].lower().endswith("npm.cmd")
+    assert resolved[1:] == ["test"]
 
 
 def test_run_runtime_health_all_real_marks_missing_required_components_unavailable(tmp_path: Path) -> None:
