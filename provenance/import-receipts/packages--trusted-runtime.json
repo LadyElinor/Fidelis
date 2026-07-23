@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "receipt_type": "component-import",
+  "component": "trusted-runtime",
+  "name": "TrustedRuntime",
+  "prefix": "packages/trusted-runtime",
+  "mode": "import",
+  "upstream_url": "https://github.com/LadyElinor/TrustedRuntime.git",
+  "upstream_branch": "main",
+  "upstream_commit": "d641a4131f6997b4e4fca73292d630f7449c3bf7",
+  "imported_tree": "b224fca52a5c2846c3c172c11dcfce2ef7a9db4e",
+  "manifest_row_digest": "1c741cc73c719e4e46f6ba6a27053d76fb5fe4625c5573f0ae276814afb44095",
+  "fidelis_commit": "9f9239849f2273003050c280875a46299e6c9f64",
+  "imported_at_utc": "2026-07-23T01:05:43Z",
+  "previous_receipt_digest": null,
+  "receipt_digest": "f39ce7e5386ae6480307453dbf10dee5c664ff7e7f7d09e7d8d06d7dce6b9783"
+}

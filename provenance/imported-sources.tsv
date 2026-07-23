@@ -1,0 +1,9 @@
+name	prefix	branch	commit	tree	url	imported_at_utc
+TrustedRuntime	packages/trusted-runtime	main	d641a4131f6997b4e4fca73292d630f7449c3bf7	b224fca52a5c2846c3c172c11dcfce2ef7a9db4e	https://github.com/LadyElinor/TrustedRuntime.git	2026-07-23T01:05:43Z
+AConstellation	packages/aconstellation	main	71fc31bebabd0f18a7663a890d3a9aba12c2de47	cabdbd29f7d701b9fe352e5a26addc67ca5a4c8b	https://github.com/LadyElinor/AConstellation.git	2026-07-23T01:05:45Z
+AttestAgentConlang	packages/attest-agent-conlang	main	a5bf3243c8d200ac73ad195bc89b2e6c8ed86515	36727df1f30c0dc2b45907c7456fed2c2323cce9	https://github.com/LadyElinor/AttestAgentConlang.git	2026-07-23T01:05:48Z
+meaning-assay	packages/meaning-assay	master	86a64705f8d3b96c94f3923a7f1258f2c6ef34e4	3543700758e47e55516a95348de78b86e5897080	https://github.com/LadyElinor/meaning-assay.git	2026-07-23T01:05:50Z
+SOPHRON-CER	packages/sophron-cer	main	1daf28f9dbc9abecc532a80bd411fa21e827443d	0697494a73196ba1e88344a70fc9e723151bd2e0	https://github.com/LadyElinor/SOPHRON-CER.git	2026-07-23T01:05:53Z
+CER-Telemetry	packages/cer-telemetry	main	1bd7d07afb96ffc75169315371a136bc25480c3e	a3da27f1d8afbcc6ec005a3e394936a6de651fb4	https://github.com/LadyElinor/CER-Telemetry.git	2026-07-23T01:05:56Z
+TrustworthyAgentStack	packages/trustworthy-agent-stack	main	9ff00cbf01dae38cfcfcd4dac9b75d4c16602d48	a8206983df10335ae61f8c41ae39e99c0a6942a6	https://github.com/LadyElinor/TrustworthyAgentStack.git	2026-07-23T01:05:58Z
+EthicsCouncil	packages/ethics-council	master	b496bc79fd6778afcefcf97dea26b32a8ce11fe0	6957615d783c3afd5ab86a3623d325b67bcfe951	https://github.com/LadyElinor/EthicsCouncil.git	2026-07-23T01:06:01Z

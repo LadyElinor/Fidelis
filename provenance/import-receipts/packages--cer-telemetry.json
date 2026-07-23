@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "receipt_type": "component-import",
+  "component": "cer-telemetry",
+  "name": "CER-Telemetry",
+  "prefix": "packages/cer-telemetry",
+  "mode": "import",
+  "upstream_url": "https://github.com/LadyElinor/CER-Telemetry.git",
+  "upstream_branch": "main",
+  "upstream_commit": "1bd7d07afb96ffc75169315371a136bc25480c3e",
+  "imported_tree": "a3da27f1d8afbcc6ec005a3e394936a6de651fb4",
+  "manifest_row_digest": "05ab37d739aded1d3eb0c87184788e4e844d272f398b8713c8e2c811b1dd40b0",
+  "fidelis_commit": "2bca10f1efea60a8e408dde5f7679bf6dfa162a0",
+  "imported_at_utc": "2026-07-23T01:05:56Z",
+  "previous_receipt_digest": null,
+  "receipt_digest": "8d21221f078338fd9252947aaff4a4f6ae22d9d61d2b1d086154e969495f335b"
+}

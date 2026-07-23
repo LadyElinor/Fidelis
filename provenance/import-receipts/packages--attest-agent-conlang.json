@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "receipt_type": "component-import",
+  "component": "attest-agent-conlang",
+  "name": "AttestAgentConlang",
+  "prefix": "packages/attest-agent-conlang",
+  "mode": "import",
+  "upstream_url": "https://github.com/LadyElinor/AttestAgentConlang.git",
+  "upstream_branch": "main",
+  "upstream_commit": "a5bf3243c8d200ac73ad195bc89b2e6c8ed86515",
+  "imported_tree": "36727df1f30c0dc2b45907c7456fed2c2323cce9",
+  "manifest_row_digest": "86c77f06b85398dfbf555ed659f4a98844cb585941832d45d4e1f1bf88f14c62",
+  "fidelis_commit": "ab0b2a6af7129152c8ce9a835c36cfd54ef0905e",
+  "imported_at_utc": "2026-07-23T01:05:48Z",
+  "previous_receipt_digest": null,
+  "receipt_digest": "8e1bad37a125b78e44ae39139f2ca6c707a1e5397cd2e86385a2f709cdec96e0"
+}

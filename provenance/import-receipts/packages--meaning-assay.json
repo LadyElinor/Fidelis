@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "receipt_type": "component-import",
+  "component": "meaning-assay",
+  "name": "meaning-assay",
+  "prefix": "packages/meaning-assay",
+  "mode": "import",
+  "upstream_url": "https://github.com/LadyElinor/meaning-assay.git",
+  "upstream_branch": "master",
+  "upstream_commit": "86a64705f8d3b96c94f3923a7f1258f2c6ef34e4",
+  "imported_tree": "3543700758e47e55516a95348de78b86e5897080",
+  "manifest_row_digest": "2d060a438d2b774a7c864e97a88414bc08c0814f21caa85d0d8b560a2152c9e6",
+  "fidelis_commit": "2b8de479a6143692773b82bcfe6629113f76bb83",
+  "imported_at_utc": "2026-07-23T01:05:50Z",
+  "previous_receipt_digest": null,
+  "receipt_digest": "534715fa268dffa5b3455441e37ade9260e07c9d4533daab30b4865c1fed78f3"
+}

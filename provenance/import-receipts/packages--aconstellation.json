@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "receipt_type": "component-import",
+  "component": "aconstellation",
+  "name": "AConstellation",
+  "prefix": "packages/aconstellation",
+  "mode": "import",
+  "upstream_url": "https://github.com/LadyElinor/AConstellation.git",
+  "upstream_branch": "main",
+  "upstream_commit": "71fc31bebabd0f18a7663a890d3a9aba12c2de47",
+  "imported_tree": "cabdbd29f7d701b9fe352e5a26addc67ca5a4c8b",
+  "manifest_row_digest": "e259c646670fe9d0fd0920fef0d311e3fe863a4159d8c105de10c1ebf3144e5e",
+  "fidelis_commit": "8cfd21da100ae2198d4510373bb70645ddc2a13c",
+  "imported_at_utc": "2026-07-23T01:05:45Z",
+  "previous_receipt_digest": null,
+  "receipt_digest": "9f718be262511e97f9c83e38f6969a12b12aca86fad5f2121dde15a983cb26d1"
+}

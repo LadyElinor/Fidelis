@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "receipt_type": "component-import",
+  "component": "trustworthy-agent-stack",
+  "name": "TrustworthyAgentStack",
+  "prefix": "packages/trustworthy-agent-stack",
+  "mode": "import",
+  "upstream_url": "https://github.com/LadyElinor/TrustworthyAgentStack.git",
+  "upstream_branch": "main",
+  "upstream_commit": "9ff00cbf01dae38cfcfcd4dac9b75d4c16602d48",
+  "imported_tree": "a8206983df10335ae61f8c41ae39e99c0a6942a6",
+  "manifest_row_digest": "fe8b0e919ed953d2a0c692d49eb72d7c5a002c61c7268ebbff73139516932560",
+  "fidelis_commit": "c518db33bfea0cf119b938ec4fab0e0383acfcdc",
+  "imported_at_utc": "2026-07-23T01:05:58Z",
+  "previous_receipt_digest": null,
+  "receipt_digest": "fb53ea22d2ece9be5bb4bd73966586577cb19c9e34bed3d09677292c3479fabf"
+}
