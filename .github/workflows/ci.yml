@@ -21,6 +21,39 @@ jobs:
           python scripts/enforce_imported_prefix_immutability.py \
             "origin/${{ github.base_ref }}" \
             "HEAD"
+      - name: Hydrate declared source remotes for provenance verification
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv
+          import json
+          import re
+          import subprocess
+          from pathlib import Path
+
+          root = Path('.').resolve()
+          data = json.loads((root / 'provenance' / 'source-repositories.json').read_text(encoding='utf-8'))
+          manifest_rows = {}
+          manifest_path = root / 'provenance' / 'imported-sources.tsv'
+          with manifest_path.open(encoding='utf-8', newline='') as fh:
+              reader = csv.DictReader(fh, delimiter='\t')
+              for row in reader:
+                  manifest_rows[row['name']] = row
+          for source in data['sources']:
+              remote = 'source-' + re.sub(r'[^a-z0-9]+', '-', source['name'].lower()).strip('-')
+              url = source['url']
+              branch = source['branch']
+              existing = subprocess.run(['git', 'remote', 'get-url', remote], cwd=root, text=True, capture_output=True)
+              if existing.returncode != 0:
+                  subprocess.check_call(['git', 'remote', 'add', remote, url], cwd=root)
+              subprocess.check_call(['git', 'fetch', remote, branch], cwd=root)
+              manifest_commit = manifest_rows[source['name']]['commit']
+              subprocess.check_call(['git', 'fetch', remote, manifest_commit], cwd=root)
+          PY
+      - name: Verify source provenance
+        run: python scripts/verify_sources.py
+      - name: Verify component boundaries
+        run: python scripts/verify_boundaries.py
 
   seed-integrity:
     runs-on: ubuntu-latest
