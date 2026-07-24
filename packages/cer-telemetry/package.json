@@ -1,0 +1,22 @@
+{
+  "name": "@fidelis/cer-telemetry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Receipts-first telemetry, invariant checking, and evidence production for governed agent systems.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": "./cer-telemetry.mjs"
+  },
+  "bin": {
+    "cer-moltx-trending": "./bin/moltx-trending.mjs"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "npm test",
+    "analyze:moltx": "node ./bin/moltx-trending.mjs"
+  },
+  "license": "MIT"
+}
