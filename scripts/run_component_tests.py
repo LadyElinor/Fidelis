@@ -77,8 +77,23 @@ def _should_editable_install(pyproject: Path) -> bool:
     return bool(setuptools_config.get("packages") or setuptools_config.get("py-modules") or setuptools_config.get("package-dir"))
 
 
-def _pip_install_editable(cwd: Path) -> subprocess.CompletedProcess[str]:
-    base_command = [sys.executable, "-m", "pip", "install", "-e", "."]
+def _editable_install_target(pyproject: Path) -> str:
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+
+    project = data.get("project", {})
+    if not isinstance(project, dict):
+        return "."
+
+    optional = project.get("optional-dependencies", {})
+    if isinstance(optional, dict) and "test" in optional:
+        return ".[test]"
+
+    return "."
+
+
+def _pip_install_editable(cwd: Path, pyproject: Path) -> subprocess.CompletedProcess[str]:
+    target = _editable_install_target(pyproject)
+    base_command = [sys.executable, "-m", "pip", "install", "-e", target]
     completed = subprocess.run(base_command, cwd=cwd, check=False, capture_output=True, text=True)
     if completed.returncode != 0 and "externally-managed-environment" in completed.stderr:
         completed = subprocess.run(
@@ -91,18 +106,55 @@ def _pip_install_editable(cwd: Path) -> subprocess.CompletedProcess[str]:
     return completed
 
 
+def _pip_install_requirements(cwd: Path, requirements: Path) -> subprocess.CompletedProcess[str]:
+    base_command = [sys.executable, "-m", "pip", "install", "-r", requirements.name]
+    completed = subprocess.run(base_command, cwd=cwd, check=False, capture_output=True, text=True)
+    if completed.returncode != 0 and "externally-managed-environment" in completed.stderr:
+        completed = subprocess.run(
+            [*base_command, "--break-system-packages"],
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    return completed
+
+
+def _prepare_python_component(component: str, cwd: Path, command: list[str]) -> tuple[bool, int | None, str | None, str | None, str | None]:
+    if command[:3] != [sys.executable, "-m", "pytest"]:
+        return True, None, None, None, None
+
+    pyproject = cwd / "pyproject.toml"
+    requirements_dev = cwd / "requirements-dev.txt"
+
+    if requirements_dev.is_file():
+        completed = _pip_install_requirements(cwd, requirements_dev)
+        if completed.returncode != 0:
+            return (
+                False,
+                completed.returncode,
+                "component_setup_failed",
+                f"Development dependency installation failed for {component}",
+                str(requirements_dev),
+            )
+
+    if _should_editable_install(pyproject):
+        completed = _pip_install_editable(cwd, pyproject)
+        if completed.returncode != 0:
+            return False, completed.returncode, "component_setup_failed", f"Editable install failed for {component}", str(pyproject)
+
+    return True, None, None, None, None
+
+
 def _prepare_component(component: str, cwd: Path, command: list[str]) -> tuple[bool, int | None, str | None, str | None, str | None]:
     if component == "cer-telemetry":
         package_json = cwd / "package.json"
         if not package_json.exists():
             return False, None, "missing_component_manifest", f"No package.json exists at {package_json}", str(package_json)
         return True, None, None, None, None
-    pyproject = cwd / "pyproject.toml"
-    if _should_editable_install(pyproject) and command[:3] == [sys.executable, "-m", "pytest"]:
-        completed = _pip_install_editable(cwd)
-        if completed.returncode != 0:
-            return False, completed.returncode, "component_setup_failed", f"Editable install failed for {component}", str(pyproject)
-        return True, None, None, None, None
+    python_result = _prepare_python_component(component, cwd, command)
+    if not python_result[0]:
+        return python_result
     if component != "sophron-cer":
         return True, None, None, None, None
     if command[:2] != ["npm", "test"]:

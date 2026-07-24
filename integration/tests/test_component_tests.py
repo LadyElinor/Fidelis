@@ -279,6 +279,45 @@ def test_component_env_wires_trusted_runtime_siblings() -> None:
     assert Path(env["ATTEST_AGENT_CONLANG_SRC"]) == ROOT / "packages" / "attest-agent-conlang"
 
 
+def test_editable_install_uses_test_extra_when_declared(tmp_path: Path) -> None:
+    from scripts.run_component_tests import _editable_install_target
+
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        """
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "example"
+version = "0.1.0"
+
+[project.optional-dependencies]
+test = ["pytest", "pynacl"]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert _editable_install_target(pyproject) == ".[test]"
+
+
+def test_editable_install_uses_base_package_without_test_extra(tmp_path: Path) -> None:
+    from scripts.run_component_tests import _editable_install_target
+
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        """
+[project]
+name = "example"
+version = "0.1.0"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert _editable_install_target(pyproject) == "."
+
+
 def test_prepare_component_installs_python_package(monkeypatch, tmp_path: Path) -> None:
     from scripts.run_component_tests import _prepare_component
 
@@ -293,6 +332,7 @@ def test_prepare_component_installs_python_package(monkeypatch, tmp_path: Path) 
 
     def fake_run(command, cwd, check, capture_output, text):
         assert command[:5] == [sys.executable, "-m", "pip", "install", "-e"]
+        assert command[-1] == "."
         assert cwd == tmp_path
         return Completed()
 
@@ -349,6 +389,9 @@ def test_prepare_component_skips_editable_install_when_pytest_pythonpath_is_decl
 def test_pip_install_editable_retries_with_break_system_packages(monkeypatch, tmp_path: Path) -> None:
     from scripts.run_component_tests import _pip_install_editable
 
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\nname='demo'\nversion='0.1.0'\n", encoding="utf-8")
+
     class Completed:
         def __init__(self, returncode, stderr="", stdout=""):
             self.returncode = returncode
@@ -364,10 +407,41 @@ def test_pip_install_editable_retries_with_break_system_packages(monkeypatch, tm
         return Completed(0)
 
     monkeypatch.setattr("scripts.run_component_tests.subprocess.run", fake_run)
-    completed = _pip_install_editable(tmp_path)
+    completed = _pip_install_editable(tmp_path, pyproject)
     assert completed.returncode == 0
     assert calls[0] == [sys.executable, "-m", "pip", "install", "-e", "."]
     assert calls[1] == [sys.executable, "-m", "pip", "install", "-e", ".", "--break-system-packages"]
+
+
+def test_python_component_installs_requirements_dev(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from scripts.run_component_tests import _prepare_python_component
+
+    requirements = tmp_path / "requirements-dev.txt"
+    requirements.write_text("PyYAML>=6.0\n", encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(list(command))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = _prepare_python_component(
+        "ethics-council",
+        tmp_path,
+        [sys.executable, "-m", "pytest", "-q"],
+    )
+
+    assert result[0] is True
+    assert [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        "requirements-dev.txt",
+    ] in calls
 
 
 def test_run_component_tests_records_component_logs_for_execution(tmp_path: Path) -> None:
