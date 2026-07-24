@@ -5,6 +5,23 @@ on:
   pull_request:
 
 jobs:
+  imported-prefix-immutability:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Enforce imported-prefix immutability
+        shell: bash
+        run: |
+          python scripts/enforce_imported_prefix_immutability.py \
+            "origin/${{ github.base_ref }}" \
+            "HEAD"
+
   seed-integrity:
     runs-on: ubuntu-latest
     steps:
