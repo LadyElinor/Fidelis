@@ -75,23 +75,7 @@ jobs:
       - run: python scripts/run_component_tests.py --profile minimal
       - name: Print minimal component result summary
         if: always()
-        shell: bash
-        run: |
-          if [[ -f reports/component-tests.json ]]; then
-            python - <<'PY'
-            import json
-            from pathlib import Path
-
-            report = json.loads(Path('reports/component-tests.json').read_text(encoding='utf-8'))
-            for row in report.get('results', []):
-                print(
-                    f"{row.get('component', '?'):28} "
-                    f"{row.get('status', '?'):24} "
-                    f"rc={row.get('returncode')} "
-                    f"reason={row.get('reason_code')}"
-                )
-            PY
-          fi
+        run: python scripts/print_component_summary.py
       - name: Upload minimal component logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -173,23 +157,7 @@ jobs:
         run: python scripts/run_component_tests.py --profile all-real
       - name: Print all-real component result summary
         if: always()
-        shell: bash
-        run: |
-          if [[ -f reports/component-tests.json ]]; then
-            python - <<'PY'
-            import json
-            from pathlib import Path
-
-            report = json.loads(Path('reports/component-tests.json').read_text(encoding='utf-8'))
-            for row in report.get('results', []):
-                print(
-                    f"{row.get('component', '?'):28} "
-                    f"{row.get('status', '?'):24} "
-                    f"rc={row.get('returncode')} "
-                    f"reason={row.get('reason_code')}"
-                )
-            PY
-          fi
+        run: python scripts/print_component_summary.py
       - name: Upload all-real component logs
         if: always()
         uses: actions/upload-artifact@v4
