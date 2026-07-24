@@ -73,6 +73,25 @@ jobs:
       - run: python scripts/verify_sources.py
       - run: python scripts/verify_boundaries.py
       - run: python scripts/run_component_tests.py --profile minimal
+      - name: Print minimal component result summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f reports/component-tests.json ]]; then
+            python - <<'PY'
+            import json
+            from pathlib import Path
+
+            report = json.loads(Path('reports/component-tests.json').read_text(encoding='utf-8'))
+            for row in report.get('results', []):
+                print(
+                    f"{row.get('component', '?'):28} "
+                    f"{row.get('status', '?'):24} "
+                    f"rc={row.get('returncode')} "
+                    f"reason={row.get('reason_code')}"
+                )
+            PY
+          fi
       - name: Upload minimal component logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -83,6 +102,14 @@ jobs:
             reports/component-logs/
           if-no-files-found: warn
       - run: python -m pytest -q integration/tests packages/fidelis-contracts/tests
+      - name: Diagnose Git state
+        if: always()
+        shell: bash
+        run: |
+          git status --porcelain=v1
+          git remote -v
+          git config --show-origin --list
+          git fsck --no-progress
 
   all-real-integration:
     runs-on: ubuntu-latest
@@ -144,6 +171,25 @@ jobs:
           PY
       - name: Run all-real component tests
         run: python scripts/run_component_tests.py --profile all-real
+      - name: Print all-real component result summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f reports/component-tests.json ]]; then
+            python - <<'PY'
+            import json
+            from pathlib import Path
+
+            report = json.loads(Path('reports/component-tests.json').read_text(encoding='utf-8'))
+            for row in report.get('results', []):
+                print(
+                    f"{row.get('component', '?'):28} "
+                    f"{row.get('status', '?'):24} "
+                    f"rc={row.get('returncode')} "
+                    f"reason={row.get('reason_code')}"
+                )
+            PY
+          fi
       - name: Upload all-real component logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -157,3 +203,11 @@ jobs:
         run: python scripts/run_runtime_health.py --profile all-real
       - name: Verify all-real profile
         run: python scripts/verify_profile.py all-real
+      - name: Diagnose Git state
+        if: always()
+        shell: bash
+        run: |
+          git status --porcelain=v1
+          git remote -v
+          git config --show-origin --list
+          git fsck --no-progress
