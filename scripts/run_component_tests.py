@@ -65,11 +65,30 @@ def _should_editable_install(pyproject: Path) -> bool:
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     if "project" not in data and "build-system" not in data:
         return False
+    tool = data.get("tool", {}) if isinstance(data.get("tool"), dict) else {}
+    pytest_config = tool.get("pytest", {}) if isinstance(tool.get("pytest"), dict) else {}
+    ini_options = pytest_config.get("ini_options", {}) if isinstance(pytest_config.get("ini_options"), dict) else {}
+    if ini_options.get("pythonpath"):
+        return False
     src_dir = pyproject.parent / "src"
     if src_dir.exists():
         return True
-    setuptools_config = data.get("tool", {}).get("setuptools", {}) if isinstance(data.get("tool"), dict) else {}
+    setuptools_config = tool.get("setuptools", {}) if isinstance(tool.get("setuptools"), dict) else {}
     return bool(setuptools_config.get("packages") or setuptools_config.get("py-modules") or setuptools_config.get("package-dir"))
+
+
+def _pip_install_editable(cwd: Path) -> subprocess.CompletedProcess[str]:
+    base_command = [sys.executable, "-m", "pip", "install", "-e", "."]
+    completed = subprocess.run(base_command, cwd=cwd, check=False, capture_output=True, text=True)
+    if completed.returncode != 0 and "externally-managed-environment" in completed.stderr:
+        completed = subprocess.run(
+            [*base_command, "--break-system-packages"],
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    return completed
 
 
 def _prepare_component(component: str, cwd: Path, command: list[str]) -> tuple[bool, int | None, str | None, str | None, str | None]:
@@ -80,8 +99,7 @@ def _prepare_component(component: str, cwd: Path, command: list[str]) -> tuple[b
         return True, None, None, None, None
     pyproject = cwd / "pyproject.toml"
     if _should_editable_install(pyproject) and command[:3] == [sys.executable, "-m", "pytest"]:
-        install_command = [sys.executable, "-m", "pip", "install", "-e", "."]
-        completed = subprocess.run(install_command, cwd=cwd, check=False, capture_output=True, text=True)
+        completed = _pip_install_editable(cwd)
         if completed.returncode != 0:
             return False, completed.returncode, "component_setup_failed", f"Editable install failed for {component}", str(pyproject)
         return True, None, None, None, None

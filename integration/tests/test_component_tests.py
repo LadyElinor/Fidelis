@@ -324,6 +324,52 @@ def test_prepare_component_skips_editable_install_for_non_package_pyproject(monk
     assert expected_artifact is None
 
 
+def test_prepare_component_skips_editable_install_when_pytest_pythonpath_is_declared(monkeypatch, tmp_path: Path) -> None:
+    from scripts.run_component_tests import _prepare_component
+
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname='demo'\nversion='0.1.0'\n\n[tool.pytest.ini_options]\npythonpath = ['src']\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "demo").mkdir(parents=True)
+    (tmp_path / "src" / "demo" / "__init__.py").write_text("", encoding="utf-8")
+
+    def fail_run(*args, **kwargs):
+        raise AssertionError("editable install should not run when pytest pythonpath is present")
+
+    monkeypatch.setattr("scripts.run_component_tests.subprocess.run", fail_run)
+    ok, returncode, reason_code, reason, expected_artifact = _prepare_component("meaning-assay", tmp_path, [sys.executable, "-m", "pytest", "-q"])
+    assert ok is True
+    assert returncode is None
+    assert reason_code is None
+    assert reason is None
+    assert expected_artifact is None
+
+
+def test_pip_install_editable_retries_with_break_system_packages(monkeypatch, tmp_path: Path) -> None:
+    from scripts.run_component_tests import _pip_install_editable
+
+    class Completed:
+        def __init__(self, returncode, stderr="", stdout=""):
+            self.returncode = returncode
+            self.stderr = stderr
+            self.stdout = stdout
+
+    calls = []
+
+    def fake_run(command, cwd, check, capture_output, text):
+        calls.append(command)
+        if len(calls) == 1:
+            return Completed(1, stderr="error: externally-managed-environment")
+        return Completed(0)
+
+    monkeypatch.setattr("scripts.run_component_tests.subprocess.run", fake_run)
+    completed = _pip_install_editable(tmp_path)
+    assert completed.returncode == 0
+    assert calls[0] == [sys.executable, "-m", "pip", "install", "-e", "."]
+    assert calls[1] == [sys.executable, "-m", "pip", "install", "-e", ".", "--break-system-packages"]
+
+
 def test_run_component_tests_records_component_logs_for_execution(tmp_path: Path) -> None:
     from scripts.run_component_tests import run
 
