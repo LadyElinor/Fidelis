@@ -85,6 +85,40 @@ def test_run_component_tests_minimal_tolerates_absent_optional_components(tmp_pa
     assert results["aconstellation"]["status"] == "expected_not_applicable"
 
 
+def test_run_component_tests_minimal_tolerates_failed_optional_component(monkeypatch, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_component_test_fixture(repo)
+
+    scripts_dir = repo / "scripts"
+    sys.path.insert(0, str(repo))
+    from scripts import run_component_tests as mod  # type: ignore
+
+    original_run = mod.run
+
+    def fake_run(component, cwd, command, required_components):
+        result = original_run(component, cwd, command, required_components)
+        if component == "aconstellation":
+            result.status = "failed"
+            result.returncode = 1
+            result.reason_code = "simulated_optional_failure"
+            result.reason = "simulated optional component failure"
+            result.classification = "execution"
+        return result
+
+    monkeypatch.setattr(mod, "run", fake_run)
+    monkeypatch.setattr(mod, "ROOT", repo)
+    monkeypatch.setattr(sys, "argv", ["run_component_tests.py", "--profile", "minimal"])
+
+    exit_code = mod.main()
+    assert exit_code == 0
+
+    payload = json.loads((repo / "reports" / "component-tests.json").read_text(encoding="utf-8"))
+    results = {row["component"]: row for row in payload["results"]}
+    assert results["aconstellation"]["status"] == "failed"
+    assert results["fidelis-contracts"]["status"] == "passed"
+
+
 def test_run_component_tests_all_real_fails_when_required_components_are_absent(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -108,6 +142,38 @@ def test_run_component_tests_all_real_fails_when_required_components_are_absent(
     assert payload["components_verified"] is False
     results = {row["component"]: row for row in payload["results"]}
     assert results["aconstellation"]["status"] == "unexpectedly_missing"
+
+
+def test_run_component_tests_minimal_fails_when_required_component_fails(monkeypatch, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_component_test_fixture(repo)
+
+    sys.path.insert(0, str(repo))
+    from scripts import run_component_tests as mod  # type: ignore
+
+    original_run = mod.run
+
+    def fake_run(component, cwd, command, required_components):
+        result = original_run(component, cwd, command, required_components)
+        if component == "fidelis-contracts":
+            result.status = "failed"
+            result.returncode = 1
+            result.reason_code = "simulated_required_failure"
+            result.reason = "simulated required component failure"
+            result.classification = "execution"
+        return result
+
+    monkeypatch.setattr(mod, "run", fake_run)
+    monkeypatch.setattr(mod, "ROOT", repo)
+    monkeypatch.setattr(sys, "argv", ["run_component_tests.py", "--profile", "minimal"])
+
+    exit_code = mod.main()
+    assert exit_code == 1
+
+    payload = json.loads((repo / "reports" / "component-tests.json").read_text(encoding="utf-8"))
+    results = {row["component"]: row for row in payload["results"]}
+    assert results["fidelis-contracts"]["status"] == "failed"
 
 
 def test_run_runtime_health_minimal_emits_bound_receipt_fields(tmp_path: Path) -> None:

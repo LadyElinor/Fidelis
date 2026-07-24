@@ -73,6 +73,15 @@ jobs:
       - run: python scripts/verify_sources.py
       - run: python scripts/verify_boundaries.py
       - run: python scripts/run_component_tests.py --profile minimal
+      - name: Upload minimal component logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-logs-seed-integrity
+          path: |
+            reports/component-tests.json
+            reports/component-logs/
+          if-no-files-found: warn
       - run: python -m pytest -q integration/tests packages/fidelis-contracts/tests
 
   all-real-integration:
@@ -135,6 +144,15 @@ jobs:
           PY
       - name: Run all-real component tests
         run: python scripts/run_component_tests.py --profile all-real
+      - name: Upload all-real component logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-logs-all-real-integration
+          path: |
+            reports/component-tests.json
+            reports/component-logs/
+          if-no-files-found: warn
       - name: Generate all-real runtime health receipt
         run: python scripts/run_runtime_health.py --profile all-real
       - name: Verify all-real profile

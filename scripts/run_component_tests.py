@@ -160,6 +160,10 @@ def run(component: str, cwd: Path, command: list[str], required_components: set[
     )
 
 
+def _is_hard_failure(result: Result, required_components: set[str], hard_fail_statuses: set[str]) -> bool:
+    return result.component in required_components and result.status in hard_fail_statuses
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", choices=sorted(PROFILE_PATHS), default="minimal")
@@ -180,7 +184,7 @@ def main() -> int:
     ]
     results = [run(*entry, required_components) for entry in commands]
     hard_fail_statuses = HARD_FAIL_STATUSES_BY_PROFILE[args.profile]
-    all_required_passed = not any(result.status in hard_fail_statuses for result in results)
+    all_required_passed = not any(_is_hard_failure(result, required_components, hard_fail_statuses) for result in results)
 
     reports = ROOT / "reports"
     reports.mkdir(exist_ok=True)
@@ -203,7 +207,7 @@ def main() -> int:
         f"PROFILE={args.profile} PRODUCTION_CLEARED=false "
         f"SIDE_EFFECTS_ALLOWED=false SUBSTANTIVE_ETHICS_TESTED=false"
     )
-    return 1 if any(result.status in hard_fail_statuses for result in results) else 0
+    return 1 if any(_is_hard_failure(result, required_components, hard_fail_statuses) for result in results) else 0
 
 
 if __name__ == "__main__":
