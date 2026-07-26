@@ -4,14 +4,14 @@
   "component": "sophron-cer",
   "name": "SOPHRON-CER",
   "prefix": "packages/sophron-cer",
-  "mode": "import",
+  "mode": "pull",
   "upstream_url": "https://github.com/LadyElinor/SOPHRON-CER.git",
   "upstream_branch": "main",
   "upstream_commit": "1daf28f9dbc9abecc532a80bd411fa21e827443d",
   "imported_tree": "0697494a73196ba1e88344a70fc9e723151bd2e0",
-  "manifest_row_digest": "2a40382dac551c50369358133f26e7b125c0d26eed97c3d9c2a562465d6a0ff5",
-  "fidelis_commit": "21f4d82f3c79b6fb6354956c9790a688be2fd947",
-  "imported_at_utc": "2026-07-23T01:05:53Z",
-  "previous_receipt_digest": null,
-  "receipt_digest": "b6b993e9f6cbf1feb9612e149e735067485cd42757258b38a66f831b746cb512"
+  "manifest_row_digest": "9b66d9c343f4e5568752be760bfe069b6c2e2185803deefdf70d4798e24e06ed",
+  "fidelis_commit": "a91bacfb83d1caa6d38f0b8d7f4d0047894ff4b4",
+  "imported_at_utc": "2026-07-24T00:56:08Z",
+  "previous_receipt_digest": "b6b993e9f6cbf1feb9612e149e735067485cd42757258b38a66f831b746cb512",
+  "receipt_digest": "de9967c4022d2e20f8718e28904e23cd297c6c0f530a8eff8b3f1eadc88aaf2b"
 }

@@ -53,9 +53,13 @@ For each block it reports:
 Telemetry is only useful if it’s stable enough to compare across time and across collection modes.
 The invariants doc is treated like a contract: if we violate it, the run should fail loudly.
 
+Safety-trip honesty matters too: not every visible detector is mature enough to be treated as a trusted blocker. See `docs/cer/trip_validation_status.md`.
+
 ## Repo layout
 - `tmp_moltx_instrument_trending_v2.mjs` — canonical baseline/trending entrypoint
 - `docs/cer/invariants.md` — invariants/spec
+- `docs/cer/trip_validation_status.md` — tripwire maturity and downstream consumption rules
+- `MAINLINE_STATUS.md` — branch legibility note for current integration state
 - `outputs/` — run receipts (not always committed)
 
 ## Misuse & safety considerations

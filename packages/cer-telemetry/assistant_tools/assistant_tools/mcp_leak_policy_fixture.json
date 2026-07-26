@@ -1,0 +1,7 @@
+{
+  "minimumIndicatorCount": 3,
+  "redactionMismatchScore": 0.95,
+  "patterns": {
+    "card-like-content": { "enabled": false }
+  }
+}

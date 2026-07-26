@@ -4,14 +4,14 @@
   "component": "trusted-runtime",
   "name": "TrustedRuntime",
   "prefix": "packages/trusted-runtime",
-  "mode": "import",
+  "mode": "pull",
   "upstream_url": "https://github.com/LadyElinor/TrustedRuntime.git",
   "upstream_branch": "main",
-  "upstream_commit": "d641a4131f6997b4e4fca73292d630f7449c3bf7",
-  "imported_tree": "b224fca52a5c2846c3c172c11dcfce2ef7a9db4e",
-  "manifest_row_digest": "1c741cc73c719e4e46f6ba6a27053d76fb5fe4625c5573f0ae276814afb44095",
-  "fidelis_commit": "9f9239849f2273003050c280875a46299e6c9f64",
-  "imported_at_utc": "2026-07-23T01:05:43Z",
-  "previous_receipt_digest": null,
-  "receipt_digest": "f39ce7e5386ae6480307453dbf10dee5c664ff7e7f7d09e7d8d06d7dce6b9783"
+  "upstream_commit": "b58677aa1a46ffcaac8c7c4d5c4cd59f557425b2",
+  "imported_tree": "5b07f10ce1e650b654950b29fe6f119a620e2873",
+  "manifest_row_digest": "d71c237ae5c8d51c65c69c53b008e10cdab9ec20a384d82893d88b3ec91862b2",
+  "fidelis_commit": "654066c04410ee4d87795707d9ec74b9c65058a4",
+  "imported_at_utc": "2026-07-24T23:32:00Z",
+  "previous_receipt_digest": "f39ce7e5386ae6480307453dbf10dee5c664ff7e7f7d09e7d8d06d7dce6b9783",
+  "receipt_digest": "8ada1ced710dda4c9acda613f7b7a612398890adccee553ca50f1bd77bd1b0bc"
 }

@@ -4,14 +4,14 @@
   "component": "ethics-council",
   "name": "EthicsCouncil",
   "prefix": "packages/ethics-council",
-  "mode": "import",
+  "mode": "pull",
   "upstream_url": "https://github.com/LadyElinor/EthicsCouncil.git",
   "upstream_branch": "master",
   "upstream_commit": "b496bc79fd6778afcefcf97dea26b32a8ce11fe0",
   "imported_tree": "6957615d783c3afd5ab86a3623d325b67bcfe951",
-  "manifest_row_digest": "9955742ee591b2215f31c895ffd011be951dcde52e0642c61b6eefead7784c5e",
-  "fidelis_commit": "c558def41e44cbe143ce22b4f2b794d51e7845fa",
-  "imported_at_utc": "2026-07-23T01:06:01Z",
-  "previous_receipt_digest": null,
-  "receipt_digest": "6ae51c2fb9b625d7ee09fd06fe504bf324abbbb32aeec9651c80935badfda67b"
+  "manifest_row_digest": "d82488427ac98012cd3563bd0c67f6ef478d86168d18f619e4e4db44151df680",
+  "fidelis_commit": "98d195fc9d569ca48395052b1acca24bfdd9b832",
+  "imported_at_utc": "2026-07-24T00:56:14Z",
+  "previous_receipt_digest": "6ae51c2fb9b625d7ee09fd06fe504bf324abbbb32aeec9651c80935badfda67b",
+  "receipt_digest": "e1efdcc83530508365282e4de559c8f8fecf3652e86cf303d1964d036f25a9f9"
 }

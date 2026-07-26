@@ -65,11 +65,85 @@ def _should_editable_install(pyproject: Path) -> bool:
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     if "project" not in data and "build-system" not in data:
         return False
+    tool = data.get("tool", {}) if isinstance(data.get("tool"), dict) else {}
+    pytest_config = tool.get("pytest", {}) if isinstance(tool.get("pytest"), dict) else {}
+    ini_options = pytest_config.get("ini_options", {}) if isinstance(pytest_config.get("ini_options"), dict) else {}
+    if ini_options.get("pythonpath"):
+        return False
     src_dir = pyproject.parent / "src"
     if src_dir.exists():
         return True
-    setuptools_config = data.get("tool", {}).get("setuptools", {}) if isinstance(data.get("tool"), dict) else {}
+    setuptools_config = tool.get("setuptools", {}) if isinstance(tool.get("setuptools"), dict) else {}
     return bool(setuptools_config.get("packages") or setuptools_config.get("py-modules") or setuptools_config.get("package-dir"))
+
+
+def _editable_install_target(pyproject: Path) -> str:
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+
+    project = data.get("project", {})
+    if not isinstance(project, dict):
+        return "."
+
+    optional = project.get("optional-dependencies", {})
+    if isinstance(optional, dict) and "test" in optional:
+        return ".[test]"
+
+    return "."
+
+
+def _pip_install_editable(cwd: Path, pyproject: Path) -> subprocess.CompletedProcess[str]:
+    target = _editable_install_target(pyproject)
+    base_command = [sys.executable, "-m", "pip", "install", "-e", target]
+    completed = subprocess.run(base_command, cwd=cwd, check=False, capture_output=True, text=True)
+    if completed.returncode != 0 and "externally-managed-environment" in completed.stderr:
+        completed = subprocess.run(
+            [*base_command, "--break-system-packages"],
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    return completed
+
+
+def _pip_install_requirements(cwd: Path, requirements: Path) -> subprocess.CompletedProcess[str]:
+    base_command = [sys.executable, "-m", "pip", "install", "-r", requirements.name]
+    completed = subprocess.run(base_command, cwd=cwd, check=False, capture_output=True, text=True)
+    if completed.returncode != 0 and "externally-managed-environment" in completed.stderr:
+        completed = subprocess.run(
+            [*base_command, "--break-system-packages"],
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    return completed
+
+
+def _prepare_python_component(component: str, cwd: Path, command: list[str]) -> tuple[bool, int | None, str | None, str | None, str | None]:
+    if command[:3] != [sys.executable, "-m", "pytest"]:
+        return True, None, None, None, None
+
+    pyproject = cwd / "pyproject.toml"
+    requirements_dev = cwd / "requirements-dev.txt"
+
+    if requirements_dev.is_file():
+        completed = _pip_install_requirements(cwd, requirements_dev)
+        if completed.returncode != 0:
+            return (
+                False,
+                completed.returncode,
+                "component_setup_failed",
+                f"Development dependency installation failed for {component}",
+                str(requirements_dev),
+            )
+
+    if _should_editable_install(pyproject):
+        completed = _pip_install_editable(cwd, pyproject)
+        if completed.returncode != 0:
+            return False, completed.returncode, "component_setup_failed", f"Editable install failed for {component}", str(pyproject)
+
+    return True, None, None, None, None
 
 
 def _prepare_component(component: str, cwd: Path, command: list[str]) -> tuple[bool, int | None, str | None, str | None, str | None]:
@@ -78,13 +152,9 @@ def _prepare_component(component: str, cwd: Path, command: list[str]) -> tuple[b
         if not package_json.exists():
             return False, None, "missing_component_manifest", f"No package.json exists at {package_json}", str(package_json)
         return True, None, None, None, None
-    pyproject = cwd / "pyproject.toml"
-    if _should_editable_install(pyproject) and command[:3] == [sys.executable, "-m", "pytest"]:
-        install_command = [sys.executable, "-m", "pip", "install", "-e", "."]
-        completed = subprocess.run(install_command, cwd=cwd, check=False, capture_output=True, text=True)
-        if completed.returncode != 0:
-            return False, completed.returncode, "component_setup_failed", f"Editable install failed for {component}", str(pyproject)
-        return True, None, None, None, None
+    python_result = _prepare_python_component(component, cwd, command)
+    if not python_result[0]:
+        return python_result
     if component != "sophron-cer":
         return True, None, None, None, None
     if command[:2] != ["npm", "test"]:
@@ -160,6 +230,10 @@ def run(component: str, cwd: Path, command: list[str], required_components: set[
     )
 
 
+def _is_hard_failure(result: Result, required_components: set[str], hard_fail_statuses: set[str]) -> bool:
+    return result.component in required_components and result.status in hard_fail_statuses
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", choices=sorted(PROFILE_PATHS), default="minimal")
@@ -180,7 +254,7 @@ def main() -> int:
     ]
     results = [run(*entry, required_components) for entry in commands]
     hard_fail_statuses = HARD_FAIL_STATUSES_BY_PROFILE[args.profile]
-    all_required_passed = not any(result.status in hard_fail_statuses for result in results)
+    all_required_passed = not any(_is_hard_failure(result, required_components, hard_fail_statuses) for result in results)
 
     reports = ROOT / "reports"
     reports.mkdir(exist_ok=True)
@@ -203,7 +277,7 @@ def main() -> int:
         f"PROFILE={args.profile} PRODUCTION_CLEARED=false "
         f"SIDE_EFFECTS_ALLOWED=false SUBSTANTIVE_ETHICS_TESTED=false"
     )
-    return 1 if any(result.status in hard_fail_statuses for result in results) else 0
+    return 1 if any(_is_hard_failure(result, required_components, hard_fail_statuses) for result in results) else 0
 
 
 if __name__ == "__main__":

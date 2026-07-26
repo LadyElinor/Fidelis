@@ -5,6 +5,56 @@ on:
   pull_request:
 
 jobs:
+  imported-prefix-immutability:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Enforce imported-prefix immutability
+        shell: bash
+        run: |
+          python scripts/enforce_imported_prefix_immutability.py \
+            "origin/${{ github.base_ref }}" \
+            "HEAD"
+      - name: Hydrate declared source remotes for provenance verification
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv
+          import json
+          import re
+          import subprocess
+          from pathlib import Path
+
+          root = Path('.').resolve()
+          data = json.loads((root / 'provenance' / 'source-repositories.json').read_text(encoding='utf-8'))
+          manifest_rows = {}
+          manifest_path = root / 'provenance' / 'imported-sources.tsv'
+          with manifest_path.open(encoding='utf-8', newline='') as fh:
+              reader = csv.DictReader(fh, delimiter='\t')
+              for row in reader:
+                  manifest_rows[row['name']] = row
+          for source in data['sources']:
+              remote = 'source-' + re.sub(r'[^a-z0-9]+', '-', source['name'].lower()).strip('-')
+              url = source['url']
+              branch = source['branch']
+              existing = subprocess.run(['git', 'remote', 'get-url', remote], cwd=root, text=True, capture_output=True)
+              if existing.returncode != 0:
+                  subprocess.check_call(['git', 'remote', 'add', remote, url], cwd=root)
+              subprocess.check_call(['git', 'fetch', remote, branch], cwd=root)
+              manifest_commit = manifest_rows[source['name']]['commit']
+              subprocess.check_call(['git', 'fetch', remote, manifest_commit], cwd=root)
+          PY
+      - name: Verify source provenance
+        run: python scripts/verify_sources.py
+      - name: Verify component boundaries
+        run: python scripts/verify_boundaries.py
+
   seed-integrity:
     runs-on: ubuntu-latest
     steps:
@@ -23,7 +73,27 @@ jobs:
       - run: python scripts/verify_sources.py
       - run: python scripts/verify_boundaries.py
       - run: python scripts/run_component_tests.py --profile minimal
+      - name: Print minimal component result summary
+        if: always()
+        run: python scripts/print_component_summary.py
+      - name: Upload minimal component logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-logs-seed-integrity
+          path: |
+            reports/component-tests.json
+            reports/component-logs/
+          if-no-files-found: warn
       - run: python -m pytest -q integration/tests packages/fidelis-contracts/tests
+      - name: Diagnose Git state
+        if: always()
+        shell: bash
+        run: |
+          git status --porcelain=v1
+          git remote -v
+          git config --show-origin --list
+          git fsck --no-progress
 
   all-real-integration:
     runs-on: ubuntu-latest
@@ -85,7 +155,27 @@ jobs:
           PY
       - name: Run all-real component tests
         run: python scripts/run_component_tests.py --profile all-real
+      - name: Print all-real component result summary
+        if: always()
+        run: python scripts/print_component_summary.py
+      - name: Upload all-real component logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-logs-all-real-integration
+          path: |
+            reports/component-tests.json
+            reports/component-logs/
+          if-no-files-found: warn
       - name: Generate all-real runtime health receipt
         run: python scripts/run_runtime_health.py --profile all-real
       - name: Verify all-real profile
         run: python scripts/verify_profile.py all-real
+      - name: Diagnose Git state
+        if: always()
+        shell: bash
+        run: |
+          git status --porcelain=v1
+          git remote -v
+          git config --show-origin --list
+          git fsck --no-progress

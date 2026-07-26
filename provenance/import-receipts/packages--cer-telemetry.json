@@ -4,14 +4,14 @@
   "component": "cer-telemetry",
   "name": "CER-Telemetry",
   "prefix": "packages/cer-telemetry",
-  "mode": "import",
+  "mode": "pull",
   "upstream_url": "https://github.com/LadyElinor/CER-Telemetry.git",
   "upstream_branch": "main",
-  "upstream_commit": "1bd7d07afb96ffc75169315371a136bc25480c3e",
-  "imported_tree": "a3da27f1d8afbcc6ec005a3e394936a6de651fb4",
-  "manifest_row_digest": "05ab37d739aded1d3eb0c87184788e4e844d272f398b8713c8e2c811b1dd40b0",
-  "fidelis_commit": "2bca10f1efea60a8e408dde5f7679bf6dfa162a0",
-  "imported_at_utc": "2026-07-23T01:05:56Z",
-  "previous_receipt_digest": null,
-  "receipt_digest": "8d21221f078338fd9252947aaff4a4f6ae22d9d61d2b1d086154e969495f335b"
+  "upstream_commit": "31d3eb7a52e7916736f764dfda13328d0cfd8902",
+  "imported_tree": "a9a574080c7706071e351b845180a00d32fdb154",
+  "manifest_row_digest": "4f228f3f7fc02c9d3406c3e9616727c8e2c5d2fe17f364b380dcdf2812cbf6ff",
+  "fidelis_commit": "98d195fc9d569ca48395052b1acca24bfdd9b832",
+  "imported_at_utc": "2026-07-24T00:56:11Z",
+  "previous_receipt_digest": "8d21221f078338fd9252947aaff4a4f6ae22d9d61d2b1d086154e969495f335b",
+  "receipt_digest": "130ec0f38dab350f3ba4fbb4e82fb4a0dd0120df3e72de8e46bc097a816a7a71"
 }
