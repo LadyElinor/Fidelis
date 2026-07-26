@@ -71,3 +71,11 @@ The intended profiles are:
 - `all-real`: all required component implementations present and tested at pinned source revisions.
 
 A profile must never call itself `all-real` merely because imports succeed. It must record source revisions, test results, adapter provenance, and required evidence surfaces.
+
+## Related design notes
+
+The following documents extend this architecture into completion, security, and safety planning:
+
+- `docs/COMPLETION_ROADMAP.md`
+- `docs/SECURITY_NEXT_STEPS.md`
+- `docs/SAFETY_PROPOSAL.md`

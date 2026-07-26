@@ -115,3 +115,13 @@ Do not extract:
 - All component tests pass from root CI.
 - All-real profile rejects fallback and unpinned source states.
 - Old repositories receive relocation notices and become read-only only after the tagged release.
+
+## Follow-on planning notes
+
+After the provenance-closure promotion to `master`, several larger next-step documents now exist and should inform future backlog execution:
+
+- `docs/COMPLETION_ROADMAP.md`
+- `docs/SECURITY_NEXT_STEPS.md`
+- `docs/SAFETY_PROPOSAL.md`
+
+The backlog remains the short-form execution tracker. Those design notes provide the larger sequencing and architectural rationale for the next development stages.
