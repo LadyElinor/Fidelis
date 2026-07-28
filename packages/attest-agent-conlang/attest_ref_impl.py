@@ -114,6 +114,11 @@ class AuthorityResolver(Protocol):
         ...
 
 
+class NonceReplayChecker(Protocol):
+    def check(self, nonce: str) -> bool:
+        ...
+
+
 class FailClosedResolver:
     def resolve(self, ref: str) -> GroundsResolution:
         return GroundsResolution(ref=ref, status="unresolved", detail="no resolver configured")
@@ -122,6 +127,30 @@ class FailClosedResolver:
 class FailClosedAuthorityResolver:
     def resolve(self, ref: str) -> AuthorityResolution:
         return AuthorityResolution(ref=ref, status="unresolved", detail="no authority resolver configured")
+
+
+class AllowAllNonceReplayChecker:
+    def check(self, nonce: str) -> bool:
+        return True
+
+
+class StaticNonceReplayChecker:
+    def __init__(self, seen: Optional[Set[str]] = None):
+        self.seen = seen or set()
+
+    def check(self, nonce: str) -> bool:
+        return nonce not in self.seen
+
+
+class InMemoryNonceReplayChecker:
+    def __init__(self, seen: Optional[Set[str]] = None):
+        self.seen = set(seen or set())
+
+    def check(self, nonce: str) -> bool:
+        if nonce in self.seen:
+            return False
+        self.seen.add(nonce)
+        return True
 
 
 class StaticGroundsResolver:
@@ -229,6 +258,7 @@ class DeonticBinding(BaseModel):
 
     message: Optional[str] = None
     parents: List[str] = Field(default_factory=list)
+    ordering_anchor: Optional[Tuple[str, int]] = None
 
 
 class DeonticWarrant(BaseModel):
@@ -314,6 +344,7 @@ class DeploymentProfile(BaseModel):
     accepted_authority_types: Set[AuthorityType] = Field(default_factory=lambda: {"HUMAN_APPROVAL", "POLICY", "CAPABILITY", "DELEGATED", "SANDBOX"})
     authority_namespaces: Set[str] = Field(default_factory=lambda: {"approval", "policy", "grant", "capability", "sandbox", "receipt"})
     nonce_required_for_authority: bool = False
+    trusted_ordering_authority: bool = False
     # Spec 8A.2: conformance depends on publishing the lattice used for
     # authority-strength comparison, never on assuming a universal ordering.
     authority_strength_lattice: Dict[str, int] = Field(
@@ -397,11 +428,13 @@ class AttestVerifier:
         grounds_resolver: Optional[GroundsResolver] = None,
         authority_resolver: Optional[AuthorityResolver] = None,
         signature_verifier: Optional[SignatureVerifier] = None,
+        nonce_replay_checker: Optional[NonceReplayChecker] = None,
     ):
         self.profile = profile or load_profile()
         self.grounds_resolver = grounds_resolver or FailClosedResolver()
         self.authority_resolver = authority_resolver or FailClosedAuthorityResolver()
         self.signature_verifier = signature_verifier or Ed25519SignatureVerifier(self.profile.signer_public_keys)
+        self.nonce_replay_checker = nonce_replay_checker or AllowAllNonceReplayChecker()
 
     def max_chain_strength(self, chain: List[AttestMessage]) -> int:
         strengths = [self.profile.strength_of(m.warrant.type) for m in chain if m.warrant]
@@ -442,6 +475,8 @@ class AttestVerifier:
         if d.binds.message != computed_core_id:
             return False
         if list(d.binds.parents) != list(msg.parents):
+            return False
+        if tuple(d.binds.ordering_anchor or ()) != tuple(msg.ordering_anchor):
             return False
         return True
 
@@ -493,10 +528,11 @@ class AttestVerifier:
         if not res.delegates_from:
             errors.append("DELEGATED_AUTHORITY_NEVER_HELD")
             return False
-        return all(
+        branch_results = [
             self._walk_delegation(src, needed_scope, seen, errors, at=at, child_strength=hop_strength)
             for src in res.delegates_from
-        )
+        ]
+        return all(branch_results)
 
     def _evaluate_deontic(self, msg: AttestMessage, computed_core_id: str, at: Optional[datetime] = None) -> Tuple[bool, List[str]]:
         errors: List[str] = []
@@ -519,9 +555,15 @@ class AttestVerifier:
         if not self._deontic_binds(d, msg, computed_core_id):
             errors.append("AUTHORITY_BINDING_INVALID")
         if not self._authority_unexpired(d.expires, at):
-            errors.append("AUTHORITY_EXPIRED")
-        if d.nonce is None and self.profile.nonce_required_for_authority:
+            if self.profile.trusted_ordering_authority:
+                errors.append("AUTHORITY_EXPIRED")
+            else:
+                errors.append("AUTHORITY_EXPIRED_SOFT")
+        if d.nonce is None and (self.profile.nonce_required_for_authority or self.profile.trusted_ordering_authority):
             errors.append("AUTHORITY_NONCE_REQUIRED")
+        elif d.nonce is not None and self.profile.trusted_ordering_authority:
+            if not self.nonce_replay_checker.check(d.nonce):
+                errors.append("AUTHORITY_NONCE_REPLAYED")
         if not self._scope_covers(d.scope, msg.action_scope):
             errors.append("AUTHORITY_SCOPE_NOT_COVERED")
         if d.type == "DELEGATED":
@@ -750,7 +792,10 @@ class AttestVerifier:
             result["soft_flag"].append("RELAY_UPTAKE_MISSING")
 
         authority_valid, authority_errors = self._evaluate_deontic(msg, computed_core_id, at=evaluated_at)
-        result["hard_fail"].extend(authority_errors)
+        soft_authority_errors = [error for error in authority_errors if error.endswith("_SOFT")]
+        hard_authority_errors = [error for error in authority_errors if not error.endswith("_SOFT")]
+        result["hard_fail"].extend(hard_authority_errors)
+        result["soft_flag"].extend(soft_authority_errors)
 
         has_external_grounds = bool(msg.warrant and self._grounds_reference_external_authority(msg.warrant.grounds))
 

@@ -11,7 +11,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from trusted_runtime.action_identity import canonical_action_digest, effective_action_scope, normalized_exact_approval_view
 from trusted_runtime.config import detect_integration_mode, load_integration_paths
+from trusted_runtime.exact_approval import ExactApprovalCommitEmissionState
 from trusted_runtime.integration.adapters import AdapterSet, HazardAdapter, TelemetryAdapter, WarrantAdapter
 from trusted_runtime.authority_store import AuthorityGrantStore
 from trusted_runtime.integration.attest_bridge import AttestBridge, AttestResolverInputs
@@ -96,6 +98,7 @@ def _build_authority_store() -> AuthorityGrantStore:
 # Orchestrator-owned trust root. Mutated only through its explicit API
 # (insert_grant / revoke_grant); never from action context or message content.
 _AUTHORITY_STORE = _build_authority_store()
+_IDEMPOTENCY_KEYS_SEEN: set[str] = set()
 
 
 def get_authority_store() -> AuthorityGrantStore:
@@ -108,6 +111,20 @@ def set_authority_store(store: AuthorityGrantStore) -> AuthorityGrantStore:
     _AUTHORITY_STORE = store
     _ATTEST_BRIDGE = AttestBridge(attest_root=_ATTEST_AGENT_CONLANG_SRC, authority_store=store)
     return store
+
+
+def clear_idempotency_registry() -> None:
+    _IDEMPOTENCY_KEYS_SEEN.clear()
+
+
+def _register_idempotency_key_once(key: str | None, *, consequential: bool) -> bool:
+    if not consequential or not isinstance(key, str) or not key.strip():
+        return False
+    normalized = key.strip()
+    if normalized in _IDEMPOTENCY_KEYS_SEEN:
+        return True
+    _IDEMPOTENCY_KEYS_SEEN.add(normalized)
+    return False
 
 
 _ATTEST_BRIDGE = AttestBridge(attest_root=_ATTEST_AGENT_CONLANG_SRC, authority_store=_AUTHORITY_STORE)
@@ -1273,7 +1290,90 @@ def _attest_resolver_summary(
     }
 
 
-def _cer_enrichment_from_attest_verification(verification: Any) -> CERFragmentEnrichment:
+def _exact_approval_receipt_fragment(
+    *,
+    action: ProposedAction,
+    exact_approval_scope: str,
+) -> dict[str, Any]:
+    normalized = normalized_exact_approval_view(action)
+    payload = {
+        "present": bool(action.exact_approval_identity),
+        "exact_approval_identity": action.exact_approval_identity,
+        "exact_approval_scope": exact_approval_scope,
+        "idempotency_key": normalized.idempotency_key,
+        "action_id": action.id,
+        "action_digest": canonical_action_digest(action),
+        "source_digest": normalized.source_digest,
+        "connector": normalized.connector,
+        "destination": normalized.destination,
+        "arguments": normalized.arguments,
+    }
+    payload["receipt_sha256"] = sha256_hex(payload)
+    return payload
+
+
+def _exact_approval_commit_preview(
+    *,
+    action: ProposedAction,
+    exact_approval_scope: str,
+    binding: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not action.exact_approval_identity or exact_approval_scope == "general":
+        return None
+    commit_payload = _ATTEST_BRIDGE.wrap_runtime_commit_for_action(
+        action=action,
+        runtime_actor="trusted-runtime:orchestrator",
+        content={"action_id": action.id, "action_digest": canonical_action_digest(action), "preview_only": True},
+        parents=[],
+        authority=["approval:pending"],
+        nonce=f"preview:{action.id}",
+    )
+    preview = {
+        **commit_payload,
+        "binding_receipt_sha256": binding.get("receipt_sha256"),
+        "action_id": action.id,
+        "action_digest": canonical_action_digest(action),
+        "idempotency_key": binding.get("idempotency_key"),
+        "source_digest": binding.get("source_digest"),
+        "connector": binding.get("connector"),
+        "destination": binding.get("destination"),
+        "arguments": binding.get("arguments"),
+        "preview_only": True,
+    }
+    preview["receipt_sha256"] = sha256_hex(preview)
+    return preview
+
+
+def _emitted_commit_artifact(
+    *,
+    commit_preview: dict[str, Any] | None,
+    runtime_disposition: RuntimeDisposition,
+) -> dict[str, Any] | None:
+    if commit_preview is None:
+        return None
+    if runtime_disposition is RuntimeDisposition.PROCEED:
+        emission_state = ExactApprovalCommitEmissionState.EMITTABLE.value
+    elif runtime_disposition is RuntimeDisposition.CONFIRM_HUMAN:
+        emission_state = ExactApprovalCommitEmissionState.STAGED.value
+    else:
+        emission_state = ExactApprovalCommitEmissionState.SUPPRESSED.value
+    artifact = {
+        **commit_preview,
+        "emission_state": emission_state,
+        "runtime_disposition": runtime_disposition.value,
+        "emitted": False,
+    }
+    artifact["receipt_sha256"] = sha256_hex(artifact)
+    return artifact
+
+
+def _cer_enrichment_from_attest_verification(
+    verification: Any,
+    *,
+    exact_approval_identity: str | None = None,
+    exact_approval_scope: str | None = None,
+) -> CERFragmentEnrichment:
+    authority_state_digest = getattr(verification, "authority_state_digest", None) or verification.authority_resolver_config_hash
     resolver_config_hash = sha256_hex(
         {
             "grounds_resolver_config_hash": verification.grounds_resolver_config_hash,
@@ -1292,10 +1392,31 @@ def _cer_enrichment_from_attest_verification(verification: Any) -> CERFragmentEn
         profile_hash=verification.profile_hash,
         verifier_hash=verifier_hash,
         resolver_config_hash=resolver_config_hash,
+        authority_state_digest=authority_state_digest,
         known_message_set_hash=verification.known_message_set_hash,
         signature_verifier_identity=verification.signature_verifier_name,
         replay_nonce=None,
+        exact_approval_identity=exact_approval_identity,
+        exact_approval_scope=exact_approval_scope,
     )
+
+
+def _exact_approval_scope_for_action(action: ProposedAction) -> str:
+    action_scope = str(effective_action_scope(action) or "").strip().lower()
+    change_type = str(action.change_type or action.context.get("change_type") or "").strip().lower()
+    review_kind = str(action.review_kind or action.context.get("review_kind") or "").strip().lower()
+    changed_files = action.changed_files or action.context.get("changed_files") or []
+    if action_scope in {"state_change", "package_install", "shell_exec", "network_fetch", "general"}:
+        return action_scope
+    if change_type in {"safety_invariant", "training_corpus"}:
+        return "state_change"
+    if review_kind == "pull_request" and isinstance(changed_files, list) and len(changed_files) > 0:
+        return "state_change"
+    return "general"
+
+
+def _requires_exact_approval_identity(action: ProposedAction) -> bool:
+    return _exact_approval_scope_for_action(action) != "general"
 
 
 def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | None = None) -> ExecutionDecision:
@@ -1310,8 +1431,22 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         resolver_inputs=attest_resolver_inputs,
         evaluated_at=action.timestamp,
     )
+    exact_approval_scope = _exact_approval_scope_for_action(action)
+    exact_approval_fragment = _exact_approval_receipt_fragment(
+        action=action,
+        exact_approval_scope=exact_approval_scope,
+    )
+    exact_approval_commit_preview = _exact_approval_commit_preview(
+        action=action,
+        exact_approval_scope=exact_approval_scope,
+        binding=exact_approval_fragment,
+    )
     attest_receipt_fragment = _ATTEST_BRIDGE.cer_receipt_fragment(verification=attest_ingress_verification)
-    attest_cer_enrichment = _cer_enrichment_from_attest_verification(attest_ingress_verification)
+    attest_cer_enrichment = _cer_enrichment_from_attest_verification(
+        attest_ingress_verification,
+        exact_approval_identity=action.exact_approval_identity,
+        exact_approval_scope=exact_approval_scope,
+    )
 
     reviewability = _build_reviewability_profile(action)
 
@@ -1320,12 +1455,47 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     council = council.model_copy(update={"evidence_records": evidence_records, "reviewability": reviewability})
     tas_adapter = TrustworthyAgentStackAdapter()
     risk_state, runtime_disposition, vita_state, l2_provenance = tas_adapter.assess(action, council)
+    idempotency_duplicate = _register_idempotency_key_once(
+        normalized_exact_approval_view(action).idempotency_key,
+        consequential=exact_approval_scope != "general",
+    )
+    if idempotency_duplicate:
+        runtime_disposition = RuntimeDisposition.HALT
+        vita_state = {
+            **vita_state,
+            "idempotency": {
+                "present": True,
+                "key": normalized_exact_approval_view(action).idempotency_key,
+                "duplicate_detected": True,
+                "enforcement": "halt_duplicate_consequential_intent",
+            },
+        }
+    else:
+        vita_state = {
+            **vita_state,
+            "idempotency": {
+                "present": bool(normalized_exact_approval_view(action).idempotency_key),
+                "key": normalized_exact_approval_view(action).idempotency_key,
+                "duplicate_detected": False,
+                "enforcement": "none",
+            },
+        }
+    exact_approval_commit_artifact = _emitted_commit_artifact(
+        commit_preview=exact_approval_commit_preview,
+        runtime_disposition=runtime_disposition,
+    )
     vita_state = {
         **vita_state,
         "attest_bridge": {
             "enabled": True,
             "real_available": _ATTEST_BRIDGE.real_available,
             "ingress_frame": attest_ingress_message.get("frame"),
+            "exact_approval_identity": action.exact_approval_identity,
+            "exact_approval_scope": exact_approval_scope,
+            "typed_approval_lifted_from_legacy": action.typed_approval_lifted_from_legacy,
+            "exact_approval_binding": exact_approval_fragment,
+            "exact_approval_commit_preview": exact_approval_commit_preview,
+            "exact_approval_commit_artifact": exact_approval_commit_artifact,
             "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs, evaluated_at=action.timestamp),
             "verification": attest_receipt_fragment,
         },
@@ -1405,6 +1575,12 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
         independently_corroborated=independently_corroborated,
         reviewability_exceeded=reviewability.exceeded,
         tripwire_records=tripwire_records,
+        require_exact_approval_identity=_requires_exact_approval_identity(action),
+        exact_approval_identity=action.exact_approval_identity,
+    )
+    exact_approval_commit_artifact = _emitted_commit_artifact(
+        commit_preview=exact_approval_commit_preview,
+        runtime_disposition=runtime_disposition,
     )
     if guard_note is not None:
         vita_state = {**vita_state, "provenance_guard": guard_note}
@@ -1470,6 +1646,13 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
                 }
             ),
         ),
+        "exact_approval_commit_artifact": process_provenance_record(
+            adapter_name="ExactApprovalCommitArtifact",
+            adapter_provenance=AdapterProvenance.REAL if exact_approval_commit_artifact is not None else AdapterProvenance.UNAVAILABLE,
+            adapter_version="preview-safe-v1",
+            adapter_path=str(Path(__file__).resolve().parent / "engine.py"),
+            source_payload=strip_receipt_timestamps(exact_approval_commit_artifact or {"present": False, "action_id": action.id}),
+        ),
         "tas_closure": process_provenance_record(
             adapter_name="TrustworthyAgentStackClosure",
             adapter_provenance=l2_provenance,
@@ -1521,6 +1704,9 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "process_provenance": process_provenance,
             "attest_bridge": {
                 "message": attest_ingress_message,
+                "exact_approval_binding": exact_approval_fragment,
+                "exact_approval_commit_preview": exact_approval_commit_preview,
+                "exact_approval_commit_artifact": exact_approval_commit_artifact,
                 "resolver_inputs": _attest_resolver_summary(attest_resolver_inputs, evaluated_at=action.timestamp),
                 "verification": attest_receipt_fragment,
             },

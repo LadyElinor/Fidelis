@@ -36,6 +36,9 @@ The reference implementation is explicit about what is implemented versus delega
 - grounds resolution is supplied by a resolver interface
 - signature verification is supplied by a verifier interface
 - deployment policy is profile-driven and now has a draft artifact form
+- expiry classification now respects whether a trusted ordering authority is declared in the deployment profile
+- nonce presence is enforced for authority-required frames when trusted ordering authority is declared
+- replay detection is partially implemented as an injected verifier hook: the reference verifier now accepts a nonce replay checker, ships a minimal in-memory checker, and can emit `AUTHORITY_NONCE_REPLAYED`, but it still has no durable or externally authoritative ordering service of its own
 - signature verification uses real Ed25519 (PyNaCl) with a per-run generated key in the harness; fixed cross-implementation interop vectors do not yet exist
 
 ## Quick start

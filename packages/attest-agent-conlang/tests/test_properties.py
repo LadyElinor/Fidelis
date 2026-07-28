@@ -7,8 +7,8 @@ from pydantic import ValidationError
 from hypothesis import given, strategies as st
 
 from attest_ref_impl import (
-    AttestMessage, AttestVerifier, AuthorityResolution, load_profile,
-    StaticGroundsResolver, StaticAuthorityResolver, AcceptAllSignatureVerifier,
+    AttestMessage, AttestVerifier, AuthorityResolution, InMemoryNonceReplayChecker, load_profile,
+    StaticGroundsResolver, StaticAuthorityResolver, StaticNonceReplayChecker, AcceptAllSignatureVerifier,
 )
 
 ANCHOR = ["2026-06-30T15:00:00Z", 1]
@@ -32,7 +32,7 @@ def commit(deontic_overrides=None, action_scope="state_change", parents=None, dr
     if drop_deontic:
         return AttestMessage.model_validate({**base, "sig": "x"})
     deontic = {"type": "HUMAN_APPROVAL", "authority": ["approval:ops-1"],
-               "scope": action_scope, "binds": {"message": core, "parents": parents}}
+               "scope": action_scope, "binds": {"message": core, "parents": parents, "ordering_anchor": ANCHOR}}
     if deontic_overrides is not None:
         deontic = {**deontic, **deontic_overrides}
     return AttestMessage.model_validate({**base, "deontic": deontic, "sig": "x"})
@@ -52,7 +52,12 @@ def test_unbound_authority_rejected():
 
 
 def test_misbound_authority_rejected():
-    m = commit(deontic_overrides={"binds": {"message": "deadbeef", "parents": ["msg:root"]}})
+    m = commit(deontic_overrides={"binds": {"message": "deadbeef", "parents": ["msg:root"], "ordering_anchor": ANCHOR}})
+    assert "AUTHORITY_BINDING_INVALID" in verifier().verify(m)["hard_fail"]
+
+
+def test_misbound_ordering_anchor_rejected():
+    m = commit(deontic_overrides={"binds": {"message": commit().compute_core_id(), "parents": ["msg:root"], "ordering_anchor": ["2026-06-30T15:00:00Z", 99]}})
     assert "AUTHORITY_BINDING_INVALID" in verifier().verify(m)["hard_fail"]
 
 
@@ -75,9 +80,19 @@ def test_action_scope_required_on_state_change():
     assert "ACTION_SCOPE_REQUIRED" in verifier().verify(commit(action_scope=None))["hard_fail"]
 
 
-def test_expired_authority_rejected():
+def test_expired_authority_soft_flags_without_trusted_ordering_authority():
     m = commit(deontic_overrides={"expires": "2000-01-01T00:00:00Z"})
-    assert "AUTHORITY_EXPIRED" in verifier().verify(m)["hard_fail"]
+    verdict = verifier().verify(m)
+    assert "AUTHORITY_EXPIRED" not in verdict["hard_fail"]
+    assert "AUTHORITY_EXPIRED_SOFT" in verdict["soft_flag"]
+
+
+def test_expired_authority_hard_fails_with_trusted_ordering_authority():
+    m = commit(deontic_overrides={"expires": "2000-01-01T00:00:00Z"})
+    prof = load_profile()
+    prof.trusted_ordering_authority = True
+    verdict = verifier(profile=prof).verify(m)
+    assert "AUTHORITY_EXPIRED" in verdict["hard_fail"]
 
 
 def test_nonce_optional_by_default_but_enforced_when_required():
@@ -85,6 +100,45 @@ def test_nonce_optional_by_default_but_enforced_when_required():
     prof = load_profile()
     prof.nonce_required_for_authority = True
     assert "AUTHORITY_NONCE_REQUIRED" in verifier(profile=prof).verify(commit())["hard_fail"]
+
+
+def test_nonce_required_when_trusted_ordering_authority_is_declared():
+    prof = load_profile()
+    prof.trusted_ordering_authority = True
+    assert "AUTHORITY_NONCE_REQUIRED" in verifier(profile=prof).verify(commit())["hard_fail"]
+
+
+def test_nonce_replay_detected_when_trusted_ordering_authority_is_declared():
+    prof = load_profile()
+    prof.trusted_ordering_authority = True
+    replay_checker = StaticNonceReplayChecker(seen={"nonce:used"})
+    m = commit(deontic_overrides={"nonce": "nonce:used"})
+    verdict = AttestVerifier(
+        profile=prof,
+        grounds_resolver=StaticGroundsResolver(set()),
+        authority_resolver=StaticAuthorityResolver({"approval:ops-1"}),
+        signature_verifier=AcceptAllSignatureVerifier(),
+        nonce_replay_checker=replay_checker,
+    ).verify(m)
+    assert "AUTHORITY_NONCE_REPLAYED" in verdict["hard_fail"]
+
+
+def test_in_memory_nonce_replay_checker_consumes_on_first_use():
+    prof = load_profile()
+    prof.trusted_ordering_authority = True
+    replay_checker = InMemoryNonceReplayChecker()
+    v = AttestVerifier(
+        profile=prof,
+        grounds_resolver=StaticGroundsResolver(set()),
+        authority_resolver=StaticAuthorityResolver({"approval:ops-1"}),
+        signature_verifier=AcceptAllSignatureVerifier(),
+        nonce_replay_checker=replay_checker,
+    )
+    m = commit(deontic_overrides={"nonce": "nonce:ephemeral"})
+    first = v.verify(m)
+    second = v.verify(m)
+    assert "AUTHORITY_NONCE_REPLAYED" not in first["hard_fail"]
+    assert "AUTHORITY_NONCE_REPLAYED" in second["hard_fail"]
 
 
 def test_delegate_requires_deontic():
@@ -100,7 +154,7 @@ def _delegated_commit(grants, chain_head="grant:leaf", action_scope="state_chang
             "action_scope": action_scope, "content": "delegated act"}
     core = AttestMessage.model_validate(base).compute_core_id()
     deontic = {"type": "DELEGATED", "authority": [chain_head], "scope": action_scope,
-               "binds": {"message": core, "parents": parents}}
+               "binds": {"message": core, "parents": parents, "ordering_anchor": ANCHOR}}
     v = AttestVerifier(profile=load_profile(), grounds_resolver=StaticGroundsResolver(set()),
                        authority_resolver=StaticAuthorityResolver(grants=grants),
                        signature_verifier=AcceptAllSignatureVerifier())
@@ -120,6 +174,16 @@ def test_delegation_cycle_is_named():
         "grant:b": {"granted_type": "DELEGATED", "granted_scope": "state_change", "delegates_from": ["grant:a"]},
     }
     res = _delegated_commit(grants, chain_head="grant:a")
+    assert "DELEGATION_CYCLE" in res["hard_fail"]
+
+
+def test_delegation_reports_all_failing_branches():
+    grants = {
+        "grant:leaf": {"granted_type": "DELEGATED", "granted_scope": "state_change", "delegates_from": ["grant:missing", "grant:cycle"]},
+        "grant:cycle": {"granted_type": "DELEGATED", "granted_scope": "state_change", "delegates_from": ["grant:leaf"]},
+    }
+    res = _delegated_commit(grants)
+    assert f"AUTHORITY_UNRESOLVED:grant:missing" in res["hard_fail"]
     assert "DELEGATION_CYCLE" in res["hard_fail"]
 
 

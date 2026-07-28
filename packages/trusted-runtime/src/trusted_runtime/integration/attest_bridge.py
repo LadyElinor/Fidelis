@@ -31,6 +31,7 @@ import importlib.util
 import json
 import sys
 
+from trusted_runtime.action_identity import effective_action_scope
 from trusted_runtime.authority_store import AuthorityGrantStore
 from trusted_runtime.shared.models import ProposedAction
 
@@ -114,6 +115,7 @@ class AttestVerificationState(BaseModel):
     grounds_resolver_config_hash: str = ""
     authority_resolver_name: str = "unconfigured"
     authority_resolver_config_hash: str = ""
+    authority_state_digest: str = ""
     signature_verifier_name: str = "unconfigured"
     signature_verifier_config_hash: str = ""
     delegated_lineage: DelegatedLineageReceipt = Field(default_factory=DelegatedLineageReceipt)
@@ -314,6 +316,11 @@ class AttestBridge:
                 if self.authority_store is not None
                 else sha256(b"no-authority-store").hexdigest()
             ),
+            authority_state_digest=(
+                self.authority_store.state_digest(evaluated_at)
+                if self.authority_store is not None
+                else sha256(b"no-authority-store").hexdigest()
+            ),
             signature_verifier_name=f"stub-none:{self.config.signature_verifier_mode}",
             signature_verifier_config_hash=sha256(self.config.signature_verifier_mode.encode("utf-8")).hexdigest(),
             delegated_lineage=delegated_lineage,
@@ -358,6 +365,14 @@ class AttestBridge:
         - external/operator/task ingress becomes REQUEST or QUERY
         - this is the root message for downstream adoption/provenance chains
         """
+        content = {
+            "action_id": action.id,
+            "description": action.description,
+            "context": action.context,
+            "proposed_by": action.proposed_by,
+        }
+        if action.exact_approval_identity is not None:
+            content["exact_approval_identity"] = action.exact_approval_identity
         return {
             "frame": "REQUEST",
             "mode": "legible",
@@ -365,12 +380,7 @@ class AttestBridge:
             "to": "trusted-runtime:orchestrator",
             "parents": [],
             "ordering_anchor": [action.timestamp.isoformat().replace("+00:00", "Z"), 1],
-            "content": {
-                "action_id": action.id,
-                "description": action.description,
-                "context": action.context,
-                "proposed_by": action.proposed_by,
-            },
+            "content": content,
         }
 
     def wrap_adapter_assert(
@@ -457,6 +467,7 @@ class AttestBridge:
         parents: list[str],
         action_scope: Literal["state_change", "package_install", "shell_exec", "network_fetch", "general"],
         deontic: dict[str, Any],
+        exact_approval_identity: str | None = None,
     ) -> None:
         if not isinstance(deontic, dict):
             raise ValueError("COMMIT deontic must be an object")
@@ -488,6 +499,8 @@ class AttestBridge:
         bind_message = binds.get("message")
         if not isinstance(bind_message, str) or not bind_message.strip():
             raise ValueError("COMMIT deontic requires binds.message")
+        if exact_approval_identity is not None and bind_message != exact_approval_identity:
+            raise ValueError("COMMIT deontic binds.message must match exact_approval_identity")
 
         bind_parents = binds.get("parents")
         if not isinstance(bind_parents, list) or not all(
@@ -505,6 +518,7 @@ class AttestBridge:
         parents: list[str],
         action_scope: Literal["state_change", "package_install", "shell_exec", "network_fetch", "general"],
         deontic: dict[str, Any],
+        exact_approval_identity: str | None = None,
     ) -> dict[str, Any]:
         """Emit COMMIT only at the runtime/orchestrator boundary.
 
@@ -516,8 +530,9 @@ class AttestBridge:
             parents=parents,
             action_scope=action_scope,
             deontic=deontic,
+            exact_approval_identity=exact_approval_identity,
         )
-        return {
+        message = {
             "frame": "COMMIT",
             "mode": "legible",
             "from": runtime_actor,
@@ -528,6 +543,56 @@ class AttestBridge:
             "deontic": deontic,
             "content": content,
         }
+        if exact_approval_identity is not None:
+            message["exact_approval_identity"] = exact_approval_identity
+        return message
+
+    def action_scope_for_action(
+        self,
+        action: ProposedAction,
+    ) -> Literal["state_change", "package_install", "shell_exec", "network_fetch", "general"]:
+        explicit = str(effective_action_scope(action) or "").strip().lower()
+        if explicit in {"state_change", "package_install", "shell_exec", "network_fetch", "general"}:
+            return explicit  # type: ignore[return-value]
+        change_type = str(action.change_type or action.context.get("change_type") or "").strip().lower()
+        if change_type in {"safety_invariant", "training_corpus"}:
+            return "state_change"
+        review_kind = str(action.review_kind or action.context.get("review_kind") or "").strip().lower()
+        changed_files = action.changed_files or action.context.get("changed_files") or []
+        if review_kind == "pull_request" and isinstance(changed_files, list) and len(changed_files) > 0:
+            return "state_change"
+        return "general"
+
+    def wrap_runtime_commit_for_action(
+        self,
+        *,
+        action: ProposedAction,
+        runtime_actor: str,
+        content: dict[str, Any],
+        parents: list[str],
+        authority: list[str],
+        nonce: str,
+        deontic_type: str = "HUMAN_APPROVAL",
+    ) -> dict[str, Any]:
+        action_scope = self.action_scope_for_action(action)
+        deontic = {
+            "type": deontic_type,
+            "authority": authority,
+            "scope": action_scope,
+            "binds": {
+                "message": action.exact_approval_identity,
+                "parents": parents,
+            },
+            "nonce": nonce,
+        }
+        return self.wrap_runtime_commit(
+            runtime_actor=runtime_actor,
+            content=content,
+            parents=parents,
+            action_scope=action_scope,
+            deontic=deontic,
+            exact_approval_identity=action.exact_approval_identity,
+        )
 
     # ------------------------------------------------------------------
     # Verification / policy surface
@@ -634,6 +699,7 @@ class AttestBridge:
                     grounds_resolver_config_hash=sha256(self._stable_json_bytes(grounds_resolver_config)).hexdigest(),
                     authority_resolver_name=type(authority_resolver).__name__,
                     authority_resolver_config_hash=authority_resolver_hash,
+                    authority_state_digest=authority_resolver_hash,
                     signature_verifier_name=type(signature_verifier).__name__,
                     signature_verifier_config_hash=signature_verifier_config_hash,
                     delegated_lineage=delegated_lineage,

@@ -21,6 +21,38 @@ def test_tas_is_required_for_proceed():
     assert note is not None and "required layers" in note
 
 
+def test_guard_blocks_proceed_for_exact_approval_sensitive_action_without_identity():
+    disposition, note = guard_runtime_disposition(
+        RuntimeDisposition.PROCEED,
+        {
+            "council": AdapterProvenance.REAL,
+            "warrant": AdapterProvenance.REAL,
+            "cer_bundle": AdapterProvenance.REAL,
+            "tas": AdapterProvenance.REAL,
+        },
+        require_exact_approval_identity=True,
+        exact_approval_identity=None,
+    )
+    assert disposition is RuntimeDisposition.CONFIRM_HUMAN
+    assert note is not None and "exact_approval_identity" in note
+
+
+def test_guard_allows_proceed_for_exact_approval_sensitive_action_with_identity():
+    disposition, note = guard_runtime_disposition(
+        RuntimeDisposition.PROCEED,
+        {
+            "council": AdapterProvenance.REAL,
+            "warrant": AdapterProvenance.REAL,
+            "cer_bundle": AdapterProvenance.REAL,
+            "tas": AdapterProvenance.REAL,
+        },
+        require_exact_approval_identity=True,
+        exact_approval_identity="msg-core-001",
+    )
+    assert disposition is RuntimeDisposition.PROCEED
+    assert note is None
+
+
 def test_metrics_manifest_no_longer_labels_description_digest_as_git_sha():
     receipt = CerSophronTelemetryAdapter()._render_cer_metrics_receipt(
         ProposedAction(id="m1", description="review governance change", context={}, proposed_by="op"),

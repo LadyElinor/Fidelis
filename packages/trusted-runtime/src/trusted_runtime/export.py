@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from trusted_runtime.exact_approval import exact_approval_commit_governance_state, exact_approval_input_preference_note, exact_approval_target_requirements
 from trusted_runtime.l4_status import l4_status_interpretation
 from trusted_runtime.shared.models import ExecutionDecision
 
@@ -24,6 +25,29 @@ def compact_verifier_provenance_summary(decision: ExecutionDecision) -> dict[str
     verifier_hash_short = verifier_hash[:12] if isinstance(verifier_hash, str) and verifier_hash else None
     resolver_config_hash = getattr(enrichment, "resolver_config_hash", None)
     resolver_config_hash_short = resolver_config_hash[:12] if isinstance(resolver_config_hash, str) and resolver_config_hash else None
+    authority_state_digest = getattr(enrichment, "authority_state_digest", None)
+    authority_state_digest_short = authority_state_digest[:12] if isinstance(authority_state_digest, str) and authority_state_digest else None
+    exact_approval_identity = getattr(enrichment, "exact_approval_identity", None) or decision.vita_state.get("attest_bridge", {}).get("exact_approval_identity")
+    exact_approval_scope = getattr(enrichment, "exact_approval_scope", None) or decision.vita_state.get("attest_bridge", {}).get("exact_approval_scope")
+    typed_approval_lifted_from_legacy = decision.vita_state.get("attest_bridge", {}).get("typed_approval_lifted_from_legacy", False)
+    exact_approval_input_preference = exact_approval_input_preference_note(typed_approval_lifted_from_legacy)
+    exact_approval_binding = decision.vita_state.get("attest_bridge", {}).get("exact_approval_binding", {})
+    idempotency_state = decision.vita_state.get("idempotency", {})
+    idempotency_posture = {
+        "scope": "process_local",
+        "durability": "ephemeral",
+        "proof_note": "prevents duplicate consequential intent reuse only within the current runtime process",
+    }
+    exact_approval_source_digest = exact_approval_binding.get("source_digest")
+    exact_approval_target = {
+        "connector": exact_approval_binding.get("connector"),
+        "destination": exact_approval_binding.get("destination"),
+        "arguments": exact_approval_binding.get("arguments"),
+    }
+    idempotency_key = exact_approval_binding.get("idempotency_key")
+    exact_approval_commit_preview = decision.vita_state.get("attest_bridge", {}).get("exact_approval_commit_preview")
+    exact_approval_commit_artifact = decision.vita_state.get("attest_bridge", {}).get("exact_approval_commit_artifact")
+    commit_governance_state = exact_approval_commit_governance_state(exact_approval_commit_artifact)
     stub_path = decision_effect == "UNVERIFIABLE" or str(signature_identity).startswith("stub-none")
     status_line = f"{signature_identity}:{decision_effect}"
     return {
@@ -35,6 +59,21 @@ def compact_verifier_provenance_summary(decision: ExecutionDecision) -> dict[str
         "known_message_set_hash_short": known_message_set_hash_short,
         "verifier_hash_short": verifier_hash_short,
         "resolver_config_hash_short": resolver_config_hash_short,
+        "authority_state_digest_short": authority_state_digest_short,
+        "exact_approval_identity": exact_approval_identity,
+        "exact_approval_scope": exact_approval_scope,
+        "idempotency_key": idempotency_key,
+        "typed_approval_lifted_from_legacy": typed_approval_lifted_from_legacy,
+        "exact_approval_input_preference": exact_approval_input_preference,
+        "idempotency_state": idempotency_state,
+        "idempotency_posture": idempotency_posture,
+        "exact_approval_binding": exact_approval_binding,
+        "exact_approval_source_digest": exact_approval_source_digest,
+        "exact_approval_target": exact_approval_target,
+        "exact_approval_target_requirements": exact_approval_target_requirements(exact_approval_scope),
+        "exact_approval_commit_preview": exact_approval_commit_preview,
+        "exact_approval_commit_artifact": exact_approval_commit_artifact,
+        "exact_approval_commit_governance_state": commit_governance_state,
     }
 
 
@@ -75,9 +114,23 @@ def export_decision_payload(decision: ExecutionDecision) -> dict[str, JsonSafe]:
     if isinstance(sophron_validation, dict):
         sophron_validation["interpretation"] = interpretation
 
+    compact_verifier_provenance = compact_verifier_provenance_summary(decision)
+
     return {
         "action_id": decision.action_id,
         "risk_state": decision.risk_state.value,
+        "compact_verifier_provenance": compact_verifier_provenance,
+        "exact_approval_contract": {
+            "scope": compact_verifier_provenance.get("exact_approval_scope"),
+            "target": compact_verifier_provenance.get("exact_approval_target"),
+            "target_requirements": compact_verifier_provenance.get("exact_approval_target_requirements"),
+            "source_digest": compact_verifier_provenance.get("exact_approval_source_digest"),
+            "idempotency_key": compact_verifier_provenance.get("idempotency_key"),
+            "typed_approval_lifted_from_legacy": compact_verifier_provenance.get("typed_approval_lifted_from_legacy"),
+            "input_preference": compact_verifier_provenance.get("exact_approval_input_preference"),
+            "idempotency_state": compact_verifier_provenance.get("idempotency_state"),
+            "idempotency_posture": compact_verifier_provenance.get("idempotency_posture"),
+        },
         "runtime_disposition": decision.runtime_disposition.value,
         "decision_integrity": decision.decision_integrity.value,
         "integration_mode_report": to_json_safe(decision.integration_mode_report),

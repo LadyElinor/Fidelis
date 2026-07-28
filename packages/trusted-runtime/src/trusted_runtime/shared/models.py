@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from trusted_runtime.config import IntegrationModeReport
 
@@ -20,14 +20,88 @@ class ReceiptRef(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+ActionScope = Literal["state_change", "package_install", "shell_exec", "network_fetch", "general"]
+
+
+class ExactApprovalTarget(BaseModel):
+    """Preferred typed approval target surface.
+
+    This is the primary path for new construction. Older top-level/context-based
+    approval target shaping remains supported only as a compatibility shim.
+    """
+
+    connector: str | None = None
+    destination: str | None = None
+    arguments: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_target_shape(self) -> "ExactApprovalTarget":
+        if self.connector is not None and not self.connector.strip():
+            raise ValueError("ExactApprovalTarget.connector must be non-empty when provided")
+        if self.destination is not None and not self.destination.strip():
+            raise ValueError("ExactApprovalTarget.destination must be non-empty when provided")
+        if self.arguments is not None and len(self.arguments) == 0:
+            raise ValueError("ExactApprovalTarget.arguments must be non-empty when provided")
+        if self.connector is None and self.destination is None and self.arguments is None:
+            raise ValueError("ExactApprovalTarget must provide connector, destination, or arguments")
+        return self
+
+
 class ProposedAction(BaseModel):
-    """Input contract for the full orchestration pipeline."""
+    """Input contract for the full orchestration pipeline.
+
+    Preferred path: typed approval fields (`action_scope`, `source_digest`,
+    `exact_approval_target`). Legacy top-level/context-derived approval shaping
+    remains available as a compatibility path during migration.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     description: str
     context: dict[str, Any] = Field(default_factory=dict)
     proposed_by: str = "agent"
+    exact_approval_identity: str | None = None
+    idempotency_key: str | None = None
+    action_scope: ActionScope | None = None
+    review_kind: str | None = None
+    change_type: str | None = None
+    changed_files: list[str] | None = None
+    source_digest: str | None = None
+    connector: str | None = None
+    destination: str | None = None
+    arguments: dict[str, Any] | None = None
+    exact_approval_target: ExactApprovalTarget | None = None
+    typed_approval_lifted_from_legacy: bool = False
+
+    @model_validator(mode="after")
+    def validate_scope_target_consistency(self) -> "ProposedAction":
+        action_scope = self.action_scope or self.context.get("action_scope")
+        connector = (
+            (self.exact_approval_target.connector if self.exact_approval_target is not None else None)
+            or self.connector
+            or self.context.get("connector")
+        )
+        destination = (
+            (self.exact_approval_target.destination if self.exact_approval_target is not None else None)
+            or self.destination
+            or self.context.get("destination")
+        )
+        arguments = (
+            (self.exact_approval_target.arguments if self.exact_approval_target is not None else None)
+            or self.arguments
+            or self.context.get("arguments")
+        )
+        if action_scope == "network_fetch":
+            if not isinstance(connector, str) or not connector.strip():
+                raise ValueError("network_fetch actions require a non-empty connector")
+            if not isinstance(destination, str) or not destination.strip():
+                raise ValueError("network_fetch actions require a non-empty destination")
+        if action_scope in {"shell_exec", "package_install"}:
+            if not isinstance(arguments, dict) or len(arguments) == 0:
+                raise ValueError(f"{action_scope} actions require non-empty arguments")
+        return self
 
 
 class EvidenceRecord(BaseModel):
@@ -150,9 +224,12 @@ class CERFragmentEnrichment(BaseModel):
     profile_hash: str | None = None
     verifier_hash: str | None = None
     resolver_config_hash: str | None = None
+    authority_state_digest: str | None = None
     known_message_set_hash: str | None = None
     signature_verifier_identity: str | None = None
     replay_nonce: str | None = None
+    exact_approval_identity: str | None = None
+    exact_approval_scope: str | None = None
 
 
 class CERRecordBundle(BaseModel):

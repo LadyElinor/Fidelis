@@ -19,13 +19,13 @@ Status vocabulary: **OPEN** (divergence exists), **RESOLVED** (spec and impl rec
 - **Impl:** only the top-level warrant's `expires` is checked. `AuthorityResolution` has no expiry field, so an expired intermediate grant passes.
 - **Resolution:** `AuthorityResolution.expires` added; every hop of `_walk_delegation` and every directly-resolved authority is checked against the evaluation instant, emitting `AUTHORITY_GRANT_EXPIRED:<ref>`.
 
-## G-3. Expiry hard-fails unconditionally; replay not detected — OPEN
+## G-3. Replay depends on injected state, not verifier-local proof — OPEN, narrowed in v0.3
 
 - **Spec:** §8A.7.6 makes expired or replayed authority *malformed only where a trusted ordering authority exists*; without one, expiry and replay degrade to a soft audit signal (consistent with the retract-ordering limit, §18).
-- **Impl:** `AUTHORITY_EXPIRED` is emitted as a hard failure unconditionally, and nonce handling checks presence only — there is no replay cache, so a replayed nonce is never detected.
-- **Consequence:** two verifiers, both plausibly "conformant", disagree on the same message: this implementation hard-fails what the spec classifies as soft in ordering-authority-free deployments. Stricter-than-spec is still an interop divergence.
-- **Remediation:** gate hard-vs-soft expiry classification on a profile flag declaring a trusted ordering authority; either implement a bounded replay cache behind the same flag or record replay detection as explicitly delegated (out of the reference verifier's scope), in the README's implemented-vs-delegated list.
-- **Note (v0.3):** now implementable — the `revoked` authority status exists and the TrustedRuntime grant store provides the stateful surface a replay cache or ordering authority would consult.
+- **Impl (current):** expiry classification now follows a profile flag declaring `trusted_ordering_authority`: expired authority hard-fails only when such an authority is declared, otherwise it emits `AUTHORITY_EXPIRED_SOFT`. In that same mode, `nonce` becomes required for authority-required frames. The verifier now also accepts an injected `NonceReplayChecker`, can emit `AUTHORITY_NONCE_REPLAYED` when the checker reports prior consumption, and ships a minimal in-memory replay checker that consumes a nonce on first use and rejects it on repeat.
+- **Remaining gap:** replay detection is no longer absent and is no longer purely delegated, but the built-in checker is only process-local and ephemeral. The reference verifier still has no durable or externally authoritative ordering service of its own, so replay proof across processes or restarts remains delegated.
+- **Remediation:** either provide a durable replay cache implementation behind the trusted-ordering-authority flag or bind the verifier to an external ordering/replay authority with explicit availability and failure semantics.
+- **Note (v0.3):** this is now a narrower and more explicit gap than before: expiry semantics no longer over-hard-fail in ordering-authority-free profiles, replay detection has a real hook plus a minimal reference implementation, but authoritative replay state is still not built in.
 
 ## G-4. Verification is wall-clock-dependent — RESOLVED (v0.3)
 
@@ -39,10 +39,10 @@ Status vocabulary: **OPEN** (divergence exists), **RESOLVED** (spec and impl rec
 - **Impl:** `_deontic_binds` requires exact core-ID equality and exact `parents` equality. Chain-root covering is rejected.
 - **Classification:** acceptable as a conservative subset — everything the impl accepts, the spec accepts; not vice versa. Recorded here so the deviation is explicit rather than silent. Any future covering implementation must define "establishable" mechanically (adopted-chain walk with the same cycle/ancestry checks as §8A.5) before landing.
 
-## G-6. Delegation error reporting is short-circuiting — OPEN, minor
+## G-6. Delegation error reporting is short-circuiting — RESOLVED (v0.3)
 
-- **Impl:** `_walk_delegation` aggregates branches with `all(...)`, which short-circuits: after the first failing branch, remaining branches are unexplored. Verdicts are correct; error lists on multi-branch failures are incomplete.
-- **Remediation:** evaluate all branches before combining, if complete failure enumeration is wanted for audit.
+- **Was:** `_walk_delegation` aggregated branches with `all(...)`, which short-circuited: after the first failing branch, remaining branches were unexplored. Verdicts could still be correct while multi-branch audit errors were incomplete.
+- **Resolution:** delegation branches are now all evaluated before aggregation, so the verifier can report multiple failing branches in a single verdict while preserving the same overall pass/fail behavior.
 
 ---
 

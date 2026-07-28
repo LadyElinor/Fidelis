@@ -12,7 +12,8 @@ from trusted_runtime.integration.availability import (
     trustworthy_agent_stack_available,
 )
 from trusted_runtime.config import IntegrationMode
-from trusted_runtime.integration.engine import _attest_resolver_inputs_for_action, _attest_resolver_summary, _build_reconciliation, assemble_execution_decision, default_adapters
+from trusted_runtime.exact_approval import ExactApprovalCommitEmissionState
+from trusted_runtime.integration.engine import _attest_resolver_inputs_for_action, _attest_resolver_summary, _build_reconciliation, _emitted_commit_artifact, assemble_execution_decision, clear_idempotency_registry, default_adapters
 from trusted_runtime.integration.policy import guard_runtime_disposition
 from trusted_runtime.integration.translation import derive_meaning_case_key
 from trusted_runtime.review import build_pr_review_action, load_review_input
@@ -199,6 +200,7 @@ def test_assemble_execution_decision_surfaces_attest_resolver_identity_in_vita_s
             "attest_known_authority_refs": ["approval:ops-1"],
             "attest_authority_grants": {"approval:ops-1": {"scope": "deploy", "approved": True}},
         },
+        exact_approval_identity="msg-core-001",
     )
 
     decision = assemble_execution_decision(action)
@@ -211,6 +213,28 @@ def test_assemble_execution_decision_surfaces_attest_resolver_identity_in_vita_s
     assert verification.get("attest_signature_verifier_name")
     assert verification.get("attest_grounds_resolver_config_hash")
     assert verification.get("attest_authority_resolver_config_hash")
+    assert decision.vita_state.get("attest_bridge", {}).get("exact_approval_identity") == "msg-core-001"
+    assert decision.vita_state.get("attest_bridge", {}).get("exact_approval_scope") == "state_change"
+    binding = decision.vita_state.get("attest_bridge", {}).get("exact_approval_binding", {})
+    assert binding.get("present") is True
+    assert binding.get("exact_approval_identity") == "msg-core-001"
+    assert binding.get("exact_approval_scope") == "state_change"
+    assert len(binding.get("receipt_sha256", "")) == 64
+    preview = decision.vita_state.get("attest_bridge", {}).get("exact_approval_commit_preview", {})
+    assert preview.get("frame") == "COMMIT"
+    assert preview.get("action_scope") == "state_change"
+    assert preview.get("deontic", {}).get("binds", {}).get("message") == "msg-core-001"
+    assert preview.get("binding_receipt_sha256") == binding.get("receipt_sha256")
+    assert preview.get("preview_only") is True
+    assert len(preview.get("receipt_sha256", "")) == 64
+    artifact = decision.vita_state.get("attest_bridge", {}).get("exact_approval_commit_artifact", {})
+    assert artifact.get("frame") == "COMMIT"
+    assert artifact.get("emitted") is False
+    assert artifact.get("runtime_disposition") == decision.runtime_disposition.value
+    assert artifact.get("emission_state") in {"staged", "suppressed"}
+    assert len(artifact.get("receipt_sha256", "")) == 64
+    assert decision.cer_bundle.cer_enrichment.exact_approval_identity == "msg-core-001"
+    assert decision.cer_bundle.cer_enrichment.exact_approval_scope == "state_change"
     # Retired trust-conferring keys in the context must surface as
     # injection attempts, never as consumed resolver state.
     assert resolver_inputs.get("injection_attempted_keys") == [
@@ -248,11 +272,30 @@ def test_process_provenance_is_present_for_each_layer():
         context={"change_type": "safety_invariant"},
     )
     decision = assemble_execution_decision(action)
-    assert set(decision.process_provenance.keys()) == {"council", "warrant", "tas", "cer_bundle", "attest_bridge", "tas_closure"}
+    assert set(decision.process_provenance.keys()) == {"council", "warrant", "tas", "cer_bundle", "attest_bridge", "exact_approval_commit_artifact", "tas_closure"}
     assert all("record_sha256" in item for item in decision.process_provenance.values())
     assert decision.vita_state.get("attest_bridge", {}).get("enabled") is True
+    assert "exact_approval_commit_artifact" in decision.process_provenance
+    assert decision.process_provenance["exact_approval_commit_artifact"]["adapter_name"] == "ExactApprovalCommitArtifact"
     assert "tas_closure" in decision.process_provenance
     assert decision.vita_state.get("tas_closure", {}).get("closure_bar") is not None
+
+
+def test_emitted_commit_artifact_promotion_states_are_conservative():
+    preview = {
+        "frame": "COMMIT",
+        "action_scope": "state_change",
+        "deontic": {"binds": {"message": "msg-core-001"}},
+        "receipt_sha256": "preview-receipt",
+    }
+    proceed = _emitted_commit_artifact(commit_preview=preview, runtime_disposition=RuntimeDisposition.PROCEED)
+    confirm = _emitted_commit_artifact(commit_preview=preview, runtime_disposition=RuntimeDisposition.CONFIRM_HUMAN)
+    halt = _emitted_commit_artifact(commit_preview=preview, runtime_disposition=RuntimeDisposition.HALT)
+
+    assert proceed is not None and proceed["emission_state"] == ExactApprovalCommitEmissionState.EMITTABLE.value
+    assert confirm is not None and confirm["emission_state"] == ExactApprovalCommitEmissionState.STAGED.value
+    assert halt is not None and halt["emission_state"] == ExactApprovalCommitEmissionState.SUPPRESSED.value
+    assert proceed["emitted"] is False
 
 
 def test_default_adapters_construct_cleanly():
@@ -260,6 +303,28 @@ def test_default_adapters_construct_cleanly():
     assert adapters.hazard is not None
     assert adapters.warrant is not None
     assert adapters.telemetry is not None
+
+
+def test_duplicate_idempotency_key_halts_consequential_reuse():
+    clear_idempotency_registry()
+    action = ProposedAction(
+        id="test-idem-001",
+        description="Approve a governed outbound notification.",
+        timestamp=FIXED_TS,
+        exact_approval_identity="msg-core-idem-001",
+        idempotency_key="idem-key-001",
+        action_scope="network_fetch",
+        exact_approval_target={"connector": "discord", "destination": "ops-room", "arguments": {"text": "ship it"}},
+        context={},
+    )
+
+    first = assemble_execution_decision(action)
+    second = assemble_execution_decision(action.model_copy(update={"id": "test-idem-002"}))
+
+    assert first.vita_state.get("idempotency", {}).get("duplicate_detected") is False
+    assert second.runtime_disposition is RuntimeDisposition.HALT
+    assert second.vita_state.get("idempotency", {}).get("duplicate_detected") is True
+    assert second.vita_state.get("idempotency", {}).get("enforcement") == "halt_duplicate_consequential_intent"
 
 
 def test_real_telemetry_path_surfaces_sophron_report_when_available():
@@ -400,6 +465,22 @@ def test_guard_allows_proceed_with_independent_corroboration():
     )
     assert disposition is RuntimeDisposition.PROCEED
     assert note is None
+
+
+def test_safety_invariant_pull_request_requires_exact_approval_identity_for_proceed():
+    action = ProposedAction(
+        id="test-approval-gate-001",
+        description="Review PR change set: tighten safety invariant enforcement.",
+        timestamp=FIXED_TS,
+        context={
+            "review_kind": "pull_request",
+            "change_type": "safety_invariant",
+            "changed_files": ["src/core/invariants.py"],
+        },
+    )
+    decision = assemble_execution_decision(action)
+    if decision.runtime_disposition is RuntimeDisposition.PROCEED:
+        pytest.fail("Expected exact-approval-sensitive action without exact_approval_identity to be gated from PROCEED")
 
 
 def test_guard_blocks_reviewability_exceeded_proceed():
@@ -573,11 +654,26 @@ def test_build_pr_review_action_creates_pull_request_context():
         pr_number=42,
         author="agent-session",
         changed_files=["src/core/invariants.py"],
-        extra_context={"change_type": "safety_invariant"},
+        extra_context={
+            "change_type": "safety_invariant",
+            "source_digest": "sha256:review-source-001",
+            "connector": "slack",
+            "destination": "ops-alerts",
+            "arguments": {"text": "review this PR"},
+        },
     )
     assert action.context["review_kind"] == "pull_request"
     assert action.context["pr_number"] == 42
     assert action.context["change_type"] == "safety_invariant"
+    assert action.action_scope == "state_change"
+    assert action.review_kind == "pull_request"
+    assert action.change_type == "safety_invariant"
+    assert action.changed_files == ["src/core/invariants.py"]
+    assert action.source_digest == "sha256:review-source-001"
+    assert action.exact_approval_target is not None
+    assert action.exact_approval_target.connector == "slack"
+    assert action.exact_approval_target.destination == "ops-alerts"
+    assert action.exact_approval_target.arguments == {"text": "review this PR"}
 
 
 def test_load_review_input_reads_sample_json():
@@ -586,3 +682,71 @@ def test_load_review_input_reads_sample_json():
     assert action.id == "review-openclaw-pr-42"
     assert action.context["review_kind"] == "pull_request"
     assert action.context["change_type"] == "safety_invariant"
+
+
+def test_load_review_input_reads_typed_exact_approval_example_without_legacy_lift():
+    sample = Path(__file__).resolve().parents[1] / "examples" / "typed_exact_approval_review.json"
+    action = load_review_input(sample)
+    assert action.id == "review-typed-exact-approval-001"
+    assert action.action_scope == "network_fetch"
+    assert action.source_digest == "sha256:typed-example-source"
+    assert action.typed_approval_lifted_from_legacy is False
+    assert action.exact_approval_target is not None
+    assert action.exact_approval_target.connector == "discord"
+    assert action.exact_approval_target.destination == "typed-example-room"
+
+
+# Compatibility-path coverage: legacy context-only inputs should still lift into the typed contract.
+def test_load_review_input_lifts_typed_approval_fields_from_legacy_context(tmp_path: Path):
+    payload = {
+        "id": "review-typed-lift-001",
+        "description": "Approve a governed outbound notification.",
+        "context": {
+            "action_scope": "network_fetch",
+            "source_digest": "sha256:lifted-source",
+            "connector": "slack",
+            "destination": "ops-alerts",
+            "arguments": {"text": "lift me"},
+        },
+    }
+    case_path = tmp_path / "typed_lift.json"
+    case_path.write_text(__import__("json").dumps(payload), encoding="utf-8")
+
+    action = load_review_input(case_path)
+
+    assert action.action_scope == "network_fetch"
+    assert action.source_digest == "sha256:lifted-source"
+    assert action.typed_approval_lifted_from_legacy is True
+    assert action.exact_approval_target is not None
+    assert action.exact_approval_target is not None
+    assert action.exact_approval_target.connector == "slack"
+    assert action.exact_approval_target.destination == "ops-alerts"
+    assert action.exact_approval_target.arguments == {"text": "lift me"}
+
+
+# Preferred-path coverage: native typed approval inputs should remain typed and unlifted.
+def test_load_review_input_preserves_typed_only_approval_fields_without_legacy_lift(tmp_path: Path):
+    payload = {
+        "id": "review-typed-native-001",
+        "description": "Approve a governed outbound notification.",
+        "action_scope": "network_fetch",
+        "source_digest": "sha256:native-source",
+        "exact_approval_target": {
+            "connector": "teams",
+            "destination": "native-room",
+            "arguments": {"text": "native path"},
+        },
+        "context": {},
+    }
+    case_path = tmp_path / "typed_native.json"
+    case_path.write_text(__import__("json").dumps(payload), encoding="utf-8")
+
+    action = load_review_input(case_path)
+
+    assert action.action_scope == "network_fetch"
+    assert action.source_digest == "sha256:native-source"
+    assert action.typed_approval_lifted_from_legacy is False
+    assert action.exact_approval_target is not None
+    assert action.exact_approval_target.connector == "teams"
+    assert action.exact_approval_target.destination == "native-room"
+    assert action.exact_approval_target.arguments == {"text": "native path"}
