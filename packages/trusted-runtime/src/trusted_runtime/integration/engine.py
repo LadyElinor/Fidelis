@@ -9,9 +9,9 @@ import sys
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from trusted_runtime.action_identity import canonical_action_digest, effective_action_scope, normalized_exact_approval_view
+from trusted_runtime.action_identity import canonical_action_digest, canonical_intent_digest, effective_action_scope, effective_claimed_approval_reference, normalized_exact_approval_view
 from trusted_runtime.config import detect_integration_mode, load_integration_paths
 from trusted_runtime.exact_approval import ExactApprovalCommitEmissionState
 from trusted_runtime.integration.adapters import AdapterSet, HazardAdapter, TelemetryAdapter, WarrantAdapter
@@ -53,6 +53,7 @@ from trusted_runtime.shared.models import (
     WarrantAssay,
 )
 from trusted_runtime.shared.receipts import sha256_hex, strip_receipt_timestamps
+from pydantic import BaseModel
 
 
 DEFAULT_ADAPTER_LINEAGES = {
@@ -105,6 +106,16 @@ def get_authority_store() -> AuthorityGrantStore:
     return _AUTHORITY_STORE
 
 
+def get_runtime_executor() -> RuntimeExecutor:
+    return _RUNTIME_EXECUTOR
+
+
+def set_runtime_executor(executor: RuntimeExecutor) -> RuntimeExecutor:
+    global _RUNTIME_EXECUTOR
+    _RUNTIME_EXECUTOR = executor
+    return _RUNTIME_EXECUTOR
+
+
 def set_authority_store(store: AuthorityGrantStore) -> AuthorityGrantStore:
     """Replace the process store (tests, or runtimes with managed journals)."""
     global _AUTHORITY_STORE, _ATTEST_BRIDGE
@@ -117,6 +128,97 @@ def clear_idempotency_registry() -> None:
     _IDEMPOTENCY_KEYS_SEEN.clear()
 
 
+class ExecutorTransactionIntent(BaseModel):
+    claimed_approval_reference: str | None = None
+    idempotency_key: str | None = None
+    exact_approval_scope: str
+    intent_digest: str
+    authorization_binding_digest: str
+    preview_only: bool = True
+
+
+class IdempotencyReservationRequest(BaseModel):
+    key: str | None = None
+    exact_approval_scope: str
+    runtime_disposition: RuntimeDisposition
+    transaction_intent: ExecutorTransactionIntent
+
+
+class ExecutorPreviewStatus(BaseModel):
+    execution_branch: str
+    approval_artifact_verification: str
+    approval_authority_validation: str
+    approval_expiry_validation: str
+    approval_consumption: str
+    expected_execution_receipt: str
+
+
+class ExecutorReservationReceipt(BaseModel):
+    receipt_kind: str
+    executor_interface: str
+    reservation_status: str
+    preview: ExecutorPreviewStatus
+    execution_branch_preview_status: str
+    approval_artifact_verification_status: str
+    approval_authority_validation_status: str
+    approval_expiry_validation_status: str
+    approval_consumption_status: str
+    expected_execution_receipt_status: str
+    preview_only: bool = True
+    durable: bool = False
+    authority_boundary: str
+
+
+class IdempotencyExecutorReservation(BaseModel):
+    present: bool
+    key: str | None = None
+    status: str
+    executor_interface: str
+    executor_boundary: str
+    durability: str
+    authority_level: str
+    enforcement: str
+    transaction_intent: ExecutorTransactionIntent
+    receipt: ExecutorReservationReceipt
+
+
+class IdempotencyReservationState(BaseModel):
+    present: bool
+    key: str | None = None
+    duplicate_detected: bool
+    enforcement: str
+    reservation_attempted: bool
+    reservation_scope: str
+    reservation_durability: str
+    reservation_boundary: str
+    executor_reservation: IdempotencyExecutorReservation
+
+
+class RuntimeExecutor(Protocol):
+    def reserve_idempotency(
+        self,
+        request: IdempotencyReservationRequest,
+    ) -> IdempotencyReservationState: ...
+
+
+class StubRuntimeExecutor:
+    """First-pass executor seam.
+
+    This is intentionally not an external executor. It exposes the contract the
+    runtime would hand off, while remaining process-local and ephemeral.
+    """
+
+    def reserve_idempotency(
+        self,
+        request: IdempotencyReservationRequest,
+    ) -> IdempotencyReservationState:
+        return _attempt_process_local_idempotency_reservation(request)
+
+
+def _should_register_idempotency_key(*, consequential: bool, runtime_disposition: RuntimeDisposition) -> bool:
+    return consequential and runtime_disposition is RuntimeDisposition.PROCEED
+
+
 def _register_idempotency_key_once(key: str | None, *, consequential: bool) -> bool:
     if not consequential or not isinstance(key, str) or not key.strip():
         return False
@@ -127,7 +229,119 @@ def _register_idempotency_key_once(key: str | None, *, consequential: bool) -> b
     return False
 
 
+def _attempt_process_local_idempotency_reservation(
+    request: IdempotencyReservationRequest,
+) -> IdempotencyReservationState:
+    key = request.key
+    exact_approval_scope = request.exact_approval_scope
+    runtime_disposition = request.runtime_disposition
+    consequential = exact_approval_scope != "general"
+    should_register = _should_register_idempotency_key(
+        consequential=consequential,
+        runtime_disposition=runtime_disposition,
+    )
+    duplicate_detected = _register_idempotency_key_once(
+        key,
+        consequential=should_register,
+    )
+    enforcement = (
+        "halt_duplicate_consequential_intent"
+        if duplicate_detected
+        else "registered_pre_execution"
+        if should_register and key
+        else "deferred_until_authorized_execution"
+        if key and consequential
+        else "none"
+    )
+    reservation_status = (
+        "duplicate"
+        if duplicate_detected
+        else "reserved"
+        if should_register and key
+        else "deferred"
+        if key and consequential
+        else "not_applicable"
+    )
+    # Canonical runtime-local preview shape. Flat receipt status fields remain
+    # compatibility mirrors so existing surfaces do not break during migration.
+    executor_preview = ExecutorPreviewStatus(
+        execution_branch=(
+            "would_not_execute_duplicate"
+            if duplicate_detected
+            else "would_execute_on_authorized_path"
+            if key and consequential
+            else "no_execution_branch_preview"
+        ),
+        approval_artifact_verification=(
+            "not_verified_in_stub_executor"
+            if request.transaction_intent.claimed_approval_reference
+            else "not_applicable"
+        ),
+        approval_authority_validation=(
+            "not_validated_in_stub_executor"
+            if request.transaction_intent.claimed_approval_reference
+            else "not_applicable"
+        ),
+        approval_expiry_validation=(
+            "not_validated_in_stub_executor"
+            if request.transaction_intent.claimed_approval_reference
+            else "not_applicable"
+        ),
+        approval_consumption=(
+            "not_consumed_duplicate"
+            if duplicate_detected
+            else "would_consume_on_execution"
+            if key and consequential
+            else "not_applicable"
+        ),
+        expected_execution_receipt=(
+            "would_emit_duplicate_halt_receipt"
+            if duplicate_detected
+            else "would_emit_execution_receipt_on_success"
+            if key and consequential
+            else "not_applicable"
+        ),
+    )
+    return IdempotencyReservationState(
+        present=bool(key),
+        key=key,
+        duplicate_detected=duplicate_detected,
+        enforcement=enforcement,
+        reservation_attempted=should_register,
+        reservation_scope="process_local",
+        reservation_durability="ephemeral",
+        reservation_boundary="pre_execution_runtime_seam",
+        executor_reservation=IdempotencyExecutorReservation(
+            present=bool(key and consequential),
+            key=key,
+            status=reservation_status,
+            executor_interface="StubRuntimeExecutor.reserve_idempotency",
+            executor_boundary="not_yet_externalized",
+            durability="ephemeral",
+            authority_level="runtime_pre_execution_only",
+            enforcement=enforcement,
+            transaction_intent=request.transaction_intent,
+            receipt=ExecutorReservationReceipt(
+                receipt_kind="executor_reservation_preview",
+                executor_interface="StubRuntimeExecutor.reserve_idempotency",
+                reservation_status=reservation_status,
+                preview=executor_preview,
+                execution_branch_preview_status=executor_preview.execution_branch,
+                approval_artifact_verification_status=executor_preview.approval_artifact_verification,
+                approval_authority_validation_status=executor_preview.approval_authority_validation,
+                approval_expiry_validation_status=executor_preview.approval_expiry_validation,
+                approval_consumption_status=executor_preview.approval_consumption,
+                expected_execution_receipt_status=executor_preview.expected_execution_receipt,
+                preview_only=True,
+                durable=False,
+                authority_boundary="runtime_pre_execution_only",
+            ),
+        ),
+    )
+
+
 _ATTEST_BRIDGE = AttestBridge(attest_root=_ATTEST_AGENT_CONLANG_SRC, authority_store=_AUTHORITY_STORE)
+_RUNTIME_EXECUTOR = StubRuntimeExecutor()
 
 try:
     import efm_council
@@ -1297,11 +1511,15 @@ def _exact_approval_receipt_fragment(
 ) -> dict[str, Any]:
     normalized = normalized_exact_approval_view(action)
     payload = {
-        "present": bool(action.exact_approval_identity),
-        "exact_approval_identity": action.exact_approval_identity,
+        "present": bool(effective_claimed_approval_reference(action)),
+        "exact_approval_identity": effective_claimed_approval_reference(action),
+        "claimed_approval_reference": effective_claimed_approval_reference(action),
+        "claimed_approval_reference_note": "current prototype records a claimed/bound approval reference, not authenticated approval verification or consumption",
         "exact_approval_scope": exact_approval_scope,
         "idempotency_key": normalized.idempotency_key,
         "action_id": action.id,
+        "intent_digest": canonical_intent_digest(action),
+        "authorization_binding_digest": canonical_action_digest(action),
         "action_digest": canonical_action_digest(action),
         "source_digest": normalized.source_digest,
         "connector": normalized.connector,
@@ -1318,12 +1536,17 @@ def _exact_approval_commit_preview(
     exact_approval_scope: str,
     binding: dict[str, Any],
 ) -> dict[str, Any] | None:
-    if not action.exact_approval_identity or exact_approval_scope == "general":
+    if not effective_claimed_approval_reference(action) or exact_approval_scope == "general":
         return None
     commit_payload = _ATTEST_BRIDGE.wrap_runtime_commit_for_action(
         action=action,
         runtime_actor="trusted-runtime:orchestrator",
-        content={"action_id": action.id, "action_digest": canonical_action_digest(action), "preview_only": True},
+        content={
+            "action_id": action.id,
+            "intent_digest": canonical_intent_digest(action),
+            "authorization_binding_digest": canonical_action_digest(action),
+            "preview_only": True,
+        },
         parents=[],
         authority=["approval:pending"],
         nonce=f"preview:{action.id}",
@@ -1332,6 +1555,8 @@ def _exact_approval_commit_preview(
         **commit_payload,
         "binding_receipt_sha256": binding.get("receipt_sha256"),
         "action_id": action.id,
+        "intent_digest": canonical_intent_digest(action),
+        "authorization_binding_digest": canonical_action_digest(action),
         "action_digest": canonical_action_digest(action),
         "idempotency_key": binding.get("idempotency_key"),
         "source_digest": binding.get("source_digest"),
@@ -1455,31 +1680,27 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
     council = council.model_copy(update={"evidence_records": evidence_records, "reviewability": reviewability})
     tas_adapter = TrustworthyAgentStackAdapter()
     risk_state, runtime_disposition, vita_state, l2_provenance = tas_adapter.assess(action, council)
-    idempotency_duplicate = _register_idempotency_key_once(
-        normalized_exact_approval_view(action).idempotency_key,
-        consequential=exact_approval_scope != "general",
+    idempotency_state = _RUNTIME_EXECUTOR.reserve_idempotency(
+        IdempotencyReservationRequest(
+            key=normalized_exact_approval_view(action).idempotency_key,
+            exact_approval_scope=exact_approval_scope,
+            runtime_disposition=runtime_disposition,
+            transaction_intent=ExecutorTransactionIntent(
+                claimed_approval_reference=effective_claimed_approval_reference(action),
+                idempotency_key=normalized_exact_approval_view(action).idempotency_key,
+                exact_approval_scope=exact_approval_scope,
+                intent_digest=canonical_intent_digest(action),
+                authorization_binding_digest=canonical_action_digest(action),
+                preview_only=True,
+            ),
+        )
     )
-    if idempotency_duplicate:
+    if idempotency_state.duplicate_detected:
         runtime_disposition = RuntimeDisposition.HALT
-        vita_state = {
-            **vita_state,
-            "idempotency": {
-                "present": True,
-                "key": normalized_exact_approval_view(action).idempotency_key,
-                "duplicate_detected": True,
-                "enforcement": "halt_duplicate_consequential_intent",
-            },
-        }
-    else:
-        vita_state = {
-            **vita_state,
-            "idempotency": {
-                "present": bool(normalized_exact_approval_view(action).idempotency_key),
-                "key": normalized_exact_approval_view(action).idempotency_key,
-                "duplicate_detected": False,
-                "enforcement": "none",
-            },
-        }
+    vita_state = {
+        **vita_state,
+        "idempotency": idempotency_state.model_dump(mode="json"),
+    }
     exact_approval_commit_artifact = _emitted_commit_artifact(
         commit_preview=exact_approval_commit_preview,
         runtime_disposition=runtime_disposition,
@@ -1490,7 +1711,9 @@ def assemble_execution_decision(action: ProposedAction, adapters: AdapterSet | N
             "enabled": True,
             "real_available": _ATTEST_BRIDGE.real_available,
             "ingress_frame": attest_ingress_message.get("frame"),
-            "exact_approval_identity": action.exact_approval_identity,
+            "exact_approval_identity": effective_claimed_approval_reference(action),
+            "claimed_approval_reference": effective_claimed_approval_reference(action),
+            "claimed_approval_reference_note": "current prototype records a claimed/bound approval reference, not authenticated approval verification or consumption",
             "exact_approval_scope": exact_approval_scope,
             "typed_approval_lifted_from_legacy": action.typed_approval_lifted_from_legacy,
             "exact_approval_binding": exact_approval_fragment,

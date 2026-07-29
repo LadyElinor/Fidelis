@@ -262,6 +262,15 @@ def test_real_attest_bridge_availability_matches_import_gate():
     assert isinstance(attest_agent_conlang_available(), bool)
 
 
+def test_stub_verification_does_not_promote_accept_all_to_pass():
+    bridge = AttestBridge(config=AttestBridgeConfig(signature_verifier_mode="accept-all"))
+
+    result = bridge.verify_for_runtime({"frame": "ASSERT", "content": {"x": 1}}, [])
+
+    assert result.decision_effect == "UNVERIFIABLE"
+    assert "ATTEST_BRIDGE_DESIGN_STUB_ONLY" in result.soft_flag
+
+
 def test_bridge_plumbing_maps_verifier_output_using_shadow_mock(tmp_path):
     """Unit test of bridge plumbing against a hand-written SHADOW MOCK of
     attest_ref_impl. This proves the bridge maps verifier output into
@@ -332,10 +341,11 @@ def load_profile(path=None):
     )
 
     assert bridge.real_available is True
-    assert result.decision_effect == "PASS"
+    assert result.decision_effect == "BLOCK"
     assert result.message_id == "shadow-msg-id"
     assert result.profile_id == "shadow-profile"
     assert result.soft_flag == []
+    assert "ACCEPT_ALL_SIGNATURE_VERIFIER_FORBIDDEN" in result.hard_fail
     assert result.grounds_resolver_name == "StaticGroundsResolver"
     assert result.authority_resolver_name == "StaticAuthorityResolver"
     assert result.signature_verifier_name == "AcceptAllSignatureVerifier"

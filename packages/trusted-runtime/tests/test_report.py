@@ -1,11 +1,57 @@
 from datetime import datetime, timezone
 
-from trusted_runtime.integration.engine import assemble_execution_decision
+from trusted_runtime.integration.engine import ExecutorTransactionIntent, IdempotencyReservationRequest, _attempt_process_local_idempotency_reservation, assemble_execution_decision, clear_idempotency_registry
 from trusted_runtime.integration.report import render_markdown_report
+from trusted_runtime.shared.enums import RuntimeDisposition
 from trusted_runtime.shared.models import ExactApprovalTarget, ProposedAction
 
 
 FIXED_TS = datetime(2026, 7, 1, 22, 11, tzinfo=timezone.utc)
+
+
+def test_report_surfaces_duplicate_path_preview_semantics():
+    clear_idempotency_registry()
+    action = ProposedAction(
+        id="test-report-duplicate-001",
+        description="Review duplicate-path runtime preview reporting.",
+        timestamp=FIXED_TS,
+        action_scope="network_fetch",
+        exact_approval_target=ExactApprovalTarget(
+            connector="slack",
+            destination="ops-alerts",
+            arguments={"text": "deploy approved"},
+        ),
+        context={},
+        exact_approval_identity="msg-core-dup-report-001",
+        idempotency_key="idem-report-dup-001",
+    )
+
+    decision = assemble_execution_decision(action)
+    request = IdempotencyReservationRequest(
+        key="idem-report-dup-001",
+        exact_approval_scope="network_fetch",
+        runtime_disposition=RuntimeDisposition.PROCEED,
+        transaction_intent=ExecutorTransactionIntent(
+            claimed_approval_reference="msg-core-dup-report-001",
+            idempotency_key="idem-report-dup-001",
+            exact_approval_scope="network_fetch",
+            intent_digest="intent-report-dup-001",
+            authorization_binding_digest="binding-report-dup-001",
+            preview_only=True,
+        ),
+    )
+    _attempt_process_local_idempotency_reservation(request)
+    duplicate_state = _attempt_process_local_idempotency_reservation(request)
+    decision.vita_state["idempotency"] = duplicate_state.model_dump(mode="python")
+
+    report = render_markdown_report(decision)
+
+    assert "idempotency duplicate detected: `True`" in report
+    assert "idempotency enforcement: `halt_duplicate_consequential_intent`" in report
+    assert "execution branch preview: `would_not_execute_duplicate`" in report
+    assert "approval consumption preview: `not_consumed_duplicate`" in report
+    assert "expected execution receipt preview: `would_emit_duplicate_halt_receipt`" in report
+
 
 
 def test_report_surfaces_attest_resolver_context():
@@ -38,8 +84,10 @@ def test_report_surfaces_attest_resolver_context():
     assert "grounds resolver" in report
     assert "authority resolver" in report
     assert "signature verifier" in report
-    assert "exact approval identity" in report
+    assert "claimed approval reference" in report
     assert "exact approval scope" in report
+    assert "claimed/bound approval reference" in report
+    assert "not authenticated approval verification or consumption" in report
     assert "idempotency key" in report
     assert "typed approval lifted from legacy" in report
     assert "input preference" in report
@@ -53,7 +101,24 @@ def test_report_surfaces_attest_resolver_context():
     assert "target requires arguments" in report
     assert "idempotency duplicate detected" in report
     assert "idempotency enforcement" in report
+    assert "executor reservation status" in report
+    assert "executor reservation boundary" in report
+    assert "executor reservation authority level" in report
+    assert "executor reservation durability" in report
+    assert "executor preview object present" in report
+    assert "executor preview canonical source" in report
+    assert "receipt.preview" in report
+    assert "compatibility note: flat `*_preview` aliases remain surfaced, but nested `receipt.preview` is canonical" in report
+    assert "`True`" in report
+    assert "execution branch preview" in report
+    assert "approval artifact verification preview" in report
+    assert "approval authority validation preview" in report
+    assert "approval expiry validation preview" in report
+    assert "approval consumption preview" in report
+    assert "expected execution receipt preview" in report
+    assert "StubRuntimeExecutor.reserve_idempotency" in report
     assert "idempotency posture: process-local / ephemeral" in report
+    assert "not yet an external executor boundary" in report
     assert "within the current runtime process" in report
     assert "known message refs" in report
     assert "known authority refs" in report
@@ -77,12 +142,16 @@ def test_report_surfaces_attest_resolver_context():
     assert "preview connector" in report
     assert "preview destination" in report
     assert "preview arguments" in report
+    assert "preview intent digest" in report
+    assert "preview authorization binding digest" in report
     assert "artifact emission state" in report
     assert "artifact source digest" in report
     assert "artifact idempotency key" in report
     assert "artifact connector" in report
     assert "artifact destination" in report
     assert "artifact arguments" in report
+    assert "artifact intent digest" in report
+    assert "artifact authorization binding digest" in report
     assert "artifact emitted" in report
     assert "## Integration Mode (Computed)" in report
     assert "overall mode" in report.lower()

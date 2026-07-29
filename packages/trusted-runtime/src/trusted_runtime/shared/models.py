@@ -63,6 +63,7 @@ class ProposedAction(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
     proposed_by: str = "agent"
     exact_approval_identity: str | None = None
+    claimed_approval_reference: str | None = None
     idempotency_key: str | None = None
     action_scope: ActionScope | None = None
     review_kind: str | None = None

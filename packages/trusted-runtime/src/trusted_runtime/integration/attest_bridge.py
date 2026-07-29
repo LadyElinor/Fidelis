@@ -31,7 +31,7 @@ import importlib.util
 import json
 import sys
 
-from trusted_runtime.action_identity import effective_action_scope
+from trusted_runtime.action_identity import effective_action_scope, effective_claimed_approval_reference
 from trusted_runtime.authority_store import AuthorityGrantStore
 from trusted_runtime.shared.models import ProposedAction
 
@@ -203,6 +203,8 @@ class AttestBridgeConfig:
     commit_whitelist: tuple[str, ...] = ("trusted-runtime:orchestrator",)
     signature_verifier_mode: Literal["accept-all", "deterministic-test", "ed25519-profile"] = "accept-all"
     profile_path: Path | None = None
+    fail_closed_signature_posture: bool = True
+    fail_closed_replay_posture: bool = True
 
 
 class AttestBridge:
@@ -228,12 +230,14 @@ class AttestBridge:
         *,
         attest_root: Path | None = None,
         authority_store: "AuthorityGrantStore | None" = None,
+        nonce_replay_checker: Any | None = None,
     ):
         self.config = config or AttestBridgeConfig()
         self.attest_root = attest_root
         # Runtime-owned trust root. Constructor-injected by the orchestrator;
         # never derived from message content or proposer context.
         self.authority_store = authority_store
+        self.nonce_replay_checker = nonce_replay_checker
         self._real_attest = self._load_real_attest() if attest_root is not None else None
 
     def _load_real_attest(self) -> dict[str, Any] | None:
@@ -273,6 +277,7 @@ class AttestBridge:
             "StaticAuthorityResolver": getattr(module, "StaticAuthorityResolver"),
             "AuthorityResolution": getattr(module, "AuthorityResolution"),
             "StaticGroundsResolver": getattr(module, "StaticGroundsResolver"),
+            "InMemoryNonceReplayChecker": getattr(module, "InMemoryNonceReplayChecker", None),
             "load_profile": getattr(module, "load_profile"),
         }
 
@@ -371,8 +376,10 @@ class AttestBridge:
             "context": action.context,
             "proposed_by": action.proposed_by,
         }
-        if action.exact_approval_identity is not None:
-            content["exact_approval_identity"] = action.exact_approval_identity
+        claimed_approval_reference = effective_claimed_approval_reference(action)
+        if claimed_approval_reference is not None:
+            content["exact_approval_identity"] = claimed_approval_reference
+            content["claimed_approval_reference"] = claimed_approval_reference
         return {
             "frame": "REQUEST",
             "mode": "legible",
@@ -545,6 +552,7 @@ class AttestBridge:
         }
         if exact_approval_identity is not None:
             message["exact_approval_identity"] = exact_approval_identity
+            message["claimed_approval_reference"] = exact_approval_identity
         return message
 
     def action_scope_for_action(
@@ -580,7 +588,7 @@ class AttestBridge:
             "authority": authority,
             "scope": action_scope,
             "binds": {
-                "message": action.exact_approval_identity,
+                "message": effective_claimed_approval_reference(action),
                 "parents": parents,
             },
             "nonce": nonce,
@@ -591,7 +599,7 @@ class AttestBridge:
             parents=parents,
             action_scope=action_scope,
             deontic=deontic,
-            exact_approval_identity=action.exact_approval_identity,
+            exact_approval_identity=effective_claimed_approval_reference(action),
         )
 
     # ------------------------------------------------------------------
@@ -655,12 +663,21 @@ class AttestBridge:
                     authority_resolver = self._real_attest["StaticAuthorityResolver"](set())
                     authority_resolver_hash = sha256(b"no-authority-store").hexdigest()
                 signature_verifier, signature_verifier_config_hash = self._build_signature_verifier(profile)
-                verifier = self._real_attest["AttestVerifier"](
-                    profile=profile,
-                    grounds_resolver=grounds_resolver,
-                    authority_resolver=authority_resolver,
-                    signature_verifier=signature_verifier,
-                )
+                try:
+                    verifier = self._real_attest["AttestVerifier"](
+                        profile=profile,
+                        grounds_resolver=grounds_resolver,
+                        authority_resolver=authority_resolver,
+                        signature_verifier=signature_verifier,
+                        nonce_replay_checker=self.nonce_replay_checker,
+                    )
+                except TypeError:
+                    verifier = self._real_attest["AttestVerifier"](
+                        profile=profile,
+                        grounds_resolver=grounds_resolver,
+                        authority_resolver=authority_resolver,
+                        signature_verifier=signature_verifier,
+                    )
                 try:
                     # v0.3 Attest: inject the evaluation instant so the verdict,
                     # the receipt, and the store digest all bind the same time.
@@ -673,9 +690,18 @@ class AttestBridge:
                 # Retired proposer authority keys are never consumed, but the
                 # attempt is surfaced and denies a clean PASS via the
                 # soft-flag -> REVIEW rule.
+                hard_fail = list(result.get("hard_fail", []))
                 soft_flags_with_taint = list(result.get("soft_flag", [])) + resolver_inputs.injection_flags()
+                if self.config.fail_closed_signature_posture and self.config.signature_verifier_mode == "accept-all":
+                    hard_fail.append("ACCEPT_ALL_SIGNATURE_VERIFIER_FORBIDDEN")
+                if (
+                    self.config.fail_closed_replay_posture
+                    and getattr(profile, "trusted_ordering_authority", False)
+                    and self.nonce_replay_checker is None
+                ):
+                    hard_fail.append("TRUSTED_ORDERING_REQUIRES_EXPLICIT_REPLAY_CHECKER")
                 decision_effect: Literal["PASS", "REVIEW", "BLOCK", "UNVERIFIABLE"] = "PASS"
-                if result.get("hard_fail"):
+                if hard_fail:
                     decision_effect = "BLOCK"
                 elif soft_flags_with_taint or result.get("pass_scope_limit"):
                     decision_effect = "REVIEW"
@@ -690,7 +716,7 @@ class AttestBridge:
                     profile_version="loaded-runtime-profile",
                     profile_hash=sha256(self._stable_json_bytes(profile.model_dump(mode="json"))).hexdigest(),
                     verifier_version="attest_ref_impl",
-                    hard_fail=list(result.get("hard_fail", [])),
+                    hard_fail=hard_fail,
                     soft_flag=soft_flags_with_taint,
                     pass_scope_limit=list(result.get("pass_scope_limit", [])),
                     decision_effect=decision_effect,

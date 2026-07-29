@@ -61,6 +61,7 @@ def compact_verifier_provenance_summary(decision: ExecutionDecision) -> dict[str
         "resolver_config_hash_short": resolver_config_hash_short,
         "authority_state_digest_short": authority_state_digest_short,
         "exact_approval_identity": exact_approval_identity,
+        "claimed_approval_reference": exact_approval_identity,
         "exact_approval_scope": exact_approval_scope,
         "idempotency_key": idempotency_key,
         "typed_approval_lifted_from_legacy": typed_approval_lifted_from_legacy,
@@ -68,6 +69,7 @@ def compact_verifier_provenance_summary(decision: ExecutionDecision) -> dict[str
         "idempotency_state": idempotency_state,
         "idempotency_posture": idempotency_posture,
         "exact_approval_binding": exact_approval_binding,
+        "claimed_approval_reference_note": exact_approval_binding.get("claimed_approval_reference_note"),
         "exact_approval_source_digest": exact_approval_source_digest,
         "exact_approval_target": exact_approval_target,
         "exact_approval_target_requirements": exact_approval_target_requirements(exact_approval_scope),
@@ -116,19 +118,35 @@ def export_decision_payload(decision: ExecutionDecision) -> dict[str, JsonSafe]:
 
     compact_verifier_provenance = compact_verifier_provenance_summary(decision)
 
+    executor_reservation = (compact_verifier_provenance.get("idempotency_state") or {}).get("executor_reservation") or {}
+    executor_receipt = executor_reservation.get("receipt") or {}
+    # Canonical preview source is the nested receipt.preview object. Flat *_preview
+    # export fields remain compatibility aliases derived from it when present.
+    executor_preview = executor_receipt.get("preview") or {}
+
     return {
         "action_id": decision.action_id,
         "risk_state": decision.risk_state.value,
         "compact_verifier_provenance": compact_verifier_provenance,
         "exact_approval_contract": {
             "scope": compact_verifier_provenance.get("exact_approval_scope"),
+            "claimed_approval_reference": compact_verifier_provenance.get("claimed_approval_reference"),
             "target": compact_verifier_provenance.get("exact_approval_target"),
             "target_requirements": compact_verifier_provenance.get("exact_approval_target_requirements"),
+            "claimed_approval_reference_note": compact_verifier_provenance.get("claimed_approval_reference_note"),
             "source_digest": compact_verifier_provenance.get("exact_approval_source_digest"),
             "idempotency_key": compact_verifier_provenance.get("idempotency_key"),
             "typed_approval_lifted_from_legacy": compact_verifier_provenance.get("typed_approval_lifted_from_legacy"),
             "input_preference": compact_verifier_provenance.get("exact_approval_input_preference"),
             "idempotency_state": compact_verifier_provenance.get("idempotency_state"),
+            "executor_reservation": executor_reservation,
+            "executor_preview": executor_preview,
+            "execution_branch_preview": executor_preview.get("execution_branch") or executor_receipt.get("execution_branch_preview_status"),
+            "approval_artifact_verification_preview": executor_preview.get("approval_artifact_verification") or executor_receipt.get("approval_artifact_verification_status"),
+            "approval_authority_validation_preview": executor_preview.get("approval_authority_validation") or executor_receipt.get("approval_authority_validation_status"),
+            "approval_expiry_validation_preview": executor_preview.get("approval_expiry_validation") or executor_receipt.get("approval_expiry_validation_status"),
+            "approval_consumption_preview": executor_preview.get("approval_consumption") or executor_receipt.get("approval_consumption_status"),
+            "expected_execution_receipt_preview": executor_preview.get("expected_execution_receipt") or executor_receipt.get("expected_execution_receipt_status"),
             "idempotency_posture": compact_verifier_provenance.get("idempotency_posture"),
         },
         "runtime_disposition": decision.runtime_disposition.value,

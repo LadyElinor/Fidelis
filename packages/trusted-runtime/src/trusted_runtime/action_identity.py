@@ -103,6 +103,14 @@ def normalized_exact_approval_view(action: ProposedAction) -> NormalizedExactApp
     )
 
 
+def effective_claimed_approval_reference(action: ProposedAction) -> str | None:
+    if isinstance(action.claimed_approval_reference, str) and action.claimed_approval_reference.strip():
+        return action.claimed_approval_reference.strip()
+    if isinstance(action.exact_approval_identity, str) and action.exact_approval_identity.strip():
+        return action.exact_approval_identity.strip()
+    return None
+
+
 def effective_action_scope(action: ProposedAction) -> str | None:
     return normalized_exact_approval_view(action).action_scope
 
@@ -123,7 +131,7 @@ def effective_arguments(action: ProposedAction) -> dict[str, Any] | None:
     return normalized_exact_approval_view(action).arguments
 
 
-def canonical_action_identity_payload(action: ProposedAction) -> dict[str, Any]:
+def canonical_intent_identity_payload(action: ProposedAction) -> dict[str, Any]:
     context = {
         key: value
         for key, value in sorted(action.context.items())
@@ -134,7 +142,6 @@ def canonical_action_identity_payload(action: ProposedAction) -> dict[str, Any]:
         "description": action.description,
         "context": context,
         "proposed_by": action.proposed_by,
-        "exact_approval_identity": action.exact_approval_identity,
         "idempotency_key": normalized_exact_approval_view(action).idempotency_key,
         "action_scope": effective_action_scope(action),
     }
@@ -150,6 +157,17 @@ def canonical_action_identity_payload(action: ProposedAction) -> dict[str, Any]:
     arguments = effective_arguments(action)
     if arguments is not None:
         payload["arguments"] = arguments
+    return payload
+
+
+def canonical_intent_digest(action: ProposedAction) -> str:
+    return sha256_hex(canonical_intent_identity_payload(action))
+
+
+def canonical_action_identity_payload(action: ProposedAction) -> dict[str, Any]:
+    payload = canonical_intent_identity_payload(action)
+    payload["exact_approval_identity"] = effective_claimed_approval_reference(action)
+    payload["claimed_approval_reference"] = effective_claimed_approval_reference(action)
     return payload
 
 

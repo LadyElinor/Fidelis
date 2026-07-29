@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from trusted_runtime.action_identity import canonical_action_digest, canonical_action_identity_payload, effective_action_scope, effective_arguments, effective_connector, effective_destination, effective_source_digest, legacy_approval_target_shim, normalized_exact_approval_view
+from trusted_runtime.action_identity import canonical_action_digest, canonical_action_identity_payload, canonical_intent_digest, canonical_intent_identity_payload, effective_action_scope, effective_arguments, effective_claimed_approval_reference, effective_connector, effective_destination, effective_source_digest, legacy_approval_target_shim, normalized_exact_approval_view
 from trusted_runtime.shared.models import ExactApprovalTarget, ProposedAction
 
 
@@ -74,6 +74,27 @@ def test_canonical_action_digest_changes_when_consequential_fields_change():
     assert canonical_action_digest(changed_description) != base_digest
     assert canonical_action_digest(changed_scope_context) != base_digest
     assert canonical_action_digest(changed_identity) != base_digest
+    assert canonical_intent_digest(base) == canonical_intent_digest(changed_identity)
+
+
+def test_canonical_intent_payload_excludes_exact_approval_identity():
+    action = ProposedAction(
+        id="action-intent-001",
+        description="Review outbound notification draft.",
+        timestamp=FIXED_TS,
+        proposed_by="operator",
+        action_scope="network_fetch",
+        claimed_approval_reference="msg-core-001",
+        exact_approval_target=ExactApprovalTarget(
+            connector="discord",
+            destination="ops-room",
+        ),
+    )
+
+    assert "exact_approval_identity" not in canonical_intent_identity_payload(action)
+    assert canonical_action_identity_payload(action)["exact_approval_identity"] == "msg-core-001"
+    assert canonical_action_identity_payload(action)["claimed_approval_reference"] == "msg-core-001"
+    assert effective_claimed_approval_reference(action) == "msg-core-001"
 
 
 def test_canonical_action_digest_changes_for_roadmap_style_destination_connector_and_argument_mutations():

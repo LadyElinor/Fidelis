@@ -7,8 +7,9 @@ from pathlib import Path
 from trusted_runtime.action_identity import canonical_action_digest
 from trusted_runtime.exact_approval import ExactApprovalCommitEmissionState
 from trusted_runtime.export import compact_verifier_provenance_summary, export_decision_payload, l4_status_interpretation, to_json_safe
-from trusted_runtime.integration.engine import assemble_execution_decision
+from trusted_runtime.integration.engine import ExecutorTransactionIntent, IdempotencyReservationRequest, _attempt_process_local_idempotency_reservation, assemble_execution_decision, clear_idempotency_registry
 from trusted_runtime.review import load_review_input
+from trusted_runtime.shared.enums import RuntimeDisposition
 from trusted_runtime.shared.models import ExactApprovalTarget, ProposedAction
 
 
@@ -46,6 +47,7 @@ def test_export_decision_payload_is_machine_readable_for_live_decision():
     assert isinstance(payload["overall_receipt"], dict)
     assert isinstance(payload["compact_verifier_provenance"], dict)
     assert payload["compact_verifier_provenance"]["exact_approval_identity"] == "msg-core-001"
+    assert payload["compact_verifier_provenance"]["claimed_approval_reference"] == "msg-core-001"
     assert payload["compact_verifier_provenance"]["exact_approval_scope"] == "state_change"
     assert payload["compact_verifier_provenance"]["idempotency_key"] is None
     assert payload["compact_verifier_provenance"]["idempotency_state"] == {
@@ -53,6 +55,50 @@ def test_export_decision_payload_is_machine_readable_for_live_decision():
         "key": None,
         "duplicate_detected": False,
         "enforcement": "none",
+        "reservation_attempted": False,
+        "reservation_scope": "process_local",
+        "reservation_durability": "ephemeral",
+        "reservation_boundary": "pre_execution_runtime_seam",
+        "executor_reservation": {
+            "present": False,
+            "key": None,
+            "status": "not_applicable",
+            "executor_interface": "StubRuntimeExecutor.reserve_idempotency",
+            "executor_boundary": "not_yet_externalized",
+            "durability": "ephemeral",
+            "authority_level": "runtime_pre_execution_only",
+            "enforcement": "none",
+            "transaction_intent": {
+                "claimed_approval_reference": "msg-core-001",
+                "idempotency_key": None,
+                "exact_approval_scope": "state_change",
+                "intent_digest": payload["compact_verifier_provenance"]["exact_approval_binding"]["intent_digest"],
+                "authorization_binding_digest": payload["compact_verifier_provenance"]["exact_approval_binding"]["authorization_binding_digest"],
+                "preview_only": True,
+            },
+            "receipt": {
+                "receipt_kind": "executor_reservation_preview",
+                "executor_interface": "StubRuntimeExecutor.reserve_idempotency",
+                "reservation_status": "not_applicable",
+                "preview": {
+                    "execution_branch": "no_execution_branch_preview",
+                    "approval_artifact_verification": "not_verified_in_stub_executor",
+                    "approval_authority_validation": "not_validated_in_stub_executor",
+                    "approval_expiry_validation": "not_validated_in_stub_executor",
+                    "approval_consumption": "not_applicable",
+                    "expected_execution_receipt": "not_applicable",
+                },
+                "execution_branch_preview_status": "no_execution_branch_preview",
+                "approval_artifact_verification_status": "not_verified_in_stub_executor",
+                "approval_authority_validation_status": "not_validated_in_stub_executor",
+                "approval_expiry_validation_status": "not_validated_in_stub_executor",
+                "approval_consumption_status": "not_applicable",
+                "expected_execution_receipt_status": "not_applicable",
+                "preview_only": True,
+                "durable": False,
+                "authority_boundary": "runtime_pre_execution_only",
+            },
+        },
     }
     assert payload["compact_verifier_provenance"]["idempotency_posture"] == {
         "scope": "process_local",
@@ -60,7 +106,64 @@ def test_export_decision_payload_is_machine_readable_for_live_decision():
         "proof_note": "prevents duplicate consequential intent reuse only within the current runtime process",
     }
     assert payload["exact_approval_contract"]["scope"] == "state_change"
+    assert payload["exact_approval_contract"]["claimed_approval_reference"] == "msg-core-001"
+    assert "claimed/bound approval reference" in payload["exact_approval_contract"]["claimed_approval_reference_note"]
     assert payload["exact_approval_contract"]["typed_approval_lifted_from_legacy"] is False
+    # Canonical surface: executor_preview. Flat *_preview aliases remain compatibility checks.
+    assert payload["exact_approval_contract"]["executor_preview"] == {
+        "execution_branch": "no_execution_branch_preview",
+        "approval_artifact_verification": "not_verified_in_stub_executor",
+        "approval_authority_validation": "not_validated_in_stub_executor",
+        "approval_expiry_validation": "not_validated_in_stub_executor",
+        "approval_consumption": "not_applicable",
+        "expected_execution_receipt": "not_applicable",
+    }
+    assert payload["exact_approval_contract"]["execution_branch_preview"] == "no_execution_branch_preview"
+    assert payload["exact_approval_contract"]["approval_artifact_verification_preview"] == "not_verified_in_stub_executor"
+    assert payload["exact_approval_contract"]["approval_authority_validation_preview"] == "not_validated_in_stub_executor"
+    assert payload["exact_approval_contract"]["approval_expiry_validation_preview"] == "not_validated_in_stub_executor"
+    assert payload["exact_approval_contract"]["approval_consumption_preview"] == "not_applicable"
+    assert payload["exact_approval_contract"]["expected_execution_receipt_preview"] == "not_applicable"
+    assert payload["exact_approval_contract"]["executor_reservation"] == {
+        "present": False,
+        "key": None,
+        "status": "not_applicable",
+        "executor_interface": "StubRuntimeExecutor.reserve_idempotency",
+        "executor_boundary": "not_yet_externalized",
+        "durability": "ephemeral",
+        "authority_level": "runtime_pre_execution_only",
+        "enforcement": "none",
+        "transaction_intent": {
+            "claimed_approval_reference": "msg-core-001",
+            "idempotency_key": None,
+            "exact_approval_scope": "state_change",
+            "intent_digest": payload["compact_verifier_provenance"]["exact_approval_binding"]["intent_digest"],
+            "authorization_binding_digest": payload["compact_verifier_provenance"]["exact_approval_binding"]["authorization_binding_digest"],
+            "preview_only": True,
+        },
+        "receipt": {
+            "receipt_kind": "executor_reservation_preview",
+            "executor_interface": "StubRuntimeExecutor.reserve_idempotency",
+            "reservation_status": "not_applicable",
+            "preview": {
+                "execution_branch": "no_execution_branch_preview",
+                "approval_artifact_verification": "not_verified_in_stub_executor",
+                "approval_authority_validation": "not_validated_in_stub_executor",
+                "approval_expiry_validation": "not_validated_in_stub_executor",
+                "approval_consumption": "not_applicable",
+                "expected_execution_receipt": "not_applicable",
+            },
+            "execution_branch_preview_status": "no_execution_branch_preview",
+            "approval_artifact_verification_status": "not_verified_in_stub_executor",
+            "approval_authority_validation_status": "not_validated_in_stub_executor",
+            "approval_expiry_validation_status": "not_validated_in_stub_executor",
+            "approval_consumption_status": "not_applicable",
+            "expected_execution_receipt_status": "not_applicable",
+            "preview_only": True,
+            "durable": False,
+            "authority_boundary": "runtime_pre_execution_only",
+        },
+    }
     assert "native typed approval fields are preferred" in payload["exact_approval_contract"]["input_preference"]
     assert payload["compact_verifier_provenance"]["exact_approval_binding"]["present"] is True
     assert payload["compact_verifier_provenance"]["exact_approval_source_digest"] is not None
@@ -102,6 +205,8 @@ def test_compact_verifier_provenance_summary_surfaces_exact_approval_identity():
     summary = compact_verifier_provenance_summary(decision)
 
     assert summary["exact_approval_identity"] == "msg-core-xyz"
+    assert summary["claimed_approval_reference"] == "msg-core-xyz"
+    assert "claimed/bound approval reference" in summary["claimed_approval_reference_note"]
     assert summary["exact_approval_scope"] == "state_change"
     assert summary["exact_approval_binding"]["exact_approval_identity"] == "msg-core-xyz"
     assert summary["exact_approval_source_digest"] is not None
@@ -265,6 +370,60 @@ def test_typed_action_scope_and_source_digest_flow_into_binding_and_preview():
 
 
 # Preferred-path end-to-end coverage: typed approval fields should work without any legacy target fields.
+def test_duplicate_consequential_intent_is_exported_as_non_success_preview():
+    clear_idempotency_registry()
+
+    action = ProposedAction(
+        id="test-duplicate-action-001",
+        description="Approve a governed outbound notification.",
+        timestamp=FIXED_TS,
+        exact_approval_identity="msg-core-idem-001",
+        idempotency_key="idem-key-001",
+        action_scope="network_fetch",
+        exact_approval_target={"connector": "discord", "destination": "ops-room", "arguments": {"text": "ship it"}},
+        context={},
+    )
+
+    decision = assemble_execution_decision(action)
+    request = IdempotencyReservationRequest(
+        key="idem-key-001",
+        exact_approval_scope="network_fetch",
+        runtime_disposition=RuntimeDisposition.PROCEED,
+        transaction_intent=ExecutorTransactionIntent(
+            claimed_approval_reference="msg-core-idem-001",
+            idempotency_key="idem-key-001",
+            exact_approval_scope="network_fetch",
+            intent_digest="intent-dup-001",
+            authorization_binding_digest="binding-dup-001",
+            preview_only=True,
+        ),
+    )
+    _attempt_process_local_idempotency_reservation(request)
+    duplicate_state = _attempt_process_local_idempotency_reservation(request)
+    decision.vita_state["idempotency"] = duplicate_state.model_dump(mode="python")
+
+    payload = export_decision_payload(decision)
+
+    assert payload["exact_approval_contract"]["idempotency_state"]["duplicate_detected"] is True
+    assert payload["exact_approval_contract"]["idempotency_state"]["enforcement"] == "halt_duplicate_consequential_intent"
+    # Canonical surface: executor_preview. Flat *_preview aliases remain compatibility checks.
+    assert payload["exact_approval_contract"]["executor_preview"] == {
+        "execution_branch": "would_not_execute_duplicate",
+        "approval_artifact_verification": "not_verified_in_stub_executor",
+        "approval_authority_validation": "not_validated_in_stub_executor",
+        "approval_expiry_validation": "not_validated_in_stub_executor",
+        "approval_consumption": "not_consumed_duplicate",
+        "expected_execution_receipt": "would_emit_duplicate_halt_receipt",
+    }
+    assert payload["exact_approval_contract"]["execution_branch_preview"] == "would_not_execute_duplicate"
+    assert payload["exact_approval_contract"]["approval_consumption_preview"] == "not_consumed_duplicate"
+    assert payload["exact_approval_contract"]["expected_execution_receipt_preview"] == "would_emit_duplicate_halt_receipt"
+    assert payload["exact_approval_contract"]["executor_reservation"]["status"] == "duplicate"
+    assert payload["exact_approval_contract"]["executor_reservation"]["receipt"]["execution_branch_preview_status"] == "would_not_execute_duplicate"
+    assert payload["exact_approval_contract"]["executor_reservation"]["receipt"]["approval_consumption_status"] == "not_consumed_duplicate"
+    assert payload["exact_approval_contract"]["executor_reservation"]["receipt"]["expected_execution_receipt_status"] == "would_emit_duplicate_halt_receipt"
+
+
 def test_typed_only_action_flows_end_to_end_without_legacy_target_fields():
     action = ProposedAction(
         id="test-typed-action-002",
@@ -296,7 +455,106 @@ def test_typed_only_action_flows_end_to_end_without_legacy_target_fields():
         "present": True,
         "key": "idem-typed-only-002",
         "duplicate_detected": False,
-        "enforcement": "none",
+        "enforcement": "deferred_until_authorized_execution",
+        "reservation_attempted": False,
+        "reservation_scope": "process_local",
+        "reservation_durability": "ephemeral",
+        "reservation_boundary": "pre_execution_runtime_seam",
+        "executor_reservation": {
+            "present": True,
+            "key": "idem-typed-only-002",
+            "status": "deferred",
+            "executor_interface": "StubRuntimeExecutor.reserve_idempotency",
+            "executor_boundary": "not_yet_externalized",
+            "durability": "ephemeral",
+            "authority_level": "runtime_pre_execution_only",
+            "enforcement": "deferred_until_authorized_execution",
+            "transaction_intent": {
+                "claimed_approval_reference": "msg-core-typed-002",
+                "idempotency_key": "idem-typed-only-002",
+                "exact_approval_scope": "network_fetch",
+                "intent_digest": payload["exact_approval_contract"]["idempotency_state"]["executor_reservation"]["transaction_intent"]["intent_digest"],
+                "authorization_binding_digest": payload["exact_approval_contract"]["idempotency_state"]["executor_reservation"]["transaction_intent"]["authorization_binding_digest"],
+                "preview_only": True,
+            },
+            "receipt": {
+                "receipt_kind": "executor_reservation_preview",
+                "executor_interface": "StubRuntimeExecutor.reserve_idempotency",
+                "reservation_status": "deferred",
+                "preview": {
+                    "execution_branch": "would_execute_on_authorized_path",
+                    "approval_artifact_verification": "not_verified_in_stub_executor",
+                    "approval_authority_validation": "not_validated_in_stub_executor",
+                    "approval_expiry_validation": "not_validated_in_stub_executor",
+                    "approval_consumption": "would_consume_on_execution",
+                    "expected_execution_receipt": "would_emit_execution_receipt_on_success",
+                },
+                "execution_branch_preview_status": "would_execute_on_authorized_path",
+                "approval_artifact_verification_status": "not_verified_in_stub_executor",
+                "approval_authority_validation_status": "not_validated_in_stub_executor",
+                "approval_expiry_validation_status": "not_validated_in_stub_executor",
+                "approval_consumption_status": "would_consume_on_execution",
+                "expected_execution_receipt_status": "would_emit_execution_receipt_on_success",
+                "preview_only": True,
+                "durable": False,
+                "authority_boundary": "runtime_pre_execution_only",
+            },
+        },
+    }
+    # Canonical surface: executor_preview. Flat *_preview aliases remain compatibility checks.
+    assert payload["exact_approval_contract"]["executor_preview"] == {
+        "execution_branch": "would_execute_on_authorized_path",
+        "approval_artifact_verification": "not_verified_in_stub_executor",
+        "approval_authority_validation": "not_validated_in_stub_executor",
+        "approval_expiry_validation": "not_validated_in_stub_executor",
+        "approval_consumption": "would_consume_on_execution",
+        "expected_execution_receipt": "would_emit_execution_receipt_on_success",
+    }
+    assert payload["exact_approval_contract"]["execution_branch_preview"] == "would_execute_on_authorized_path"
+    assert payload["exact_approval_contract"]["approval_artifact_verification_preview"] == "not_verified_in_stub_executor"
+    assert payload["exact_approval_contract"]["approval_authority_validation_preview"] == "not_validated_in_stub_executor"
+    assert payload["exact_approval_contract"]["approval_expiry_validation_preview"] == "not_validated_in_stub_executor"
+    assert payload["exact_approval_contract"]["approval_consumption_preview"] == "would_consume_on_execution"
+    assert payload["exact_approval_contract"]["expected_execution_receipt_preview"] == "would_emit_execution_receipt_on_success"
+    assert payload["exact_approval_contract"]["executor_reservation"] == {
+        "present": True,
+        "key": "idem-typed-only-002",
+        "status": "deferred",
+        "executor_interface": "StubRuntimeExecutor.reserve_idempotency",
+        "executor_boundary": "not_yet_externalized",
+        "durability": "ephemeral",
+        "authority_level": "runtime_pre_execution_only",
+        "enforcement": "deferred_until_authorized_execution",
+        "transaction_intent": {
+            "claimed_approval_reference": "msg-core-typed-002",
+            "idempotency_key": "idem-typed-only-002",
+            "exact_approval_scope": "network_fetch",
+            "intent_digest": payload["exact_approval_contract"]["executor_reservation"]["transaction_intent"]["intent_digest"],
+            "authorization_binding_digest": payload["exact_approval_contract"]["executor_reservation"]["transaction_intent"]["authorization_binding_digest"],
+            "preview_only": True,
+        },
+        "receipt": {
+            "receipt_kind": "executor_reservation_preview",
+            "executor_interface": "StubRuntimeExecutor.reserve_idempotency",
+            "reservation_status": "deferred",
+            "preview": {
+                "execution_branch": "would_execute_on_authorized_path",
+                "approval_artifact_verification": "not_verified_in_stub_executor",
+                "approval_authority_validation": "not_validated_in_stub_executor",
+                "approval_expiry_validation": "not_validated_in_stub_executor",
+                "approval_consumption": "would_consume_on_execution",
+                "expected_execution_receipt": "would_emit_execution_receipt_on_success",
+            },
+            "execution_branch_preview_status": "would_execute_on_authorized_path",
+            "approval_artifact_verification_status": "not_verified_in_stub_executor",
+            "approval_authority_validation_status": "not_validated_in_stub_executor",
+            "approval_expiry_validation_status": "not_validated_in_stub_executor",
+            "approval_consumption_status": "would_consume_on_execution",
+            "expected_execution_receipt_status": "would_emit_execution_receipt_on_success",
+            "preview_only": True,
+            "durable": False,
+            "authority_boundary": "runtime_pre_execution_only",
+        },
     }
     assert payload["exact_approval_contract"]["idempotency_posture"] == {
         "scope": "process_local",
