@@ -12,6 +12,11 @@ This backlog begins after the eight source histories are imported unchanged.
 
 ## P0: Resolve evidence-spine overlap
 
+Current plain-English role split to preserve until deeper refactor:
+- **CER-Telemetry** should be treated as the event / telemetry producer and analysis package.
+- **SOPHRON-CER** should be treated as the independent receipt / invariant validator.
+- If SOPHRON continues to contain broader pipeline behavior, that scope should either be reduced or renamed explicitly rather than left ambiguous.
+
 The current source cluster contains structural overlap that must be made explicit rather than hidden by the monorepo:
 
 - CER-Telemetry currently references SOPHRON-CER as a Git submodule.

@@ -17,7 +17,7 @@ It does not own substantive ethical, warrant, enforcement, or telemetry judgment
 
 ## Layer map
 
-1. **Deliberation** — EthicsCouncil produces prospective hazards, convergences, fault lines, suspension triggers, and unresolved questions.
+1. **Deliberation** — EthicsCouncil produces prospective hazards, convergences, fault lines, suspension triggers, and unresolved questions. In the current repository state this remains a heuristic multi-lens research harness, not a validated ethical adjudicator.
 2. **Enforcement** — TrustworthyAgentStack turns declared policy and upstream findings into operational gates.
 3. **Warrant sidecar** — meaning-assay distinguishes significance from warrant and owns BELARION qualification.
 4. **Evidence spine** — CER-Telemetry records and analyzes execution evidence; SOPHRON-CER validates receipts and invariants.

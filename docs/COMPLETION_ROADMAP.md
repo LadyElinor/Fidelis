@@ -12,6 +12,8 @@ The roadmap is organized around one principle:
 
 ## Current baseline
 
+Fidelis now has a materially improved foundation, but it should still be described honestly as research-grade governance infrastructure rather than a deployable governed system. Some packages are strong, some are scaffolds, and several cross-component claims remain ahead of fully proven enforcement reality.
+
 Fidelis now has a materially improved foundation:
 
 - imported source histories reconciled into `master`;

@@ -2,6 +2,10 @@
 
 CER-Telemetry is a small, receipts-first telemetry pipeline for observing and comparing content cohorts (baseline vs targeted/safety-mode) with guardrails against **silent drift** and confounding.
 
+## Maturity note
+
+This package should currently be read as a **telemetry and analysis research scaffold**. The schema and receipts posture are useful, but privacy, validator independence, and production-grade evidence guarantees are not yet strong enough to describe this as a finished operational telemetry system.
+
 This repo currently focuses on **MoltX** feed sampling and lightweight, text-proxy tags (e.g., token-promo, outbound pressure, receipt signals, safety/engineering language). It is intentionally minimal and hackable.
 
 ## What you get

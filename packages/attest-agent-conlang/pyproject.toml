@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "attest-agent-conlang"
 version = "0.1.0"
-description = "Attest protocol draft, reference verifier skeleton, and adversarial harness"
+description = "Attest protocol draft, reference verifier seam, and adversarial harness"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

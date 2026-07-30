@@ -2,6 +2,10 @@
 
 Minimal invariants-first tooling for observable, verifiable, and regime-aware agentic systems.
 
+## Maturity note
+
+This package is best read as a **runnable minimal proof and enforcement scaffold**. It demonstrates useful cross-layer mechanics, but it should not yet be described as production-grade runtime enforcement or as proof that the broader Fidelis authority separation story is fully solved.
+
 This repository contains a complete runnable minimal proof for the stack:
 
 ```text

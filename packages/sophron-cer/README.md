@@ -1,6 +1,10 @@
-# CER-Telemetry v2.0 - Improved
+# SOPHRON-CER
 
-Enhanced CER-Telemetry pipeline with modular architecture, advanced statistical analysis, and comprehensive invariant validation.
+SOPHRON-CER is a receipt-validation and evidence-spine prototype with modular analysis and invariant-checking components.
+
+## Maturity note
+
+This package currently has **scope ambiguity** that should be treated honestly. It still overlaps with CER-Telemetry in places, and should not yet be described as a cleanly separated final validator layer. Today it is best understood as a prototype validator / analysis package in normalization.
 
 Research & Literature: see [docs/ARXIV_RESEARCH_GUIDE.md](./docs/ARXIV_RESEARCH_GUIDE.md).
 

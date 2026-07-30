@@ -2,6 +2,10 @@
 
 A clean orchestration scaffold for a governed reasoning-and-action stack.
 
+## Maturity note
+
+TrustedRuntime should currently be read as an **integration prototype and reporting scaffold**, not as a fully proven governed execution runtime. Some adapter paths are real, some are partial, and several of the most important trust claims still depend on broader all-real verification and cross-component maturity.
+
 This repo is intentionally the **integration layer**, not the place where the ethics, warrant logic, or telemetry logic themselves live.
 
 ## Product vision
