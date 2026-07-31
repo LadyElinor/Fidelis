@@ -18,7 +18,7 @@ CER-Telemetry/
 
 **v2**:
 ```
-cer-telemetry-improved/
+sophron-cer/
 ├── src/cli.js                  (entry point)
 ├── lib/                        (modular components)
 ├── config/                     (configuration)
@@ -85,7 +85,7 @@ outputs/moltx_runs/<runId>/
 ### Step 1: Install Dependencies
 
 ```bash
-cd cer-telemetry-improved
+cd sophron-cer
 npm install
 ```
 

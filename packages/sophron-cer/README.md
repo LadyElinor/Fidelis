@@ -1,12 +1,18 @@
 # SOPHRON-CER
 
-SOPHRON-CER is a receipt-validation and evidence-spine prototype with modular analysis and invariant-checking components.
+SOPHRON-CER is the repo's current codename for a receipt-validation and evidence-spine prototype with modular analysis and invariant-checking components.
+
+Plain-English role: this package is trying to become the independent receipt / invariant validator beside CER-Telemetry, but it still contains broader analysis-pipeline material that has not yet been cleanly separated.
 
 ## Maturity note
 
 This package currently has **scope ambiguity** that should be treated honestly. It still overlaps with CER-Telemetry in places, and should not yet be described as a cleanly separated final validator layer. Today it is best understood as a prototype validator / analysis package in normalization.
 
 Research & Literature: see [docs/ARXIV_RESEARCH_GUIDE.md](./docs/ARXIV_RESEARCH_GUIDE.md).
+
+## Scope note
+
+Readers should treat lingering references to "improved CER-Telemetry" as normalization debt rather than as the final package identity. Until the broader analysis-pipeline material is either removed or explicitly renamed, SOPHRON-CER should be read as a mixed validator/analysis prototype rather than a clean final validator boundary.
 
 ## What's New in v2.0
 
@@ -33,6 +39,12 @@ Research & Literature: see [docs/ARXIV_RESEARCH_GUIDE.md](./docs/ARXIV_RESEARCH_
 - **Multiple Formats**: JSON, CSV, Parquet, and HTML reports
 - **Interactive Reports**: HTML dashboards with visualizations
 - **Comparison Tools**: Built-in run comparison functionality
+
+## Package-surface note
+
+The package metadata and npm scripts are still in transition. The validator-facing commands (`validate`, `report`) live beside a larger set of research/example pipeline scripts. The older `analyze` surface should currently be read as research/example-facing rather than as a clean final validator command. That mixed surface is real normalization debt, not a claim that every script belongs in the final validator boundary.
+
+A small hygiene improvement already made here: obviously unused legacy dependencies should be removed when they are not exercised by the current validator or example surface, rather than retained as ambient signals of capability. That now includes trimming unexercised formatting/doc-generation dependencies from the package metadata when the repo does not actually invoke them.
 
 ## Installation
 
@@ -82,12 +94,14 @@ Create `config/custom.json` for custom settings:
 
 ## Usage
 
-### Basic Analysis
+### Basic Analysis (research/example surface)
 
-Run a complete analysis:
+Run the current analysis command:
 
 ```bash
 node src/cli.js analyze
+# or via package script
+npm run examples:analyze
 ```
 
 ### Advanced Options
@@ -142,7 +156,7 @@ node src/cli.js list
 ## Project Structure
 
 ```
-cer-telemetry-improved/
+sophron-cer/  # current package path; some internal strings still reflect older CER-Telemetry naming
 ├── config/
 │   └── schema.js              # Configuration schema and validation
 ├── lib/

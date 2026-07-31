@@ -21,7 +21,7 @@ It does not own substantive ethical, warrant, enforcement, or telemetry judgment
 2. **Enforcement** — TrustworthyAgentStack turns declared policy and upstream findings into operational gates.
 3. **Warrant sidecar** — meaning-assay distinguishes significance from warrant and owns BELARION qualification.
 4. **Evidence spine** — CER-Telemetry records and analyzes execution evidence; SOPHRON-CER validates receipts and invariants.
-5. **Integration** — TrustedRuntime orchestrates, canonicalizes, reports provenance, and synthesizes the operator-facing disposition.
+5. **Integration** — TrustedRuntime orchestrates, canonicalizes, reports provenance, and synthesizes the operator-facing disposition. Here, "synthesizes" means assembling and reporting layer outputs, not silently reweighting or upgrading the substantive authority of those outputs.
 6. **Message seam** — AttestAgentConlang wraps inter-layer claims without itself certifying their truth.
 7. **Legacy integration source** — AConstellation is imported intact for comparison and reconciliation. It is not treated as an additional final authority; overlapping orchestration must be resolved explicitly.
 
@@ -57,6 +57,12 @@ Independent repositories do not guarantee independent reasoning. In this monorep
 - assessor-lineage reporting;
 - mutation tests that corrupt one layer and require another to detect it;
 - no automatic upgrade from agreement to corroboration.
+
+## Plain-English name guide
+
+- **BELARION**: the current name for the meaning/warrant qualification envelope and report section.
+- **SOPHRON-CER**: the current name for the receipt / invariant validator layer in the evidence spine.
+- **EthicsCouncil / EFM-style review**: the heuristic multi-lens hazard-review scaffold.
 
 ## Shared contracts
 

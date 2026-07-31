@@ -28,6 +28,11 @@ If you need deployable governance software, Fidelis is not there yet. If you nee
 
 ## Component map
 
+Plain-English decoding for some internal names used across the repo:
+- **BELARION** = the repo's current name for a meaning/warrant qualification envelope, owned substantively by `meaning-assay`
+- **SOPHRON-CER** = the current receipt / invariant validation layer for the evidence spine
+- **EFM / EthicsCouncil** = the repo's heuristic multi-lens ethical hazard review scaffold
+
 | Component | Monorepo path | Authority |
 |---|---|---|
 | TrustedRuntime | `packages/trusted-runtime` | orchestration, policy synthesis, operator reports |
@@ -49,7 +54,7 @@ No component may silently certify itself.
 - Meaning and warrant logic remain outside the orchestrator.
 - Attest envelopes do not upgrade provenance by themselves.
 - Receipts prove what was emitted, not that the emitting judgment was correct.
-- TrustedRuntime synthesizes; it does not absorb the other authorities.
+- TrustedRuntime synthesizes operator-facing reports and runtime state; it must not silently reweight, upgrade, or absorb the substantive findings of the other authorities without explicit, auditable transformation records.
 
 ## Bootstrap
 

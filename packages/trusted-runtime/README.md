@@ -31,8 +31,10 @@ It should:
 - define shared contracts
 - orchestrate independent layers
 - canonicalize receipts
-- synthesize operator-facing reports
+- synthesize operator-facing reports and explicit runtime state summaries
 - optionally wrap inter-layer traffic in an Attest-shaped message seam without collapsing Attest semantics into this repo
+
+Here, "synthesize" is intentionally narrow: TrustedRuntime may assemble, summarize, and surface authority outputs, but it should not silently reweight or upgrade their substantive force without explicit, auditable transformation records.
 
 It should **not**:
 - collapse the independent repos into one codebase

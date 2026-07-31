@@ -20,15 +20,15 @@ Current plain-English role split to preserve until deeper refactor:
 The current source cluster contains structural overlap that must be made explicit rather than hidden by the monorepo:
 
 - CER-Telemetry currently references SOPHRON-CER as a Git submodule.
-- SOPHRON-CER currently presents itself as an improved CER-Telemetry pipeline and contains collection, analysis, validation, and reporting concerns.
-- TrustworthyAgentStack contains a runnable miniature path from EthicsCouncil through gating, CER export, and SOPHRON-style validation.
+- SOPHRON-CER still contains traces of older "improved CER-Telemetry" identity and currently mixes collection, analysis, validation, and reporting concerns.
+- TrustworthyAgentStack contains a runnable miniature path from EthicsCouncil through gating, CER export, and SOPHRON-CER-style validation.
 
 Required decisions:
 
 1. Define CER-Telemetry as the event/telemetry producer and analysis package.
 2. Define SOPHRON-CER as the independent receipt/invariant validator, or explicitly rename it if its actual scope remains broader.
 3. Remove the nested SOPHRON submodule after both histories exist at top-level package paths.
-4. Retain TrustworthyAgentStack's combined implementation as a reference fixture until production adapters replace it.
+4. Retain TrustworthyAgentStack's combined implementation as a reference fixture until production adapters replace it, and document plainly that the fixture demonstrates one bounded path rather than final authority collapse.
 5. Add mutation tests proving SOPHRON catches altered CER records.
 
 ## P1: Package normalization
@@ -56,6 +56,13 @@ Required decisions:
 - Standardize Node workspace metadata.
 - Remove committed temporary-script naming from canonical entrypoints.
 - Separate collectors, analyzers, receipt producers, and validators.
+
+SOPHRON-CER package-normalization checklist:
+- Canonical validator-facing commands should stay narrow and explicit (`validate`, `report`, and only other commands that clearly belong to validator scope).
+- Research/example flows should remain visibly namespaced as examples rather than reading like first-class validator operations.
+- Package metadata should not imply publish-ready scope while mixed research/validator surfaces still coexist.
+- Dependencies should be justified by the currently exercised validator or example surface, not retained as ambient capability signals.
+- Legacy identity strings (for example older CER-Telemetry naming) should be removed except where retained deliberately as migration/explanation notes.
 
 ## P1: Runtime path normalization
 
