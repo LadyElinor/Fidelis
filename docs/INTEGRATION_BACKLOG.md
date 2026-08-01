@@ -68,6 +68,7 @@ SOPHRON-CER package-normalization checklist:
 - Research/example flows should remain visibly namespaced as examples rather than reading like first-class validator operations.
 - Package metadata should not imply publish-ready scope while mixed research/validator surfaces still coexist.
 - Dependencies should be justified by the currently exercised validator or example surface, not retained as ambient capability signals.
+- Local lint/doc tooling should not be treated as a quality gate signal unless it is updated, exercised, and intentionally wired into CI.
 - Legacy identity strings (for example older CER-Telemetry naming) should be removed except where retained deliberately as migration/explanation notes.
 
 ## P1: Runtime path normalization

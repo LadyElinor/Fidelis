@@ -46,6 +46,8 @@ The package metadata and npm scripts are still in transition. The validator-faci
 
 A small hygiene improvement already made here: obviously unused legacy dependencies should be removed when they are not exercised by the current validator or example surface, rather than retained as ambient signals of capability. That now includes trimming unexercised formatting/doc-generation dependencies from the package metadata when the repo does not actually invoke them.
 
+The remaining `eslint` devDependency should currently be read as a local linting aid rather than as evidence of a mature enforced lint gate. Until that toolchain is updated and exercised in CI, it remains normalization debt rather than a trustworthy quality signal.
+
 ## Installation
 
 ```bash
