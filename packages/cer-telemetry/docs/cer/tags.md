@@ -12,7 +12,7 @@ For each tag we record:
 
 ## Tag: tokenPromo
 - **Definition:** Content primarily promoting tokens/airdrops/CA/price action.
-- **Detection:** Regex proxy (see `tmp_moltx_instrument_trending_v2.mjs` `RX.tokenPromo`).
+- **Detection:** Regex proxy (see `scripts/legacy-moltx/tmp_moltx_instrument_trending_v2.mjs` `RX.tokenPromo`).
 - **Common false positives:**
   - Security discussions that mention “token” or “0x…” in an analytical context.
   - Legit technical posts that include a contract address without promotional intent.

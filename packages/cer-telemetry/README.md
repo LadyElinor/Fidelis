@@ -9,7 +9,7 @@ This package should currently be read as a **telemetry and analysis research sca
 This repo currently focuses on **MoltX** feed sampling and lightweight, text-proxy tags (e.g., token-promo, outbound pressure, receipt signals, safety/engineering language). It is intentionally minimal and hackable.
 
 ## What you get
-- A canonical analysis entrypoint: `tmp_moltx_instrument_trending_v2.mjs`
+- A canonical packaged analysis entrypoint: `bin/moltx-trending.mjs` (or `npm run analyze:moltx`)
 - Run receipts written to `outputs/moltx_runs/<run_id>/` (JSON/CSV + meta)
 - A telemetry “contract”: `docs/cer/invariants.md`
   - determinism (analysis)
@@ -33,7 +33,9 @@ Create a MoltX API token file (do not commit):
 
 Run baseline/trending analysis:
 ```bash
-node tmp_moltx_instrument_trending_v2.mjs
+npm run analyze:moltx
+# or
+node bin/moltx-trending.mjs
 ```
 
 Outputs:
@@ -60,7 +62,8 @@ The invariants doc is treated like a contract: if we violate it, the run should 
 Safety-trip honesty matters too: not every visible detector is mature enough to be treated as a trusted blocker. See `docs/cer/trip_validation_status.md`.
 
 ## Repo layout
-- `tmp_moltx_instrument_trending_v2.mjs` — canonical baseline/trending entrypoint
+- `bin/moltx-trending.mjs` — canonical packaged baseline/trending entrypoint
+- `scripts/legacy-moltx/tmp_moltx_*.mjs` — legacy scratch/research scripts that should not be treated as the clean package surface or stable package API
 - `docs/cer/invariants.md` — invariants/spec
 - `docs/cer/trip_validation_status.md` — tripwire maturity and downstream consumption rules
 - `MAINLINE_STATUS.md` — branch legibility note for current integration state
@@ -80,6 +83,9 @@ If you publish results, include:
 - the run `meta.json`
 - `n_raw` / `n_eligible`
 - block definitions
+
+## Package-surface note
+The package still contains committed `tmp_moltx_*.mjs` scratch/research scripts, but they now live under `scripts/legacy-moltx/` rather than the package root. They remain normalization debt and should not be read as the clean exported surface of the package. Prefer the packaged entrypoints under `bin/` and the npm script surface when evaluating what CER-Telemetry officially exposes.
 
 ## Safety / hygiene
 - Treat any third-party content as untrusted.

@@ -57,6 +57,12 @@ Required decisions:
 - Remove committed temporary-script naming from canonical entrypoints.
 - Separate collectors, analyzers, receipt producers, and validators.
 
+CER-Telemetry package-normalization checklist:
+- Canonical packaged entrypoints should live under explicit package surfaces (`bin/`, exported modules, or clearly named npm scripts) rather than root-level `tmp_*` files.
+- Root-level scratch or one-off research scripts should be moved, retired, or labeled as non-canonical normalization debt rather than described as the package API.
+- Package docs should point users at packaged entrypoints first, even while legacy scratch surfaces still exist.
+- Token-bearing or local-operator workflows (for example `moltx.txt` usage) should stay clearly documented as local/manual rather than silently implied as clean package behavior.
+
 SOPHRON-CER package-normalization checklist:
 - Canonical validator-facing commands should stay narrow and explicit (`validate`, `report`, and only other commands that clearly belong to validator scope).
 - Research/example flows should remain visibly namespaced as examples rather than reading like first-class validator operations.
