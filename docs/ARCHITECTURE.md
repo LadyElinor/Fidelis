@@ -85,3 +85,4 @@ The following documents extend this architecture into completion, security, and 
 - `docs/COMPLETION_ROADMAP.md`
 - `docs/SECURITY_NEXT_STEPS.md`
 - `docs/SAFETY_PROPOSAL.md`
+- `docs/MIND_ONTOLOGY_DIAGNOSTIC_PLAN.md`

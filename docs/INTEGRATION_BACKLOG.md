@@ -105,6 +105,7 @@ Do not extract:
 - Add explicit promotion records.
 - Add projection, constraint, exposure, and return assays.
 - Emit `BelarionAssay` using `fidelis-contracts`.
+- If the mind-ontology diagnostic proceeds, start with neutral receipt/observation types and black-box probe support only, following `docs/MIND_ONTOLOGY_DIAGNOSTIC_PLAN.md`.
 
 ### TrustedRuntime
 
@@ -142,5 +143,6 @@ After the provenance-closure promotion to `master`, several larger next-step doc
 - `docs/COMPLETION_ROADMAP.md`
 - `docs/SECURITY_NEXT_STEPS.md`
 - `docs/SAFETY_PROPOSAL.md`
+- `docs/MIND_ONTOLOGY_DIAGNOSTIC_PLAN.md`
 
 The backlog remains the short-form execution tracker. Those design notes provide the larger sequencing and architectural rationale for the next development stages.
