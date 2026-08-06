@@ -65,6 +65,8 @@ def guard_runtime_disposition(
     reviewability_exceeded: bool = False,
     tripwire_records: list[dict] | list[object] | None = None,
     blocking_threshold: float = BLOCKING_LOWER_BOUND_THRESHOLD,
+    require_exact_approval_identity: bool = False,
+    exact_approval_identity: str | None = None,
 ) -> tuple[RuntimeDisposition, str | None]:
     if runtime_disposition is RuntimeDisposition.PROCEED and not proceed_allowed(adapter_provenance):
         return (
@@ -100,5 +102,10 @@ def guard_runtime_disposition(
         return (
             RuntimeDisposition.CONFIRM_HUMAN,
             "PROCEED forbidden when a blocking tripwire's credal lower bound is below the blocking threshold",
+        )
+    if runtime_disposition is RuntimeDisposition.PROCEED and require_exact_approval_identity and not exact_approval_identity:
+        return (
+            RuntimeDisposition.CONFIRM_HUMAN,
+            "PROCEED forbidden for exact-approval-sensitive actions without exact_approval_identity",
         )
     return runtime_disposition, None

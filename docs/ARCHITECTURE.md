@@ -17,11 +17,11 @@ It does not own substantive ethical, warrant, enforcement, or telemetry judgment
 
 ## Layer map
 
-1. **Deliberation** — EthicsCouncil produces prospective hazards, convergences, fault lines, suspension triggers, and unresolved questions.
+1. **Deliberation** — EthicsCouncil produces prospective hazards, convergences, fault lines, suspension triggers, and unresolved questions. In the current repository state this remains a heuristic multi-lens research harness, not a validated ethical adjudicator.
 2. **Enforcement** — TrustworthyAgentStack turns declared policy and upstream findings into operational gates.
 3. **Warrant sidecar** — meaning-assay distinguishes significance from warrant and owns BELARION qualification.
 4. **Evidence spine** — CER-Telemetry records and analyzes execution evidence; SOPHRON-CER validates receipts and invariants.
-5. **Integration** — TrustedRuntime orchestrates, canonicalizes, reports provenance, and synthesizes the operator-facing disposition.
+5. **Integration** — TrustedRuntime orchestrates, canonicalizes, reports provenance, and synthesizes the operator-facing disposition. Here, "synthesizes" means assembling and reporting layer outputs, not silently reweighting or upgrading the substantive authority of those outputs.
 6. **Message seam** — AttestAgentConlang wraps inter-layer claims without itself certifying their truth.
 7. **Legacy integration source** — AConstellation is imported intact for comparison and reconciliation. It is not treated as an additional final authority; overlapping orchestration must be resolved explicitly.
 
@@ -58,6 +58,12 @@ Independent repositories do not guarantee independent reasoning. In this monorep
 - mutation tests that corrupt one layer and require another to detect it;
 - no automatic upgrade from agreement to corroboration.
 
+## Plain-English name guide
+
+- **BELARION**: the current name for the meaning/warrant qualification envelope and report section.
+- **SOPHRON-CER**: the current name for the receipt / invariant validator layer in the evidence spine.
+- **EthicsCouncil / EFM-style review**: the heuristic multi-lens hazard-review scaffold.
+
 ## Shared contracts
 
 `packages/fidelis-contracts` contains only neutral types needed for serialization and cross-layer identity. It must not contain scoring rules, moral verdicts, policy thresholds, or telemetry analysis.
@@ -71,3 +77,12 @@ The intended profiles are:
 - `all-real`: all required component implementations present and tested at pinned source revisions.
 
 A profile must never call itself `all-real` merely because imports succeed. It must record source revisions, test results, adapter provenance, and required evidence surfaces.
+
+## Related design notes
+
+The following documents extend this architecture into completion, security, and safety planning:
+
+- `docs/COMPLETION_ROADMAP.md`
+- `docs/SECURITY_NEXT_STEPS.md`
+- `docs/SAFETY_PROPOSAL.md`
+- `docs/MIND_ONTOLOGY_DIAGNOSTIC_PLAN.md`

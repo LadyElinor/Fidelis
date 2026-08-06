@@ -2,14 +2,18 @@
 
 Minimal invariants-first tooling for observable, verifiable, and regime-aware agentic systems.
 
-This repository contains a complete runnable minimal proof for the stack:
+## Maturity note
+
+This package is best read as a **runnable minimal proof and enforcement scaffold**. It demonstrates useful cross-layer mechanics, but it should not yet be described as production-grade runtime enforcement or as proof that the broader Fidelis authority separation story is fully solved.
+
+This repository contains a complete runnable minimal proof fixture for one narrow stack path:
 
 ```text
 EthicsCouncil hazard evaluation
   -> MCP gate checks
   -> explicit confirmation branch
   -> CER JSONL export
-  -> SOPHRON-style validation
+  -> SOPHRON-CER-style validation
   -> failure tests
 ```
 
@@ -35,12 +39,14 @@ No external runtime dependencies are required for the demo. `pytest` is only nee
 
 ## What this proves
 
-- EthicsCouncil output influences operational gate behavior.
-- Escalation has a real branch and can block execution.
+- EthicsCouncil output can influence operational gate behavior in this fixture.
+- Escalation has a real branch and can block execution in this fixture.
 - CER exports deterministic provenance hashes.
 - CER exports deterministic demo signatures for receipt verification.
-- SOPHRON-style ingestion recomputes and verifies hashes and signatures.
+- SOPHRON-CER-style ingestion recomputes and verifies hashes and signatures.
 - Deliberately broken records fail validation.
+
+This does **not** mean the package is the final substantive owner of ethics, telemetry, or receipt authority. It is better read as a compact enforcement/reference fixture that demonstrates one bounded integration path without settling the broader authority-separation architecture.
 
 ## What this does not yet claim
 
@@ -50,7 +56,7 @@ No external runtime dependencies are required for the demo. `pytest` is only nee
 - Real human approval UX.
 - Live database-backed telemetry.
 
-Status: runnable minimal proof, not production infrastructure.
+Status: runnable minimal proof fixture, not production infrastructure or a license to collapse independent authorities into one package.
 
 ## Routing policy helper
 

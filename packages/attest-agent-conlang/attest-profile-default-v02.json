@@ -70,6 +70,7 @@
     "receipt"
   ],
   "nonce_required_for_authority": false,
+  "trusted_ordering_authority": false,
   "authority_strength_lattice": {
     "HUMAN_APPROVAL": 3,
     "POLICY": 3,

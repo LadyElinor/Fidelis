@@ -31,6 +31,7 @@ import importlib.util
 import json
 import sys
 
+from trusted_runtime.action_identity import effective_action_scope, effective_claimed_approval_reference
 from trusted_runtime.authority_store import AuthorityGrantStore
 from trusted_runtime.shared.models import ProposedAction
 
@@ -114,6 +115,7 @@ class AttestVerificationState(BaseModel):
     grounds_resolver_config_hash: str = ""
     authority_resolver_name: str = "unconfigured"
     authority_resolver_config_hash: str = ""
+    authority_state_digest: str = ""
     signature_verifier_name: str = "unconfigured"
     signature_verifier_config_hash: str = ""
     delegated_lineage: DelegatedLineageReceipt = Field(default_factory=DelegatedLineageReceipt)
@@ -201,6 +203,8 @@ class AttestBridgeConfig:
     commit_whitelist: tuple[str, ...] = ("trusted-runtime:orchestrator",)
     signature_verifier_mode: Literal["accept-all", "deterministic-test", "ed25519-profile"] = "accept-all"
     profile_path: Path | None = None
+    fail_closed_signature_posture: bool = True
+    fail_closed_replay_posture: bool = True
 
 
 class AttestBridge:
@@ -226,12 +230,14 @@ class AttestBridge:
         *,
         attest_root: Path | None = None,
         authority_store: "AuthorityGrantStore | None" = None,
+        nonce_replay_checker: Any | None = None,
     ):
         self.config = config or AttestBridgeConfig()
         self.attest_root = attest_root
         # Runtime-owned trust root. Constructor-injected by the orchestrator;
         # never derived from message content or proposer context.
         self.authority_store = authority_store
+        self.nonce_replay_checker = nonce_replay_checker
         self._real_attest = self._load_real_attest() if attest_root is not None else None
 
     def _load_real_attest(self) -> dict[str, Any] | None:
@@ -271,6 +277,7 @@ class AttestBridge:
             "StaticAuthorityResolver": getattr(module, "StaticAuthorityResolver"),
             "AuthorityResolution": getattr(module, "AuthorityResolution"),
             "StaticGroundsResolver": getattr(module, "StaticGroundsResolver"),
+            "InMemoryNonceReplayChecker": getattr(module, "InMemoryNonceReplayChecker", None),
             "load_profile": getattr(module, "load_profile"),
         }
 
@@ -310,6 +317,11 @@ class AttestBridge:
             grounds_resolver_config_hash=sha256(self._stable_json_bytes(sorted(resolver_inputs.runtime_message_refs))).hexdigest(),
             authority_resolver_name="stub-none",
             authority_resolver_config_hash=(
+                self.authority_store.state_digest(evaluated_at)
+                if self.authority_store is not None
+                else sha256(b"no-authority-store").hexdigest()
+            ),
+            authority_state_digest=(
                 self.authority_store.state_digest(evaluated_at)
                 if self.authority_store is not None
                 else sha256(b"no-authority-store").hexdigest()
@@ -358,6 +370,16 @@ class AttestBridge:
         - external/operator/task ingress becomes REQUEST or QUERY
         - this is the root message for downstream adoption/provenance chains
         """
+        content = {
+            "action_id": action.id,
+            "description": action.description,
+            "context": action.context,
+            "proposed_by": action.proposed_by,
+        }
+        claimed_approval_reference = effective_claimed_approval_reference(action)
+        if claimed_approval_reference is not None:
+            content["exact_approval_identity"] = claimed_approval_reference
+            content["claimed_approval_reference"] = claimed_approval_reference
         return {
             "frame": "REQUEST",
             "mode": "legible",
@@ -365,12 +387,7 @@ class AttestBridge:
             "to": "trusted-runtime:orchestrator",
             "parents": [],
             "ordering_anchor": [action.timestamp.isoformat().replace("+00:00", "Z"), 1],
-            "content": {
-                "action_id": action.id,
-                "description": action.description,
-                "context": action.context,
-                "proposed_by": action.proposed_by,
-            },
+            "content": content,
         }
 
     def wrap_adapter_assert(
@@ -457,6 +474,7 @@ class AttestBridge:
         parents: list[str],
         action_scope: Literal["state_change", "package_install", "shell_exec", "network_fetch", "general"],
         deontic: dict[str, Any],
+        exact_approval_identity: str | None = None,
     ) -> None:
         if not isinstance(deontic, dict):
             raise ValueError("COMMIT deontic must be an object")
@@ -488,6 +506,8 @@ class AttestBridge:
         bind_message = binds.get("message")
         if not isinstance(bind_message, str) or not bind_message.strip():
             raise ValueError("COMMIT deontic requires binds.message")
+        if exact_approval_identity is not None and bind_message != exact_approval_identity:
+            raise ValueError("COMMIT deontic binds.message must match exact_approval_identity")
 
         bind_parents = binds.get("parents")
         if not isinstance(bind_parents, list) or not all(
@@ -505,6 +525,7 @@ class AttestBridge:
         parents: list[str],
         action_scope: Literal["state_change", "package_install", "shell_exec", "network_fetch", "general"],
         deontic: dict[str, Any],
+        exact_approval_identity: str | None = None,
     ) -> dict[str, Any]:
         """Emit COMMIT only at the runtime/orchestrator boundary.
 
@@ -516,8 +537,9 @@ class AttestBridge:
             parents=parents,
             action_scope=action_scope,
             deontic=deontic,
+            exact_approval_identity=exact_approval_identity,
         )
-        return {
+        message = {
             "frame": "COMMIT",
             "mode": "legible",
             "from": runtime_actor,
@@ -528,6 +550,57 @@ class AttestBridge:
             "deontic": deontic,
             "content": content,
         }
+        if exact_approval_identity is not None:
+            message["exact_approval_identity"] = exact_approval_identity
+            message["claimed_approval_reference"] = exact_approval_identity
+        return message
+
+    def action_scope_for_action(
+        self,
+        action: ProposedAction,
+    ) -> Literal["state_change", "package_install", "shell_exec", "network_fetch", "general"]:
+        explicit = str(effective_action_scope(action) or "").strip().lower()
+        if explicit in {"state_change", "package_install", "shell_exec", "network_fetch", "general"}:
+            return explicit  # type: ignore[return-value]
+        change_type = str(action.change_type or action.context.get("change_type") or "").strip().lower()
+        if change_type in {"safety_invariant", "training_corpus"}:
+            return "state_change"
+        review_kind = str(action.review_kind or action.context.get("review_kind") or "").strip().lower()
+        changed_files = action.changed_files or action.context.get("changed_files") or []
+        if review_kind == "pull_request" and isinstance(changed_files, list) and len(changed_files) > 0:
+            return "state_change"
+        return "general"
+
+    def wrap_runtime_commit_for_action(
+        self,
+        *,
+        action: ProposedAction,
+        runtime_actor: str,
+        content: dict[str, Any],
+        parents: list[str],
+        authority: list[str],
+        nonce: str,
+        deontic_type: str = "HUMAN_APPROVAL",
+    ) -> dict[str, Any]:
+        action_scope = self.action_scope_for_action(action)
+        deontic = {
+            "type": deontic_type,
+            "authority": authority,
+            "scope": action_scope,
+            "binds": {
+                "message": effective_claimed_approval_reference(action),
+                "parents": parents,
+            },
+            "nonce": nonce,
+        }
+        return self.wrap_runtime_commit(
+            runtime_actor=runtime_actor,
+            content=content,
+            parents=parents,
+            action_scope=action_scope,
+            deontic=deontic,
+            exact_approval_identity=effective_claimed_approval_reference(action),
+        )
 
     # ------------------------------------------------------------------
     # Verification / policy surface
@@ -590,12 +663,21 @@ class AttestBridge:
                     authority_resolver = self._real_attest["StaticAuthorityResolver"](set())
                     authority_resolver_hash = sha256(b"no-authority-store").hexdigest()
                 signature_verifier, signature_verifier_config_hash = self._build_signature_verifier(profile)
-                verifier = self._real_attest["AttestVerifier"](
-                    profile=profile,
-                    grounds_resolver=grounds_resolver,
-                    authority_resolver=authority_resolver,
-                    signature_verifier=signature_verifier,
-                )
+                try:
+                    verifier = self._real_attest["AttestVerifier"](
+                        profile=profile,
+                        grounds_resolver=grounds_resolver,
+                        authority_resolver=authority_resolver,
+                        signature_verifier=signature_verifier,
+                        nonce_replay_checker=self.nonce_replay_checker,
+                    )
+                except TypeError:
+                    verifier = self._real_attest["AttestVerifier"](
+                        profile=profile,
+                        grounds_resolver=grounds_resolver,
+                        authority_resolver=authority_resolver,
+                        signature_verifier=signature_verifier,
+                    )
                 try:
                     # v0.3 Attest: inject the evaluation instant so the verdict,
                     # the receipt, and the store digest all bind the same time.
@@ -608,9 +690,18 @@ class AttestBridge:
                 # Retired proposer authority keys are never consumed, but the
                 # attempt is surfaced and denies a clean PASS via the
                 # soft-flag -> REVIEW rule.
+                hard_fail = list(result.get("hard_fail", []))
                 soft_flags_with_taint = list(result.get("soft_flag", [])) + resolver_inputs.injection_flags()
+                if self.config.fail_closed_signature_posture and self.config.signature_verifier_mode == "accept-all":
+                    hard_fail.append("ACCEPT_ALL_SIGNATURE_VERIFIER_FORBIDDEN")
+                if (
+                    self.config.fail_closed_replay_posture
+                    and getattr(profile, "trusted_ordering_authority", False)
+                    and self.nonce_replay_checker is None
+                ):
+                    hard_fail.append("TRUSTED_ORDERING_REQUIRES_EXPLICIT_REPLAY_CHECKER")
                 decision_effect: Literal["PASS", "REVIEW", "BLOCK", "UNVERIFIABLE"] = "PASS"
-                if result.get("hard_fail"):
+                if hard_fail:
                     decision_effect = "BLOCK"
                 elif soft_flags_with_taint or result.get("pass_scope_limit"):
                     decision_effect = "REVIEW"
@@ -625,7 +716,7 @@ class AttestBridge:
                     profile_version="loaded-runtime-profile",
                     profile_hash=sha256(self._stable_json_bytes(profile.model_dump(mode="json"))).hexdigest(),
                     verifier_version="attest_ref_impl",
-                    hard_fail=list(result.get("hard_fail", [])),
+                    hard_fail=hard_fail,
                     soft_flag=soft_flags_with_taint,
                     pass_scope_limit=list(result.get("pass_scope_limit", [])),
                     decision_effect=decision_effect,
@@ -634,6 +725,7 @@ class AttestBridge:
                     grounds_resolver_config_hash=sha256(self._stable_json_bytes(grounds_resolver_config)).hexdigest(),
                     authority_resolver_name=type(authority_resolver).__name__,
                     authority_resolver_config_hash=authority_resolver_hash,
+                    authority_state_digest=authority_resolver_hash,
                     signature_verifier_name=type(signature_verifier).__name__,
                     signature_verifier_config_hash=signature_verifier_config_hash,
                     delegated_lineage=delegated_lineage,

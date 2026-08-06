@@ -1,8 +1,26 @@
 # Fidelis
 
-**A modular monorepo for governed agent reasoning, enforcement, evidence, and epistemic assay.**
+**Research-grade monorepo infrastructure for governed agent reasoning, enforcement, evidence, and epistemic assay.**
 
 Fidelis consolidates the LadyElinor governed-agent cluster into one reproducible workspace while preserving the independence of its authorities. The repository is physically unified; ethics, warrant, enforcement, communication, telemetry, and validation remain separate packages with explicit contracts and receipts.
+
+## Current state, read this first
+
+Fidelis is **not** a production-cleared governed runtime today. It is best understood as a **research and integration scaffold** with some strong component implementations, some credible enforcement scaffolding, and several explicitly incomplete cross-component paths.
+
+What exists now:
+- strong contract and provenance discipline in several areas;
+- a genuinely mature attestation/reference seam in AttestAgentConlang;
+- boundary-policy enforcement and bootstrap safety posture;
+- partial runtime, telemetry, and reporting integration work.
+
+What does **not** yet exist in a fully proven form:
+- an end-to-end production-governed runtime with empirically demonstrated authority separation;
+- broad all-real CI confidence across every declared component path;
+- validated substantive ethical adjudication;
+- authorization for consequential side effects.
+
+If you need deployable governance software, Fidelis is not there yet. If you need a serious, explicit, testable monorepo scaffold for building it without silently collapsing authority boundaries, that is the present value of this repository.
 
 ## Why the name
 
@@ -10,11 +28,16 @@ Fidelis consolidates the LadyElinor governed-agent cluster into one reproducible
 
 ## Component map
 
+Plain-English decoding for some internal names used across the repo:
+- **BELARION** = the repo's current name for a meaning/warrant qualification envelope, owned substantively by `meaning-assay`
+- **SOPHRON-CER** = the current receipt / invariant validation layer for the evidence spine
+- **EFM / EthicsCouncil** = the repo's heuristic multi-lens ethical hazard review scaffold
+
 | Component | Monorepo path | Authority |
 |---|---|---|
 | TrustedRuntime | `packages/trusted-runtime` | orchestration, policy synthesis, operator reports |
 | AConstellation | `packages/aconstellation` | legacy integration architecture retained for migration and reconciliation |
-| EthicsCouncil | `packages/ethics-council` | prospective multi-lens hazard review |
+| EthicsCouncil | `packages/ethics-council` | heuristic prospective multi-lens hazard review and research harness |
 | TrustworthyAgentStack | `packages/trustworthy-agent-stack` | execution gating and runtime enforcement |
 | meaning-assay | `packages/meaning-assay` | significance, warrant, and BELARION qualification |
 | AttestAgentConlang | `packages/attest-agent-conlang` | typed inter-agent messages and verification seams |
@@ -31,7 +54,7 @@ No component may silently certify itself.
 - Meaning and warrant logic remain outside the orchestrator.
 - Attest envelopes do not upgrade provenance by themselves.
 - Receipts prove what was emitted, not that the emitting judgment was correct.
-- TrustedRuntime synthesizes; it does not absorb the other authorities.
+- TrustedRuntime synthesizes operator-facing reports and runtime state; it must not silently reweight, upgrade, or absorb the substantive findings of the other authorities without explicit, auditable transformation records.
 
 ## Bootstrap
 
@@ -118,6 +141,20 @@ See:
 ## Current seed status
 
 This seed establishes the monorepo architecture, import/update automation, import planning visibility, shared BELARION contracts, provenance manifest, dependency-policy declaration checks, observed-edge boundary enforcement, CI, and integration tests.
+
+### Maturity snapshot
+
+| Surface | Current state |
+|---|---|
+| Monorepo architecture and boundary intent | strong |
+| Shared contracts and serialization discipline | strong |
+| AttestAgentConlang reference implementation | strong |
+| Boundary checker and bootstrap posture | credible, testable scaffold |
+| TrustedRuntime integrated governance reality | partial / in progress |
+| EthicsCouncil substantive reasoning | heuristic research scaffold, not validated adjudication |
+| CER/SOPHRON role separation | partially documented, still being normalized |
+| CI confidence | real in narrow lanes, incomplete as a full all-real proof |
+| Production authorization | not cleared |
 
 Current authorization posture:
 - seed / minimal profile: development-safe, not production-cleared

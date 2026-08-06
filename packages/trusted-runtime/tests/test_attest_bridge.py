@@ -62,6 +62,15 @@ def test_ingress_wraps_as_request_not_assert():
     assert msg["content"]["action_id"] == "attest-bridge-001"
 
 
+def test_ingress_carries_exact_approval_identity_when_present():
+    bridge = AttestBridge()
+    action = _action().model_copy(update={"exact_approval_identity": "msg-core-001"})
+
+    msg = bridge.wrap_ingress_request(action)
+
+    assert msg["content"]["exact_approval_identity"] == "msg-core-001"
+
+
 def test_endorse_requires_adopts_and_adoption_reason():
     bridge = AttestBridge()
 
@@ -166,6 +175,20 @@ def test_commit_rejected_for_parent_binding_mismatch():
         )
 
 
+def test_commit_rejected_for_exact_approval_identity_mismatch():
+    bridge = AttestBridge()
+
+    with pytest.raises(ValueError, match="COMMIT deontic binds.message must match exact_approval_identity"):
+        bridge.wrap_runtime_commit(
+            runtime_actor="trusted-runtime:orchestrator",
+            content={"execute": True},
+            parents=["msg-parent"],
+            action_scope="state_change",
+            deontic=_valid_commit_deontic(binds={"message": "msg-core-001", "parents": ["msg-parent"]}),
+            exact_approval_identity="msg-core-002",
+        )
+
+
 def test_commit_rejected_for_external_authority_reference():
     bridge = AttestBridge()
 
@@ -187,11 +210,38 @@ def test_commit_accepts_conservative_valid_deontic_payload():
         parents=["msg-parent"],
         action_scope="state_change",
         deontic=_valid_commit_deontic(),
+        exact_approval_identity="msg-core-001",
     )
 
     assert msg["frame"] == "COMMIT"
     assert msg["action_scope"] == "state_change"
     assert msg["deontic"]["type"] == "HUMAN_APPROVAL"
+    assert msg["exact_approval_identity"] == "msg-core-001"
+
+
+def test_action_scope_for_action_classifies_pr_change_as_state_change():
+    bridge = AttestBridge()
+
+    assert bridge.action_scope_for_action(_action()) == "state_change"
+
+
+def test_wrap_runtime_commit_for_action_uses_scope_aligned_exact_binding():
+    bridge = AttestBridge()
+    action = _action().model_copy(update={"exact_approval_identity": "msg-core-001"})
+
+    msg = bridge.wrap_runtime_commit_for_action(
+        action=action,
+        runtime_actor="trusted-runtime:orchestrator",
+        content={"execute": True},
+        parents=["msg-parent"],
+        authority=["approval:ops-9"],
+        nonce="n-1",
+    )
+
+    assert msg["action_scope"] == "state_change"
+    assert msg["deontic"]["scope"] == "state_change"
+    assert msg["deontic"]["binds"]["message"] == "msg-core-001"
+    assert msg["exact_approval_identity"] == "msg-core-001"
 
 
 def test_verification_stub_is_unverifiable_not_pass():
@@ -210,6 +260,15 @@ def test_real_attest_bridge_availability_matches_import_gate():
     bridge = AttestBridge(attest_root=None)
     assert bridge.real_available is False
     assert isinstance(attest_agent_conlang_available(), bool)
+
+
+def test_stub_verification_does_not_promote_accept_all_to_pass():
+    bridge = AttestBridge(config=AttestBridgeConfig(signature_verifier_mode="accept-all"))
+
+    result = bridge.verify_for_runtime({"frame": "ASSERT", "content": {"x": 1}}, [])
+
+    assert result.decision_effect == "UNVERIFIABLE"
+    assert "ATTEST_BRIDGE_DESIGN_STUB_ONLY" in result.soft_flag
 
 
 def test_bridge_plumbing_maps_verifier_output_using_shadow_mock(tmp_path):
@@ -282,10 +341,11 @@ def load_profile(path=None):
     )
 
     assert bridge.real_available is True
-    assert result.decision_effect == "PASS"
+    assert result.decision_effect == "BLOCK"
     assert result.message_id == "shadow-msg-id"
     assert result.profile_id == "shadow-profile"
     assert result.soft_flag == []
+    assert "ACCEPT_ALL_SIGNATURE_VERIFIER_FORBIDDEN" in result.hard_fail
     assert result.grounds_resolver_name == "StaticGroundsResolver"
     assert result.authority_resolver_name == "StaticAuthorityResolver"
     assert result.signature_verifier_name == "AcceptAllSignatureVerifier"

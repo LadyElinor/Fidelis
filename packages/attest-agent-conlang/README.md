@@ -2,6 +2,12 @@
 
 Attest is a draft typed, auditable inter-agent message protocol focused on preserving warrant, lineage, and trust-boundary semantics.
 
+## Why this package matters right now
+
+Within Fidelis, AttestAgentConlang is currently the clearest candidate for an independently useful standalone artifact. It is still a draft research/prototyping package, but compared to the broader repo it already contains a relatively coherent specification, reference verifier seam, and adversarial/property test posture.
+
+That does **not** make it a production security library yet. It does mean that if Fidelis needs one package to ship first as a stronger self-contained deliverable, this is the most credible place to start.
+
 ## Current direction
 
 Attest is being tightened toward a more portable and verifiable v0.2 shape.
@@ -29,13 +35,24 @@ The main priorities are:
 
 ## Status
 
-This is a draft research/prototyping repo, not a production security library.
+This is a draft research/prototyping package, not a production security library.
+
+Current maturity shorthand:
+- **spec / protocol framing:** strong draft
+- **reference verification seam:** strong draft
+- **property and adversarial testing posture:** credible
+- **cross-implementation interoperability:** incomplete
+- **durable replay / ordering authority:** incomplete
+- **production deployment assurance:** not cleared
 
 The reference implementation is explicit about what is implemented versus delegated:
 - canonical bytes are computed locally and deterministically
 - grounds resolution is supplied by a resolver interface
 - signature verification is supplied by a verifier interface
 - deployment policy is profile-driven and now has a draft artifact form
+- expiry classification now respects whether a trusted ordering authority is declared in the deployment profile
+- nonce presence is enforced for authority-required frames when trusted ordering authority is declared
+- replay detection is partially implemented as an injected verifier hook: the reference verifier now accepts a nonce replay checker, ships a minimal in-memory checker, and can emit `AUTHORITY_NONCE_REPLAYED`, but it still has no durable or externally authoritative ordering service of its own
 - signature verification uses real Ed25519 (PyNaCl) with a per-run generated key in the harness; fixed cross-implementation interop vectors do not yet exist
 
 ## Quick start

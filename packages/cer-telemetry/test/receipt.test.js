@@ -7,7 +7,7 @@ function validReceipt() {
   return {
     receipt_version: '0.1',
     runId: 'run-123',
-    script: 'tmp_moltx_instrument_trending_v2.mjs',
+    script: 'scripts/legacy-moltx/tmp_moltx_instrument_trending_v2.mjs',
     timestamp: '2026-07-23T00:00:00Z',
     phases: [{ phase: 'run_start' }],
     metrics: [{ metric: 'sample_rate', num: 1, den: 2, value: 0.5, low: 0.1, high: 0.9 }],

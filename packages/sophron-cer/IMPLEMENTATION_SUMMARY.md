@@ -223,7 +223,7 @@ Comprehensive documentation suite:
 ## File Structure
 
 ```
-cer-telemetry-improved/
+sophron-cer/
 ├── package.json                    # Dependencies & scripts
 ├── .gitignore                      # Git ignore rules
 ├── .env.example                    # Environment template

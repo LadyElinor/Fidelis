@@ -2,6 +2,10 @@
 
 A clean orchestration scaffold for a governed reasoning-and-action stack.
 
+## Maturity note
+
+TrustedRuntime should currently be read as an **integration prototype and reporting scaffold**, not as a fully proven governed execution runtime. Some adapter paths are real, some are partial, and several of the most important trust claims still depend on broader all-real verification and cross-component maturity.
+
 This repo is intentionally the **integration layer**, not the place where the ethics, warrant logic, or telemetry logic themselves live.
 
 ## Product vision
@@ -27,8 +31,10 @@ It should:
 - define shared contracts
 - orchestrate independent layers
 - canonicalize receipts
-- synthesize operator-facing reports
+- synthesize operator-facing reports and explicit runtime state summaries
 - optionally wrap inter-layer traffic in an Attest-shaped message seam without collapsing Attest semantics into this repo
+
+Here, "synthesize" is intentionally narrow: TrustedRuntime may assemble, summarize, and surface authority outputs, but it should not silently reweight or upgrade their substantive force without explicit, auditable transformation records.
 
 It should **not**:
 - collapse the independent repos into one codebase

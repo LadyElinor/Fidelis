@@ -79,7 +79,7 @@ Anthropic expresses that through:
 - CER records
 - provenance hashes
 - signatures
-- SOPHRON-style validation
+- SOPHRON-CER-style validation
 - routing guardrails
 - VITA-M1.1 receipts
 - corrective halt behavior

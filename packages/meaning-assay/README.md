@@ -150,6 +150,6 @@ examples/       run_kor_vs_trinity.py
 
 ## Status
 
-`0.1.0`. The lensbook and the two cases are seeds. The function tags and verdicts
+`0.1.0`. This package should be treated as a research artifact and deterministic assay scaffold, not as a validated moral adjudicator. The lensbook and the two cases are seeds. The function tags and verdicts
 are offered precisely so they can be contested; a pull request that re-tags a
 tradition with a better rationale is the intended use.

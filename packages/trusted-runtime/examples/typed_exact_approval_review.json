@@ -1,0 +1,18 @@
+{
+  "id": "review-typed-exact-approval-001",
+  "description": "Approve a governed outbound notification through the preferred typed approval path.",
+  "action_scope": "network_fetch",
+  "source_digest": "sha256:typed-example-source",
+  "exact_approval_identity": "msg-core-typed-example-001",
+  "exact_approval_target": {
+    "connector": "discord",
+    "destination": "typed-example-room",
+    "arguments": {
+      "text": "typed example body"
+    }
+  },
+  "context": {
+    "review_kind": "governed_action_review"
+  },
+  "proposed_by": "agent"
+}

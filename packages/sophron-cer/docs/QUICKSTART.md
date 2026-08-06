@@ -13,7 +13,7 @@ Get up and running with CER-Telemetry v2.0 in 5 minutes.
 ### 1. Clone and Install
 
 ```bash
-cd cer-telemetry-improved
+cd sophron-cer
 npm install
 ```
 

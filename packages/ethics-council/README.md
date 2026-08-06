@@ -86,7 +86,7 @@ Recent architecture improvements:
 
 ## Important caveat
 
-This is still a heuristic prototype. It is best understood as a transparent ethical auditing scaffold, not as an authoritative decision-maker.
+This is still a heuristic prototype. It is best understood as a transparent ethical auditing scaffold and research harness, not as an authoritative decision-maker or validated ethical adjudicator.
 
 Known next-step priorities:
 - formalize detector independence more rigorously

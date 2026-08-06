@@ -279,7 +279,7 @@ It is not expected to:
 
 VITA-M1.1 complements the existing TrustworthyAgentStack minimal proof:
 - CER proves structured event emission and provenance hashing.
-- SOPHRON-style validation proves downstream integrity checks.
+- SOPHRON-CER-style validation proves downstream integrity checks.
 - VITA-M1.1 adds a small decision-and-receipt layer focused on evidence, guards, reviewability, and corrective halt.
 
 Together they demonstrate a path from:

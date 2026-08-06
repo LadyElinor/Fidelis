@@ -1,12 +1,24 @@
 name: Fidelis CI
 
+# This workflow intentionally mixes two kinds of signals:
+# 1. real enforcement / verification lanes (provenance, boundaries, tests)
+# 2. truthful bootstrap-status surfaces that prevent overclaiming production readiness
+
 on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
 jobs:
   imported-prefix-immutability:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
@@ -14,7 +26,8 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
       - name: Enforce imported-prefix immutability
         shell: bash
         run: |
@@ -57,21 +70,33 @@ jobs:
 
   seed-integrity:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Seed-status warning
+      - name: Publish truthful bootstrap-status surface
         run: |
           echo "PROFILE=minimal"
           echo "PRODUCTION_CLEARED=false"
           echo "SIDE_EFFECTS_ALLOWED=false"
           echo "SUBSTANTIVE_ETHICS_TESTED=false"
-          echo "Seed-integrity is a development/bootstrap signal, not all-real or production authorization."
+          echo "These flags are not placeholders. They are an explicit non-authorization status surface for the current seed/minimal profile."
+          echo "The real enforcement lane in this workflow is provenance + boundary verification + targeted regression tests."
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            packages/cer-telemetry/package-lock.json
+            packages/sophron-cer/package-lock.json
       - run: python -m pip install pytest
-      - run: python scripts/verify_sources.py
-      - run: python scripts/verify_boundaries.py
+      - name: Verify declared source manifest and imported package presence
+        run: python scripts/verify_sources.py
+      - name: Verify declared component boundaries
+        run: python scripts/verify_boundaries.py
       - run: python scripts/run_component_tests.py --profile minimal
       - name: Print minimal component result summary
         if: always()
@@ -85,7 +110,10 @@ jobs:
             reports/component-tests.json
             reports/component-logs/
           if-no-files-found: warn
+          retention-days: 7
       - run: python -m pytest -q integration/tests packages/fidelis-contracts/tests
+      - name: Explicit boundary-check regression tests (current strongest real CI lane)
+        run: python -m pytest -q integration/tests/test_verify_boundaries.py
       - name: Diagnose Git state
         if: always()
         shell: bash
@@ -97,6 +125,7 @@ jobs:
 
   all-real-integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -121,7 +150,15 @@ jobs:
           exit 1
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            packages/cer-telemetry/package-lock.json
+            packages/sophron-cer/package-lock.json
       - name: Install core Python test dependency
         run: python -m pip install pytest
       - name: Hydrate declared source remotes for provenance checks
@@ -167,6 +204,7 @@ jobs:
             reports/component-tests.json
             reports/component-logs/
           if-no-files-found: warn
+          retention-days: 30
       - name: Generate all-real runtime health receipt
         run: python scripts/run_runtime_health.py --profile all-real
       - name: Verify all-real profile
